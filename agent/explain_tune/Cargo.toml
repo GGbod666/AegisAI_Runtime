@@ -1,0 +1,13 @@
+[package]
+name = "aegisai-explain-tune"
+version = "0.1.0"
+edition = "2021"
+description = "Offline experiment reporting, trigger explanation, and tuning suggestions for the AegisAI Runtime."
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+aegisai-metrics = { path = "../metrics" }
+aegisai-policy-engine = { path = "../policy_engine" }

@@ -1,0 +1,6 @@
+[global_safety]
+require_revert = true
+allow_background_throttle = false
+max_priority_delta = 5
+max_boost_duration_ms = 800
+max_affinity_change_ratio = 0.5

@@ -1,0 +1,35 @@
+[target]
+deployment_target = "linux"
+kernel_min = "5.15"
+cgroup_version = "v2"
+
+[runtime]
+primary_runtime = "ollama"
+fallback_runtime = "llama.cpp"
+
+[selection]
+mode = "process_name"
+process_names = ["ollama", "llama-server"]
+pid_allowlist = []
+
+[collection]
+focus_signals = [
+  "run_queue_delay",
+  "offcpu_time",
+  "cpu_migration",
+  "major_page_fault",
+  "subprocess_start_delay",
+  "queue_wait",
+  "io_latency"
+]
+
+[metrics]
+track = [
+  "ttft",
+  "p95_latency",
+  "p99_latency",
+  "jitter",
+  "boost_hit_rate",
+  "rollback_count",
+  "side_effect_rate"
+]

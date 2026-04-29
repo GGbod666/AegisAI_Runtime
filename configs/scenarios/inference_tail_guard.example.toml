@@ -1,0 +1,16 @@
+[policy]
+active_scenarios = ["inference_tail_guard"]
+evaluation_window_ms = 500
+cooldown_ms = 1500
+max_boost_duration_ms = 800
+
+[triggers.inference_tail_guard]
+run_queue_delay_us = 2000
+offcpu_spike_us = 3000
+cpu_migrations_per_sec = 10
+major_page_faults_per_sec = 3
+
+[actions.inference_tail_guard]
+raise_nice = -5
+pin_strategy = "prefer_reserved_cores"
+use_cpuset = false

@@ -1,0 +1,12 @@
+[package]
+name = "aegisai-actuator"
+version = "0.1.0"
+edition = "2021"
+description = "Bounded action execution and rollback lifecycle management for the AegisAI Runtime control loop."
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+aegisai-runtime-contracts = { path = "../runtime_contracts" }

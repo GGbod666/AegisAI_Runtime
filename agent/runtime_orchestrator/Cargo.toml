@@ -1,0 +1,15 @@
+[package]
+name = "runtime_orchestrator"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+aegisai-actuator = { path = "../actuator" }
+aegisai-classifier = { path = "../classifier" }
+aegisai-collector = { path = "../collector" }
+aegisai-metrics = { path = "../metrics" }
+aegisai-policy-engine = { path = "../policy_engine" }
+aegisai-runtime-contracts = { path = "../runtime_contracts" }

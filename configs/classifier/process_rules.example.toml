@@ -1,0 +1,35 @@
+[[process_rules]]
+id = "ollama-inference"
+name = "ollama"
+tags = ["AI_INFERENCE", "INTERACTIVE_LATENCY_SENSITIVE"]
+
+[[process_rules]]
+id = "llama-server-inference"
+name = "llama-server"
+tags = ["AI_INFERENCE", "INTERACTIVE_LATENCY_SENSITIVE"]
+
+[[process_rules]]
+id = "python-inference-worker"
+name = "python"
+cmdline_contains = "inference_worker"
+tags = ["AI_INFERENCE"]
+
+[[process_rules]]
+id = "tool-executor"
+cmdline_contains = "tool-executor"
+tags = ["TOOL_CALL"]
+
+[[process_rules]]
+id = "retrieval-worker"
+cmdline_contains = "retrieval-worker"
+tags = ["TOOL_CALL", "RETRIEVAL_STAGE"]
+
+[[process_rules]]
+id = "rerank-worker"
+cmdline_contains = "rerank-worker"
+tags = ["TOOL_CALL", "RERANK_STAGE"]
+
+[[process_rules]]
+id = "stress-ng-background"
+name = "stress-ng"
+tags = ["BACKGROUND_JOB"]

@@ -1,0 +1,12 @@
+[package]
+name = "aegisai-runtime-contracts"
+version = "0.1.0"
+edition = "2021"
+description = "Shared runtime contracts and domain types for the AegisAI Runtime control loop."
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+aegisai-classifier = { path = "../classifier" }

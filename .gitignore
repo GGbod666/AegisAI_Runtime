@@ -1,0 +1,53 @@
+# Build outputs
+target/
+dist/
+build/
+
+# Logs and runtime artifacts
+*.log
+*.out
+*.err
+*.pid
+*.pid.lock
+*.tmp
+*.temp
+
+# Coverage and profiling
+coverage/
+htmlcov/
+.coverage
+.coverage.*
+*.profraw
+*.profdata
+
+# Local environment and caches
+.env
+.env.*
+!.env.example
+!.env.sample
+.direnv/
+.cache/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+node_modules/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.fleet/
+.history/
+
+# Patch / merge leftovers
+*.orig
+*.rej
+
+# Rust metadata and backups
+.rustc_info.json
+**/*.rs.bk
+
+# Local analysis cache
+.code-review-graph/

@@ -1,0 +1,9 @@
+[package]
+name = "ebpf_probe"
+version = "0.1.0"
+edition = "2021"
+description = "Shared probe contracts and filtering for AegisAI Runtime"
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"

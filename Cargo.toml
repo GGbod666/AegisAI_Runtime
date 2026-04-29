@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "agent/actuator",
+    "agent/git_control",
+    "agent/runtime_orchestrator",
+    "agent/runtime_daemon",
+    "agent/runtime_contracts",
+    "agent/collector",
+    "agent/classifier",
+    "agent/explain_tune",
+    "agent/metrics",
+    "agent/policy_engine",
+    "ebpf/ebpf_probe",
+]
+resolver = "2"

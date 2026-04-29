@@ -1,0 +1,12 @@
+[package]
+name = "aegisai-policy-engine"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Scenario policy evaluation and conflict resolution for the AegisAI Runtime control loop."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+aegisai-runtime-contracts = { path = "../runtime_contracts" }

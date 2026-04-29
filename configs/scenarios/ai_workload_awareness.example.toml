@@ -1,0 +1,10 @@
+[classifier]
+enable_cmdline_rules = true
+enable_cgroup_rules = true
+enable_parent_child_inference = true
+enable_pid_allowlist = true
+
+[labels]
+interactive_default = ["AI_INFERENCE", "INTERACTIVE_LATENCY_SENSITIVE"]
+tool_executor_default = ["TOOL_CALL"]
+background_default = ["BACKGROUND_JOB"]

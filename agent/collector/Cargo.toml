@@ -1,0 +1,9 @@
+[package]
+name = "aegisai-collector"
+version = "0.1.0"
+edition = "2021"
+description = "Windowed event aggregation for the AegisAI Runtime control loop."
+license = "MIT"
+
+[dependencies]
+ebpf_probe = { path = "../../ebpf/ebpf_probe" }

@@ -1,0 +1,8 @@
+# 配置层规划
+
+配置改为按职责拆分：
+
+- `runtime/`：运行环境与目标 runtime
+- `classifier/`：process / stage 识别规则
+- `scenarios/`：场景级策略
+- `safety/`：全局安全限制

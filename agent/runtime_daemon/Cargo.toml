@@ -1,0 +1,16 @@
+[package]
+name = "aegisai-runtime-daemon"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "aegisai-runtime-daemon"
+path = "src/main.rs"
+
+[dependencies]
+aegisai-actuator = { path = "../actuator" }
+ebpf_probe = { path = "../../ebpf/ebpf_probe" }
+runtime_orchestrator = { path = "../runtime_orchestrator" }

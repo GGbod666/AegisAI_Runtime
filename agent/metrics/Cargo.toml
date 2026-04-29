@@ -1,0 +1,9 @@
+[package]
+name = "aegisai-metrics"
+version = "0.1.0"
+edition = "2021"
+description = "Metrics and trace recording for the AegisAI Runtime control loop."
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"

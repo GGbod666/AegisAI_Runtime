@@ -1,0 +1,1739 @@
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fmt;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use ebpf_probe::{
+    AttachPoint, Event as ProbeEvent, EventKind as ProbeEventKind, MetricUnit, ProbeConfig,
+    ProbeKind, ProbeRegistry,
+};
+use runtime_orchestrator::RuntimeConfig;
+use runtime_orchestrator::SignalKind;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceEvent {
+    pub timestamp_ms: u64,
+    pub pid: u32,
+    pub tid: Option<u32>,
+    pub signal: SignalKind,
+    pub value: u64,
+    pub process_name: Option<String>,
+    pub cmdline: Option<String>,
+    pub cgroup: Option<String>,
+    pub tag_markers: BTreeSet<String>,
+    pub parent_pid: Option<u32>,
+    pub parent_process_name: Option<String>,
+    pub parent_cmdline: Option<String>,
+}
+
+impl SourceEvent {
+    pub fn new(timestamp_ms: u64, pid: u32, signal: SignalKind, value: u64) -> Self {
+        Self {
+            timestamp_ms,
+            pid,
+            tid: None,
+            signal,
+            value,
+            process_name: None,
+            cmdline: None,
+            cgroup: None,
+            tag_markers: BTreeSet::new(),
+            parent_pid: None,
+            parent_process_name: None,
+            parent_cmdline: None,
+        }
+    }
+
+    pub fn with_tid(mut self, tid: u32) -> Self {
+        self.tid = Some(tid);
+        self
+    }
+
+    pub fn with_process_name(mut self, process_name: impl Into<String>) -> Self {
+        self.process_name = Some(process_name.into());
+        self
+    }
+
+    pub fn with_cmdline(mut self, cmdline: impl Into<String>) -> Self {
+        self.cmdline = Some(cmdline.into());
+        self
+    }
+
+    pub fn with_cgroup(mut self, cgroup: impl Into<String>) -> Self {
+        self.cgroup = Some(cgroup.into());
+        self
+    }
+
+    pub fn with_parent_pid(mut self, parent_pid: u32) -> Self {
+        self.parent_pid = Some(parent_pid);
+        self
+    }
+
+    pub fn with_parent_process_name(mut self, process_name: impl Into<String>) -> Self {
+        self.parent_process_name = Some(process_name.into());
+        self
+    }
+
+    pub fn with_parent_cmdline(mut self, cmdline: impl Into<String>) -> Self {
+        self.parent_cmdline = Some(cmdline.into());
+        self
+    }
+
+    pub fn with_tag_marker(mut self, tag: impl Into<String>) -> Self {
+        self.tag_markers.insert(tag.into());
+        self
+    }
+
+    pub fn with_tag_markers<I, S>(mut self, tags: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.tag_markers = tags.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn needs_enrichment(&self) -> bool {
+        self.process_name.is_none()
+            || self.cmdline.is_none()
+            || self.cgroup.is_none()
+            || self.parent_pid.is_none()
+            || self.parent_process_name.is_none()
+            || self.parent_cmdline.is_none()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SourceError {
+    Unsupported(String),
+    InvalidConfig(String),
+}
+
+impl fmt::Display for SourceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unsupported(message) => write!(f, "{message}"),
+            Self::InvalidConfig(message) => write!(f, "{message}"),
+        }
+    }
+}
+
+impl std::error::Error for SourceError {}
+
+pub trait EventSource {
+    fn source_name(&self) -> &str;
+
+    fn next_event(&mut self) -> Result<Option<SourceEvent>, SourceError>;
+
+    fn poll_batch(&mut self, max_batch: usize) -> Result<Vec<SourceEvent>, SourceError> {
+        if max_batch == 0 {
+            return Err(SourceError::InvalidConfig(
+                "event source batch size must be greater than 0".to_string(),
+            ));
+        }
+
+        let mut events = Vec::with_capacity(max_batch);
+        while events.len() < max_batch {
+            match self.next_event()? {
+                Some(event) => events.push(event),
+                None => break,
+            }
+        }
+
+        Ok(events)
+    }
+}
+
+pub trait ProbeEventReader {
+    fn reader_name(&self) -> &str;
+
+    fn start(
+        &mut self,
+        plan: &LinuxProbePlan,
+        config: &ProbeReaderConfig,
+    ) -> Result<ProbeReaderStartup, SourceError>;
+
+    fn next_probe_event(&mut self) -> Result<Option<ProbeEvent>, SourceError>;
+
+    fn stop(&mut self) -> Result<ProbeReaderShutdown, SourceError>;
+}
+
+pub trait LinuxProbeDriver {
+    fn driver_name(&self) -> &str;
+
+    fn emits_probe_events(&self) -> bool {
+        true
+    }
+
+    fn no_event_reason(&self) -> Option<String> {
+        None
+    }
+
+    fn attach_probe(
+        &mut self,
+        probe: &PlannedProbe,
+        config: &ProbeReaderConfig,
+    ) -> ProbeAttachmentStatus;
+
+    fn poll_events(
+        &mut self,
+        max_events: usize,
+        timeout_ms: u64,
+    ) -> Result<Vec<ProbeEvent>, SourceError>;
+
+    fn stop(&mut self) -> Result<String, SourceError>;
+}
+
+pub trait LinuxProbeHost {
+    fn host_name(&self) -> &str;
+
+    fn supports_attach_point(&self, attach_point: &AttachPoint) -> Result<(), String>;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProcfsTargetSelectors {
+    process_names: BTreeSet<String>,
+    pid_allowlist: BTreeSet<u32>,
+}
+
+impl ProcfsTargetSelectors {
+    pub fn new<I, S>(process_names: I, pid_allowlist: BTreeSet<u32>) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self {
+            process_names: process_names
+                .into_iter()
+                .map(Into::into)
+                .map(|name: String| name.to_ascii_lowercase())
+                .collect(),
+            pid_allowlist,
+        }
+    }
+
+    pub fn from_runtime(runtime: &RuntimeConfig) -> Self {
+        Self::new(runtime.process_names.clone(), runtime.pid_allowlist.clone())
+    }
+
+    fn matches(&self, pid: u32, comm: &str, cmdline: &str) -> bool {
+        if self.pid_allowlist.contains(&pid) {
+            return true;
+        }
+
+        if self.process_names.is_empty() {
+            return true;
+        }
+
+        let comm = comm.to_ascii_lowercase();
+        let cmdline = cmdline.to_ascii_lowercase();
+        self.process_names
+            .iter()
+            .any(|name| comm == *name || cmdline.contains(name))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcfsSchedstatSnapshot {
+    pub timestamp_ns: u64,
+    pub pid: u32,
+    pub tid: u32,
+    pub comm: String,
+    pub run_queue_delay_ns: u64,
+}
+
+pub trait ProcfsSchedstatSampler {
+    fn sampler_name(&self) -> &str;
+
+    fn sample(
+        &self,
+        selectors: &ProcfsTargetSelectors,
+    ) -> Result<Vec<ProcfsSchedstatSnapshot>, SourceError>;
+}
+
+#[derive(Default)]
+pub struct SystemProcfsSchedstatSampler;
+
+#[cfg(target_os = "linux")]
+impl ProcfsSchedstatSampler for SystemProcfsSchedstatSampler {
+    fn sampler_name(&self) -> &str {
+        "procfs-schedstat"
+    }
+
+    fn sample(
+        &self,
+        selectors: &ProcfsTargetSelectors,
+    ) -> Result<Vec<ProcfsSchedstatSnapshot>, SourceError> {
+        let mut snapshots = Vec::new();
+        let entries = std::fs::read_dir("/proc")
+            .map_err(|error| SourceError::Unsupported(format!("failed to read /proc: {error}")))?;
+
+        for entry in entries.flatten() {
+            let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|value| value.parse::<u32>().ok())
+            else {
+                continue;
+            };
+
+            let root = entry.path();
+            let comm = match std::fs::read_to_string(root.join("comm")) {
+                Ok(value) => value.trim().to_string(),
+                Err(_) => continue,
+            };
+            let cmdline = std::fs::read(root.join("cmdline"))
+                .ok()
+                .map(format_cmdline)
+                .unwrap_or_default();
+
+            if !selectors.matches(pid, &comm, &cmdline) {
+                continue;
+            }
+
+            let schedstat = match std::fs::read_to_string(root.join("schedstat")) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let Some(run_queue_delay_ns) = parse_schedstat_run_delay_ns(&schedstat) else {
+                continue;
+            };
+
+            snapshots.push(ProcfsSchedstatSnapshot {
+                timestamp_ns: now_ns(),
+                pid,
+                tid: pid,
+                comm,
+                run_queue_delay_ns,
+            });
+        }
+
+        Ok(snapshots)
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl ProcfsSchedstatSampler for SystemProcfsSchedstatSampler {
+    fn sampler_name(&self) -> &str {
+        "procfs-unavailable"
+    }
+
+    fn sample(
+        &self,
+        _selectors: &ProcfsTargetSelectors,
+    ) -> Result<Vec<ProcfsSchedstatSnapshot>, SourceError> {
+        Err(SourceError::Unsupported(
+            "procfs schedstat sampling is only available on Linux".to_string(),
+        ))
+    }
+}
+
+pub struct ProcfsSchedstatProbeDriver<S> {
+    sampler: S,
+    selectors: ProcfsTargetSelectors,
+    attached_sched_probe: bool,
+    previous_run_delay_ns: BTreeMap<(u32, u32), u64>,
+}
+
+impl ProcfsSchedstatProbeDriver<SystemProcfsSchedstatSampler> {
+    pub fn from_runtime(runtime: &RuntimeConfig) -> Self {
+        Self::new(
+            ProcfsTargetSelectors::from_runtime(runtime),
+            SystemProcfsSchedstatSampler,
+        )
+    }
+}
+
+impl<S> ProcfsSchedstatProbeDriver<S> {
+    pub fn new(selectors: ProcfsTargetSelectors, sampler: S) -> Self {
+        Self {
+            sampler,
+            selectors,
+            attached_sched_probe: false,
+            previous_run_delay_ns: BTreeMap::new(),
+        }
+    }
+}
+
+impl<S> LinuxProbeDriver for ProcfsSchedstatProbeDriver<S>
+where
+    S: ProcfsSchedstatSampler,
+{
+    fn driver_name(&self) -> &str {
+        "procfs-schedstat-driver"
+    }
+
+    fn attach_probe(
+        &mut self,
+        probe: &PlannedProbe,
+        _config: &ProbeReaderConfig,
+    ) -> ProbeAttachmentStatus {
+        if let Err(error) = probe.config.validate() {
+            return ProbeAttachmentStatus::Failed(error.to_string());
+        }
+
+        if probe.kind == ProbeKind::Sched
+            && probe.required_signals.contains(&SignalKind::RunQueueDelay)
+        {
+            self.attached_sched_probe = true;
+            ProbeAttachmentStatus::Attached
+        } else {
+            ProbeAttachmentStatus::Failed(
+                "procfs schedstat driver only supports run_queue_delay via sched_probe".to_string(),
+            )
+        }
+    }
+
+    fn poll_events(
+        &mut self,
+        max_events: usize,
+        timeout_ms: u64,
+    ) -> Result<Vec<ProbeEvent>, SourceError> {
+        if !self.attached_sched_probe || max_events == 0 {
+            return Ok(Vec::new());
+        }
+
+        let events = self.collect_delta_events(max_events)?;
+        if !events.is_empty() || timeout_ms == 0 {
+            return Ok(events);
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(timeout_ms));
+        self.collect_delta_events(max_events)
+    }
+
+    fn stop(&mut self) -> Result<String, SourceError> {
+        Ok(format!(
+            "procfs schedstat driver stopped after tracking {} target(s) with {}",
+            self.previous_run_delay_ns.len(),
+            self.sampler.sampler_name()
+        ))
+    }
+}
+
+impl<S> ProcfsSchedstatProbeDriver<S>
+where
+    S: ProcfsSchedstatSampler,
+{
+    fn collect_delta_events(&mut self, max_events: usize) -> Result<Vec<ProbeEvent>, SourceError> {
+        let mut events = Vec::new();
+        for snapshot in self.sampler.sample(&self.selectors)? {
+            if events.len() == max_events {
+                break;
+            }
+
+            let key = (snapshot.pid, snapshot.tid);
+            let previous = self
+                .previous_run_delay_ns
+                .insert(key, snapshot.run_queue_delay_ns);
+            let Some(previous_run_delay_ns) = previous else {
+                continue;
+            };
+            let delay_ns = snapshot
+                .run_queue_delay_ns
+                .saturating_sub(previous_run_delay_ns);
+            if delay_ns == 0 {
+                continue;
+            }
+
+            events.push(ProbeEvent::new(
+                snapshot.timestamp_ns,
+                ProbeKind::Sched,
+                ProbeEventKind::RunQueueDelay,
+                ebpf_probe::EventTarget::new(snapshot.pid, snapshot.tid, snapshot.comm),
+                ebpf_probe::EventMetric::duration_ns(delay_ns),
+            ));
+        }
+
+        Ok(events)
+    }
+}
+
+pub struct PreflightLinuxProbeDriver<H> {
+    host: H,
+    attached_probes: usize,
+    failed_probes: usize,
+}
+
+impl<H> PreflightLinuxProbeDriver<H> {
+    pub fn new(host: H) -> Self {
+        Self {
+            host,
+            attached_probes: 0,
+            failed_probes: 0,
+        }
+    }
+}
+
+impl PreflightLinuxProbeDriver<SystemLinuxProbeHost> {
+    pub fn system() -> Self {
+        Self::new(SystemLinuxProbeHost)
+    }
+}
+
+impl<H> LinuxProbeDriver for PreflightLinuxProbeDriver<H>
+where
+    H: LinuxProbeHost,
+{
+    fn driver_name(&self) -> &str {
+        "preflight-probe-driver"
+    }
+
+    fn emits_probe_events(&self) -> bool {
+        false
+    }
+
+    fn no_event_reason(&self) -> Option<String> {
+        Some(format!(
+            "preflight driver audits attach prerequisites on {} but does not load eBPF programs or read ring buffers",
+            self.host.host_name()
+        ))
+    }
+
+    fn attach_probe(
+        &mut self,
+        probe: &PlannedProbe,
+        _config: &ProbeReaderConfig,
+    ) -> ProbeAttachmentStatus {
+        if let Err(error) = probe.config.validate() {
+            self.failed_probes = self.failed_probes.saturating_add(1);
+            return ProbeAttachmentStatus::Failed(error.to_string());
+        }
+
+        for attach_point in &probe.attach_points {
+            if let Err(reason) = self.host.supports_attach_point(attach_point) {
+                self.failed_probes = self.failed_probes.saturating_add(1);
+                return ProbeAttachmentStatus::Failed(reason);
+            }
+        }
+
+        self.attached_probes = self.attached_probes.saturating_add(1);
+        ProbeAttachmentStatus::Attached
+    }
+
+    fn poll_events(
+        &mut self,
+        _max_events: usize,
+        _timeout_ms: u64,
+    ) -> Result<Vec<ProbeEvent>, SourceError> {
+        Ok(Vec::new())
+    }
+
+    fn stop(&mut self) -> Result<String, SourceError> {
+        Ok(format!(
+            "preflight driver stopped on {} after attaching {} probe(s) and rejecting {} probe(s)",
+            self.host.host_name(),
+            self.attached_probes,
+            self.failed_probes
+        ))
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Default)]
+pub struct SystemLinuxProbeHost;
+
+#[cfg(target_os = "linux")]
+impl LinuxProbeHost for SystemLinuxProbeHost {
+    fn host_name(&self) -> &str {
+        "linux"
+    }
+
+    fn supports_attach_point(&self, attach_point: &AttachPoint) -> Result<(), String> {
+        let tracefs = detect_tracefs_root().ok_or_else(|| {
+            "tracefs is not mounted under /sys/kernel/tracing or /sys/kernel/debug/tracing"
+                .to_string()
+        })?;
+
+        match attach_point {
+            AttachPoint::TracePoint { category, name } => {
+                let path = tracefs.join("events").join(category).join(name).join("id");
+                if path.is_file() {
+                    Ok(())
+                } else {
+                    Err(format!("tracepoint {category}/{name} is not available"))
+                }
+            }
+            AttachPoint::KProbe { function } | AttachPoint::KRetProbe { function } => {
+                let kprobe_events = tracefs.join("kprobe_events");
+                if !kprobe_events.exists() {
+                    return Err("kprobe_events is not available under tracefs".to_string());
+                }
+
+                let kallsyms = std::fs::read_to_string("/proc/kallsyms")
+                    .map_err(|error| format!("failed to read /proc/kallsyms: {error}"))?;
+                let exists = kallsyms
+                    .lines()
+                    .filter_map(|line| line.split_whitespace().nth(2))
+                    .any(|symbol| symbol == *function);
+                if exists {
+                    Ok(())
+                } else {
+                    Err(format!("kernel symbol `{function}` is not available"))
+                }
+            }
+            AttachPoint::RawTracePoint { name } => {
+                let path = tracefs.join("events").join(name).join("id");
+                if path.is_file() {
+                    Ok(())
+                } else {
+                    Err(format!("raw tracepoint `{name}` is not available"))
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn detect_tracefs_root() -> Option<std::path::PathBuf> {
+    ["/sys/kernel/tracing", "/sys/kernel/debug/tracing"]
+        .into_iter()
+        .map(std::path::Path::new)
+        .find(|path| path.join("events").is_dir())
+        .map(std::path::Path::to_path_buf)
+}
+
+#[cfg(not(target_os = "linux"))]
+#[derive(Default)]
+pub struct SystemLinuxProbeHost;
+
+#[cfg(not(target_os = "linux"))]
+impl LinuxProbeHost for SystemLinuxProbeHost {
+    fn host_name(&self) -> &str {
+        "non-linux"
+    }
+
+    fn supports_attach_point(&self, _attach_point: &AttachPoint) -> Result<(), String> {
+        Err("linux probe preflight checks are only available on Linux".to_string())
+    }
+}
+
+pub struct DriverBackedProbeEventReader<D> {
+    driver: D,
+    buffered_events: VecDeque<ProbeEvent>,
+    started: bool,
+    max_buffered_events: usize,
+    poll_timeout_ms: u64,
+    emitted_events: u64,
+}
+
+impl<D> DriverBackedProbeEventReader<D> {
+    pub fn new(driver: D) -> Self {
+        Self {
+            driver,
+            buffered_events: VecDeque::new(),
+            started: false,
+            max_buffered_events: 0,
+            poll_timeout_ms: 0,
+            emitted_events: 0,
+        }
+    }
+}
+
+impl<D> ProbeEventReader for DriverBackedProbeEventReader<D>
+where
+    D: LinuxProbeDriver,
+{
+    fn reader_name(&self) -> &str {
+        self.driver.driver_name()
+    }
+
+    fn start(
+        &mut self,
+        plan: &LinuxProbePlan,
+        config: &ProbeReaderConfig,
+    ) -> Result<ProbeReaderStartup, SourceError> {
+        self.started = true;
+        self.max_buffered_events = config.max_buffered_events;
+        self.poll_timeout_ms = config.poll_timeout_ms;
+        let reader_name = self.driver.driver_name().to_string();
+
+        let mut startup = ProbeReaderStartup::from_plan(reader_name, plan, config, |probe| {
+            self.driver.attach_probe(probe, config)
+        });
+        startup.emits_probe_events = self.driver.emits_probe_events();
+        startup.no_event_reason = self.driver.no_event_reason();
+        Ok(startup)
+    }
+
+    fn next_probe_event(&mut self) -> Result<Option<ProbeEvent>, SourceError> {
+        if !self.started {
+            return Err(SourceError::InvalidConfig(
+                "probe reader must be started before polling events".to_string(),
+            ));
+        }
+
+        if self.buffered_events.is_empty() {
+            let events = self
+                .driver
+                .poll_events(self.max_buffered_events, self.poll_timeout_ms)?;
+            self.buffered_events.extend(events);
+        }
+
+        let event = self.buffered_events.pop_front();
+        if event.is_some() {
+            self.emitted_events = self.emitted_events.saturating_add(1);
+        }
+        Ok(event)
+    }
+
+    fn stop(&mut self) -> Result<ProbeReaderShutdown, SourceError> {
+        self.started = false;
+        Ok(ProbeReaderShutdown {
+            reader_name: self.driver.driver_name().to_string(),
+            emitted_events: self.emitted_events,
+            stop_reason: self.driver.stop()?,
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct UnavailableLinuxProbeDriver;
+
+impl LinuxProbeDriver for UnavailableLinuxProbeDriver {
+    fn driver_name(&self) -> &str {
+        "unavailable-probe-driver"
+    }
+
+    fn emits_probe_events(&self) -> bool {
+        false
+    }
+
+    fn no_event_reason(&self) -> Option<String> {
+        Some("probe attach is not available on this host".to_string())
+    }
+
+    fn attach_probe(
+        &mut self,
+        _probe: &PlannedProbe,
+        _config: &ProbeReaderConfig,
+    ) -> ProbeAttachmentStatus {
+        ProbeAttachmentStatus::Failed("probe attach is not available on this host".to_string())
+    }
+
+    fn poll_events(
+        &mut self,
+        _max_events: usize,
+        _timeout_ms: u64,
+    ) -> Result<Vec<ProbeEvent>, SourceError> {
+        Ok(Vec::new())
+    }
+
+    fn stop(&mut self) -> Result<String, SourceError> {
+        Ok("probe driver stopped without attachments".to_string())
+    }
+}
+
+pub struct MockEventSource {
+    name: String,
+    events: VecDeque<SourceEvent>,
+}
+
+impl MockEventSource {
+    pub fn new(name: impl Into<String>, events: Vec<SourceEvent>) -> Self {
+        Self {
+            name: name.into(),
+            events: events.into(),
+        }
+    }
+
+    pub fn demo_sequence() -> Self {
+        Self::new(
+            "mock-demo",
+            vec![
+                SourceEvent::new(1_000, 4_242, SignalKind::RunQueueDelay, 2_500)
+                    .with_process_name("ollama")
+                    .with_cmdline("ollama serve")
+                    .with_cgroup("/aegisai/inference"),
+                SourceEvent::new(1_200, 4_242, SignalKind::OffCpuTime, 3_200)
+                    .with_process_name("ollama")
+                    .with_cmdline("ollama serve")
+                    .with_cgroup("/aegisai/inference"),
+                SourceEvent::new(2_000, 5_151, SignalKind::QueueWait, 2_700)
+                    .with_process_name("python")
+                    .with_cmdline("python tool-executor retrieval-worker")
+                    .with_parent_pid(4_242)
+                    .with_parent_process_name("ollama")
+                    .with_parent_cmdline("ollama serve"),
+            ],
+        )
+    }
+}
+
+impl EventSource for MockEventSource {
+    fn source_name(&self) -> &str {
+        &self.name
+    }
+
+    fn next_event(&mut self) -> Result<Option<SourceEvent>, SourceError> {
+        Ok(self.events.pop_front())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlannedProbe {
+    pub kind: ProbeKind,
+    pub descriptor_name: String,
+    pub required_signals: BTreeSet<SignalKind>,
+    pub attach_points: Vec<AttachPoint>,
+    pub config: ProbeConfig,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LinuxProbePlan {
+    pub probes: Vec<PlannedProbe>,
+    pub runtime_only_signals: BTreeSet<SignalKind>,
+}
+
+impl LinuxProbePlan {
+    pub fn from_runtime(runtime: &RuntimeConfig) -> Result<Self, SourceError> {
+        Self::from_signals(
+            runtime.focus_signals.iter().cloned(),
+            &ProbeRegistry::with_defaults(),
+        )
+    }
+
+    pub fn from_signals<I>(signals: I, registry: &ProbeRegistry) -> Result<Self, SourceError>
+    where
+        I: IntoIterator<Item = SignalKind>,
+    {
+        let mut probes_by_kind = std::collections::BTreeMap::<ProbeKind, PlannedProbe>::new();
+        let mut runtime_only_signals = BTreeSet::new();
+
+        for signal in signals {
+            match signal_to_probe_kind(&signal) {
+                Some(kind) => {
+                    let descriptor = registry.get(kind).ok_or_else(|| {
+                        SourceError::InvalidConfig(format!(
+                            "probe registry is missing descriptor for {}",
+                            kind.as_str()
+                        ))
+                    })?;
+
+                    let entry = probes_by_kind.entry(kind).or_insert_with(|| PlannedProbe {
+                        kind,
+                        descriptor_name: descriptor.name.to_string(),
+                        required_signals: BTreeSet::new(),
+                        attach_points: descriptor.attach_points.clone(),
+                        config: descriptor.default_config.clone(),
+                    });
+                    entry.required_signals.insert(signal);
+                }
+                None => {
+                    runtime_only_signals.insert(signal);
+                }
+            }
+        }
+
+        Ok(Self {
+            probes: probes_by_kind.into_values().collect(),
+            runtime_only_signals,
+        })
+    }
+
+    pub fn probe_names(&self) -> Vec<&str> {
+        self.probes
+            .iter()
+            .map(|probe| probe.descriptor_name.as_str())
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProbeReaderConfig {
+    pub require_all_probes: bool,
+    pub max_buffered_events: usize,
+    pub poll_timeout_ms: u64,
+}
+
+impl Default for ProbeReaderConfig {
+    fn default() -> Self {
+        Self {
+            require_all_probes: true,
+            max_buffered_events: 4_096,
+            poll_timeout_ms: 100,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProbeAttachmentStatus {
+    Attached,
+    Failed(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProbeAttachment {
+    pub kind: ProbeKind,
+    pub descriptor_name: String,
+    pub required_signals: BTreeSet<SignalKind>,
+    pub status: ProbeAttachmentStatus,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProbeReaderStartup {
+    pub reader_name: String,
+    pub config: ProbeReaderConfig,
+    pub attachments: Vec<ProbeAttachment>,
+    pub runtime_only_signals: BTreeSet<SignalKind>,
+    pub emits_probe_events: bool,
+    pub no_event_reason: Option<String>,
+}
+
+impl ProbeReaderStartup {
+    fn from_plan<F>(
+        reader_name: impl Into<String>,
+        plan: &LinuxProbePlan,
+        config: &ProbeReaderConfig,
+        mut status_for_probe: F,
+    ) -> Self
+    where
+        F: FnMut(&PlannedProbe) -> ProbeAttachmentStatus,
+    {
+        Self {
+            reader_name: reader_name.into(),
+            config: config.clone(),
+            attachments: plan
+                .probes
+                .iter()
+                .map(|probe| ProbeAttachment {
+                    kind: probe.kind,
+                    descriptor_name: probe.descriptor_name.clone(),
+                    required_signals: probe.required_signals.clone(),
+                    status: status_for_probe(probe),
+                })
+                .collect(),
+            runtime_only_signals: plan.runtime_only_signals.clone(),
+            emits_probe_events: true,
+            no_event_reason: None,
+        }
+    }
+
+    fn failed_required_probes(&self) -> Vec<String> {
+        self.attachments
+            .iter()
+            .filter_map(|attachment| match &attachment.status {
+                ProbeAttachmentStatus::Attached => None,
+                ProbeAttachmentStatus::Failed(reason) => Some(format!(
+                    "{}({}): {reason}",
+                    attachment.descriptor_name,
+                    attachment.kind.as_str()
+                )),
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProbeReaderShutdown {
+    pub reader_name: String,
+    pub emitted_events: u64,
+    pub stop_reason: String,
+}
+
+pub struct LinuxProbeSource {
+    plan: LinuxProbePlan,
+    reader_config: ProbeReaderConfig,
+    reader: Box<dyn ProbeEventReader>,
+    startup: Option<ProbeReaderStartup>,
+    shutdown: Option<ProbeReaderShutdown>,
+}
+
+impl LinuxProbeSource {
+    pub fn new(plan: LinuxProbePlan) -> Self {
+        Self::with_reader_and_config(
+            plan,
+            UnsupportedProbeEventReader,
+            ProbeReaderConfig::default(),
+        )
+    }
+
+    pub fn with_reader<R>(plan: LinuxProbePlan, reader: R) -> Self
+    where
+        R: ProbeEventReader + 'static,
+    {
+        Self::with_reader_and_config(plan, reader, ProbeReaderConfig::default())
+    }
+
+    pub fn with_reader_and_config<R>(
+        plan: LinuxProbePlan,
+        reader: R,
+        reader_config: ProbeReaderConfig,
+    ) -> Self
+    where
+        R: ProbeEventReader + 'static,
+    {
+        Self {
+            plan,
+            reader_config,
+            reader: Box::new(reader),
+            startup: None,
+            shutdown: None,
+        }
+    }
+
+    pub fn from_runtime(runtime: &RuntimeConfig) -> Result<Self, SourceError> {
+        Self::from_runtime_with_config(runtime, ProbeReaderConfig::default())
+    }
+
+    pub fn from_runtime_with_config(
+        runtime: &RuntimeConfig,
+        reader_config: ProbeReaderConfig,
+    ) -> Result<Self, SourceError> {
+        Ok(Self::with_reader_and_config(
+            LinuxProbePlan::from_runtime(runtime)?,
+            DriverBackedProbeEventReader::new(ProcfsSchedstatProbeDriver::from_runtime(runtime)),
+            reader_config,
+        ))
+    }
+
+    pub fn preflight_from_runtime_with_config(
+        runtime: &RuntimeConfig,
+        reader_config: ProbeReaderConfig,
+    ) -> Result<Self, SourceError> {
+        Ok(Self::with_reader_and_config(
+            LinuxProbePlan::from_runtime(runtime)?,
+            DriverBackedProbeEventReader::new(PreflightLinuxProbeDriver::system()),
+            reader_config,
+        ))
+    }
+
+    pub fn plan(&self) -> &LinuxProbePlan {
+        &self.plan
+    }
+
+    pub fn reader_config(&self) -> &ProbeReaderConfig {
+        &self.reader_config
+    }
+
+    pub fn startup(&self) -> Option<&ProbeReaderStartup> {
+        self.startup.as_ref()
+    }
+
+    pub fn shutdown(&self) -> Option<&ProbeReaderShutdown> {
+        self.shutdown.as_ref()
+    }
+
+    pub fn stop(&mut self) -> Result<&ProbeReaderShutdown, SourceError> {
+        if self.shutdown.is_none() {
+            let shutdown = self.reader.stop()?;
+            self.shutdown = Some(shutdown);
+        }
+
+        Ok(self.shutdown.as_ref().expect("shutdown was just recorded"))
+    }
+
+    fn ensure_started(&mut self) -> Result<(), SourceError> {
+        if self.startup.is_some() {
+            return Ok(());
+        }
+
+        if self.reader_config.max_buffered_events == 0 {
+            return Err(SourceError::InvalidConfig(
+                "probe reader max_buffered_events must be greater than 0".to_string(),
+            ));
+        }
+
+        let startup = self.reader.start(&self.plan, &self.reader_config)?;
+        let failed_required = startup.failed_required_probes();
+        if self.reader_config.require_all_probes && !failed_required.is_empty() {
+            return Err(SourceError::Unsupported(format!(
+                "linux probe reader `{}` could not attach required probes: {}; planned probes: [{}]; runtime-only signals: [{}]",
+                startup.reader_name,
+                failed_required.join(", "),
+                self.plan.probe_names().join(", "),
+                self.plan
+                    .runtime_only_signals
+                    .iter()
+                    .map(SignalKind::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+
+        self.startup = Some(startup);
+        Ok(())
+    }
+}
+
+impl EventSource for LinuxProbeSource {
+    fn source_name(&self) -> &str {
+        "linux-probe"
+    }
+
+    fn next_event(&mut self) -> Result<Option<SourceEvent>, SourceError> {
+        self.ensure_started()?;
+
+        loop {
+            match self.reader.next_probe_event() {
+                Ok(Some(event)) => {
+                    if let Some(source_event) = adapt_probe_event(event)? {
+                        return Ok(Some(source_event));
+                    }
+                }
+                Ok(None) => return Ok(None),
+                Err(SourceError::Unsupported(message)) => {
+                    return Err(SourceError::Unsupported(message))
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
+fn signal_to_probe_kind(signal: &SignalKind) -> Option<ProbeKind> {
+    match signal {
+        SignalKind::RunQueueDelay | SignalKind::CpuMigration => Some(ProbeKind::Sched),
+        SignalKind::OffCpuTime => Some(ProbeKind::OffCpu),
+        SignalKind::MajorPageFault => Some(ProbeKind::Fault),
+        SignalKind::IoLatency => Some(ProbeKind::Io),
+        SignalKind::SubprocessStartDelay | SignalKind::QueueWait | SignalKind::Unknown(_) => None,
+    }
+}
+
+#[derive(Default)]
+pub struct UnsupportedProbeEventReader;
+
+impl ProbeEventReader for UnsupportedProbeEventReader {
+    fn reader_name(&self) -> &str {
+        "unsupported"
+    }
+
+    fn start(
+        &mut self,
+        plan: &LinuxProbePlan,
+        config: &ProbeReaderConfig,
+    ) -> Result<ProbeReaderStartup, SourceError> {
+        let mut startup = ProbeReaderStartup::from_plan(self.reader_name(), plan, config, |_| {
+            ProbeAttachmentStatus::Failed("reader is not wired yet on this host".to_string())
+        });
+        startup.emits_probe_events = false;
+        startup.no_event_reason = Some(
+            "unsupported reader is a planning placeholder and emits no probe events".to_string(),
+        );
+        Ok(startup)
+    }
+
+    fn next_probe_event(&mut self) -> Result<Option<ProbeEvent>, SourceError> {
+        Ok(None)
+    }
+
+    fn stop(&mut self) -> Result<ProbeReaderShutdown, SourceError> {
+        Ok(ProbeReaderShutdown {
+            reader_name: self.reader_name().to_string(),
+            emitted_events: 0,
+            stop_reason: "unsupported reader never started".to_string(),
+        })
+    }
+}
+
+pub struct StaticProbeEventReader {
+    events: VecDeque<ProbeEvent>,
+    started: bool,
+    emitted_events: u64,
+}
+
+impl StaticProbeEventReader {
+    pub fn new(events: Vec<ProbeEvent>) -> Self {
+        Self {
+            events: events.into(),
+            started: false,
+            emitted_events: 0,
+        }
+    }
+}
+
+impl ProbeEventReader for StaticProbeEventReader {
+    fn reader_name(&self) -> &str {
+        "static"
+    }
+
+    fn start(
+        &mut self,
+        plan: &LinuxProbePlan,
+        config: &ProbeReaderConfig,
+    ) -> Result<ProbeReaderStartup, SourceError> {
+        self.started = true;
+        Ok(ProbeReaderStartup::from_plan(
+            self.reader_name(),
+            plan,
+            config,
+            |_| ProbeAttachmentStatus::Attached,
+        ))
+    }
+
+    fn next_probe_event(&mut self) -> Result<Option<ProbeEvent>, SourceError> {
+        if !self.started {
+            return Err(SourceError::InvalidConfig(
+                "probe reader must be started before polling events".to_string(),
+            ));
+        }
+
+        let event = self.events.pop_front();
+        if event.is_some() {
+            self.emitted_events = self.emitted_events.saturating_add(1);
+        }
+        Ok(event)
+    }
+
+    fn stop(&mut self) -> Result<ProbeReaderShutdown, SourceError> {
+        self.started = false;
+        Ok(ProbeReaderShutdown {
+            reader_name: self.reader_name().to_string(),
+            emitted_events: self.emitted_events,
+            stop_reason: "reader drained".to_string(),
+        })
+    }
+}
+
+fn adapt_probe_event(event: ProbeEvent) -> Result<Option<SourceEvent>, SourceError> {
+    let signal = match event.kind {
+        ProbeEventKind::RunQueueDelay => SignalKind::RunQueueDelay,
+        ProbeEventKind::CpuMigration => SignalKind::CpuMigration,
+        ProbeEventKind::OffCpuDuration => SignalKind::OffCpuTime,
+        ProbeEventKind::MajorPageFault => SignalKind::MajorPageFault,
+        ProbeEventKind::BlockIoLatency => SignalKind::IoLatency,
+        ProbeEventKind::ContextSwitch
+        | ProbeEventKind::MinorPageFault
+        | ProbeEventKind::IoBytes => return Ok(None),
+    };
+
+    let value = normalize_probe_metric(signal.as_str(), event.metric.unit, event.metric.value)?;
+    let mut source_event = SourceEvent::new(
+        ns_to_ms_ceil(event.timestamp_ns),
+        event.target.pid,
+        signal,
+        value,
+    )
+    .with_tid(event.target.tid)
+    .with_process_name(event.target.comm);
+
+    if let Some(cgroup_id) = event.target.cgroup_id {
+        source_event = source_event.with_cgroup(format!("cgroup:{cgroup_id}"));
+    }
+
+    Ok(Some(source_event))
+}
+
+fn normalize_probe_metric(
+    signal_name: &str,
+    unit: MetricUnit,
+    value: u64,
+) -> Result<u64, SourceError> {
+    let normalized = match unit {
+        MetricUnit::DurationNs => ns_to_us_ceil(value),
+        MetricUnit::Count | MetricUnit::Pages | MetricUnit::Bytes => value,
+    };
+
+    if matches!(unit, MetricUnit::Bytes) && signal_name != SignalKind::IoLatency.as_str() {
+        return Err(SourceError::InvalidConfig(format!(
+            "unexpected byte metric for signal `{signal_name}`"
+        )));
+    }
+
+    Ok(normalized)
+}
+
+fn ns_to_ms_ceil(value: u64) -> u64 {
+    value.saturating_add(999_999) / 1_000_000
+}
+
+fn ns_to_us_ceil(value: u64) -> u64 {
+    value.saturating_add(999) / 1_000
+}
+
+fn parse_schedstat_run_delay_ns(raw: &str) -> Option<u64> {
+    raw.split_whitespace().nth(1)?.parse::<u64>().ok()
+}
+
+fn format_cmdline(bytes: Vec<u8>) -> String {
+    bytes
+        .split(|byte| *byte == 0)
+        .filter(|item| !item.is_empty())
+        .map(|item| String::from_utf8_lossy(item).to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn now_ns() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(1)
+        .max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::collections::BTreeSet;
+    use std::collections::VecDeque;
+
+    use ebpf_probe::{AttachPoint, EventMetric, EventTarget, ProbeKind};
+
+    use super::{
+        DriverBackedProbeEventReader, EventSource, LinuxProbeDriver, LinuxProbeHost,
+        LinuxProbePlan, LinuxProbeSource, MockEventSource, PreflightLinuxProbeDriver,
+        ProbeAttachmentStatus, ProbeReaderConfig, ProcfsSchedstatProbeDriver,
+        ProcfsSchedstatSampler, ProcfsSchedstatSnapshot, ProcfsTargetSelectors, SignalKind,
+        SourceError, SourceEvent, StaticProbeEventReader,
+    };
+
+    struct FakeLinuxProbeDriver {
+        events: VecDeque<ebpf_probe::Event>,
+        attached: Vec<String>,
+        stopped: bool,
+    }
+
+    impl FakeLinuxProbeDriver {
+        fn new(events: Vec<ebpf_probe::Event>) -> Self {
+            Self {
+                events: events.into(),
+                attached: Vec::new(),
+                stopped: false,
+            }
+        }
+    }
+
+    impl LinuxProbeDriver for FakeLinuxProbeDriver {
+        fn driver_name(&self) -> &str {
+            "fake-probe-driver"
+        }
+
+        fn attach_probe(
+            &mut self,
+            probe: &super::PlannedProbe,
+            _config: &ProbeReaderConfig,
+        ) -> ProbeAttachmentStatus {
+            self.attached.push(probe.descriptor_name.clone());
+            ProbeAttachmentStatus::Attached
+        }
+
+        fn poll_events(
+            &mut self,
+            max_events: usize,
+            _timeout_ms: u64,
+        ) -> Result<Vec<ebpf_probe::Event>, SourceError> {
+            let mut batch = Vec::new();
+            while batch.len() < max_events {
+                let Some(event) = self.events.pop_front() else {
+                    break;
+                };
+                batch.push(event);
+            }
+
+            Ok(batch)
+        }
+
+        fn stop(&mut self) -> Result<String, SourceError> {
+            self.stopped = true;
+            Ok("driver stopped".to_string())
+        }
+    }
+
+    struct FakeProcfsSchedstatSampler {
+        samples: RefCell<VecDeque<Vec<ProcfsSchedstatSnapshot>>>,
+    }
+
+    impl FakeProcfsSchedstatSampler {
+        fn new(samples: Vec<Vec<ProcfsSchedstatSnapshot>>) -> Self {
+            Self {
+                samples: RefCell::new(samples.into()),
+            }
+        }
+    }
+
+    impl ProcfsSchedstatSampler for FakeProcfsSchedstatSampler {
+        fn sampler_name(&self) -> &str {
+            "fake-procfs-schedstat"
+        }
+
+        fn sample(
+            &self,
+            _selectors: &ProcfsTargetSelectors,
+        ) -> Result<Vec<ProcfsSchedstatSnapshot>, SourceError> {
+            Ok(self.samples.borrow_mut().pop_front().unwrap_or_default())
+        }
+    }
+
+    struct FakeLinuxProbeHost {
+        supported: BTreeSet<String>,
+    }
+
+    impl FakeLinuxProbeHost {
+        fn new<I, S>(supported: I) -> Self
+        where
+            I: IntoIterator<Item = S>,
+            S: Into<String>,
+        {
+            Self {
+                supported: supported.into_iter().map(Into::into).collect(),
+            }
+        }
+    }
+
+    impl LinuxProbeHost for FakeLinuxProbeHost {
+        fn host_name(&self) -> &str {
+            "fake-linux-host"
+        }
+
+        fn supports_attach_point(&self, attach_point: &AttachPoint) -> Result<(), String> {
+            let key = match attach_point {
+                AttachPoint::TracePoint { category, name } => {
+                    format!("tracepoint:{category}/{name}")
+                }
+                AttachPoint::KProbe { function } => format!("kprobe:{function}"),
+                AttachPoint::KRetProbe { function } => format!("kretprobe:{function}"),
+                AttachPoint::RawTracePoint { name } => format!("raw_tracepoint:{name}"),
+            };
+
+            if self.supported.contains(&key) {
+                Ok(())
+            } else {
+                Err(format!("missing {key}"))
+            }
+        }
+    }
+
+    #[test]
+    fn poll_batch_collects_up_to_requested_events() {
+        let mut source = MockEventSource::new(
+            "batch-test",
+            vec![
+                SourceEvent::new(1, 1, SignalKind::RunQueueDelay, 10),
+                SourceEvent::new(2, 1, SignalKind::OffCpuTime, 20),
+                SourceEvent::new(3, 1, SignalKind::MajorPageFault, 1),
+            ],
+        );
+
+        let batch = source.poll_batch(2).expect("batch should succeed");
+        assert_eq!(batch.len(), 2);
+
+        let remaining = source.poll_batch(2).expect("batch should succeed");
+        assert_eq!(remaining.len(), 1);
+    }
+
+    #[test]
+    fn zero_batch_size_is_rejected() {
+        let mut source = MockEventSource::new("batch-test", Vec::new());
+        assert!(matches!(
+            source.poll_batch(0),
+            Err(SourceError::InvalidConfig(_))
+        ));
+    }
+
+    #[test]
+    fn linux_probe_plan_maps_focus_signals_to_required_probe_set() {
+        let plan = LinuxProbePlan::from_signals(
+            [
+                SignalKind::RunQueueDelay,
+                SignalKind::OffCpuTime,
+                SignalKind::CpuMigration,
+                SignalKind::MajorPageFault,
+                SignalKind::QueueWait,
+            ],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+
+        assert_eq!(plan.probes.len(), 3);
+        assert!(plan
+            .probes
+            .iter()
+            .any(|probe| probe.kind == ProbeKind::Sched));
+        assert!(plan
+            .probes
+            .iter()
+            .any(|probe| probe.kind == ProbeKind::OffCpu));
+        assert!(plan
+            .probes
+            .iter()
+            .any(|probe| probe.kind == ProbeKind::Fault));
+        assert!(plan.runtime_only_signals.contains(&SignalKind::QueueWait));
+    }
+
+    #[test]
+    fn probe_event_adapter_maps_sched_delay_to_source_event() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let event = ebpf_probe::Event::new(
+            2_400_000,
+            ProbeKind::Sched,
+            ebpf_probe::EventKind::RunQueueDelay,
+            EventTarget::new(77, 78, "ollama"),
+            EventMetric::duration_ns(2_500_000),
+        );
+        let mut source =
+            LinuxProbeSource::with_reader(plan, StaticProbeEventReader::new(vec![event]));
+
+        let adapted = source
+            .next_event()
+            .expect("adapter should succeed")
+            .expect("one event should be produced");
+
+        assert_eq!(adapted.timestamp_ms, 3);
+        assert_eq!(adapted.value, 2_500);
+        assert_eq!(adapted.process_name.as_deref(), Some("ollama"));
+        assert_eq!(adapted.tid, Some(78));
+    }
+
+    #[test]
+    fn linux_probe_source_starts_reader_and_records_startup_state() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay, SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let event = ebpf_probe::Event::new(
+            1_000_000,
+            ProbeKind::Sched,
+            ebpf_probe::EventKind::RunQueueDelay,
+            EventTarget::new(77, 78, "ollama"),
+            EventMetric::duration_ns(2_000_000),
+        );
+        let mut source =
+            LinuxProbeSource::with_reader(plan, StaticProbeEventReader::new(vec![event]));
+
+        let _ = source
+            .next_event()
+            .expect("reader should start and adapt the first event");
+
+        let startup = source.startup().expect("startup state should be recorded");
+        assert_eq!(startup.reader_name, "static");
+        assert_eq!(startup.attachments.len(), 2);
+        assert!(startup
+            .attachments
+            .iter()
+            .all(|attachment| attachment.status == ProbeAttachmentStatus::Attached));
+
+        let shutdown = source.stop().expect("reader shutdown should succeed");
+        assert_eq!(shutdown.reader_name, "static");
+        assert_eq!(shutdown.emitted_events, 1);
+    }
+
+    #[test]
+    fn unsupported_probe_reader_reports_failed_required_probes() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let mut source = LinuxProbeSource::new(plan);
+
+        let error = source
+            .next_event()
+            .expect_err("unsupported reader should fail during startup");
+
+        assert!(matches!(error, SourceError::Unsupported(_)));
+        let message = error.to_string();
+        assert!(message.contains("could not attach required probes"));
+        assert!(message.contains("sched_probe"));
+    }
+
+    #[test]
+    fn zero_buffered_probe_config_is_rejected_before_reader_start() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            StaticProbeEventReader::new(Vec::new()),
+            ProbeReaderConfig {
+                max_buffered_events: 0,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        let error = source
+            .next_event()
+            .expect_err("zero buffered events should be rejected");
+
+        assert!(matches!(error, SourceError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn driver_backed_reader_attaches_polls_and_stops() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay, SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let event = ebpf_probe::Event::new(
+            2_000_000,
+            ProbeKind::Sched,
+            ebpf_probe::EventKind::RunQueueDelay,
+            EventTarget::new(700, 701, "ollama"),
+            EventMetric::duration_ns(1_800_000),
+        );
+        let reader = DriverBackedProbeEventReader::new(FakeLinuxProbeDriver::new(vec![event]));
+        let mut source = LinuxProbeSource::with_reader(plan, reader);
+
+        let adapted = source
+            .next_event()
+            .expect("driver-backed reader should start and poll")
+            .expect("event should be produced");
+        assert_eq!(adapted.pid, 700);
+        assert_eq!(adapted.value, 1_800);
+
+        let startup = source.startup().expect("startup should exist");
+        assert_eq!(startup.reader_name, "fake-probe-driver");
+        assert_eq!(startup.attachments.len(), 2);
+        assert!(startup.emits_probe_events);
+        assert_eq!(startup.no_event_reason, None);
+
+        let shutdown = source.stop().expect("shutdown should succeed");
+        assert_eq!(shutdown.stop_reason, "driver stopped");
+        assert_eq!(shutdown.emitted_events, 1);
+    }
+
+    #[test]
+    fn procfs_schedstat_driver_emits_run_queue_delay_events() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay, SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let sampler = FakeProcfsSchedstatSampler::new(vec![
+            vec![ProcfsSchedstatSnapshot {
+                timestamp_ns: 1_000_000,
+                pid: 700,
+                tid: 700,
+                comm: "ollama".to_string(),
+                run_queue_delay_ns: 2_000_000,
+            }],
+            vec![ProcfsSchedstatSnapshot {
+                timestamp_ns: 2_000_000,
+                pid: 700,
+                tid: 700,
+                comm: "ollama".to_string(),
+                run_queue_delay_ns: 2_500_000,
+            }],
+        ]);
+        let driver = ProcfsSchedstatProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            sampler,
+        );
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                require_all_probes: false,
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        let first = source
+            .next_event()
+            .expect("procfs driver should poll")
+            .expect("second schedstat sample should produce a delta event");
+        assert_eq!(first.pid, 700);
+        assert_eq!(first.signal, SignalKind::RunQueueDelay);
+        assert_eq!(first.value, 500);
+        assert_eq!(first.process_name.as_deref(), Some("ollama"));
+
+        let startup = source.startup().expect("startup should exist");
+        assert_eq!(startup.reader_name, "procfs-schedstat-driver");
+        assert!(startup
+            .attachments
+            .iter()
+            .any(|attachment| attachment.kind == ProbeKind::Sched
+                && attachment.status == ProbeAttachmentStatus::Attached));
+        assert!(startup
+            .attachments
+            .iter()
+            .any(|attachment| attachment.kind == ProbeKind::OffCpu
+                && matches!(attachment.status, ProbeAttachmentStatus::Failed(_))));
+        assert!(startup.emits_probe_events);
+
+        assert!(source
+            .next_event()
+            .expect("procfs driver should poll again")
+            .is_none());
+    }
+
+    #[test]
+    fn procfs_target_selectors_match_process_names_and_pid_allowlist() {
+        let selectors = ProcfsTargetSelectors::new(["ollama"], [42].into_iter().collect());
+
+        assert!(selectors.matches(7, "ollama", ""));
+        assert!(selectors.matches(8, "python", "python launch_ollama_worker.py"));
+        assert!(selectors.matches(42, "python", "python unrelated.py"));
+        assert!(!selectors.matches(9, "python", "python unrelated.py"));
+    }
+
+    #[test]
+    fn schedstat_and_cmdline_parsers_handle_procfs_shapes() {
+        assert_eq!(
+            super::parse_schedstat_run_delay_ns("100 2500 3\n"),
+            Some(2500)
+        );
+        assert_eq!(
+            super::format_cmdline(b"ollama\0serve\0".to_vec()),
+            "ollama serve"
+        );
+    }
+
+    #[test]
+    fn preflight_driver_marks_probe_attached_when_host_supports_all_attach_points() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay, SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let host = FakeLinuxProbeHost::new([
+            "tracepoint:sched/sched_wakeup",
+            "tracepoint:sched/sched_switch",
+            "tracepoint:sched/sched_migrate_task",
+        ]);
+        let reader = DriverBackedProbeEventReader::new(PreflightLinuxProbeDriver::new(host));
+        let mut source = LinuxProbeSource::with_reader(plan, reader);
+
+        let event = source
+            .next_event()
+            .expect("preflight reader should start")
+            .is_none();
+        assert!(event);
+
+        let startup = source.startup().expect("startup should exist");
+        assert!(startup
+            .attachments
+            .iter()
+            .all(|attachment| attachment.status == ProbeAttachmentStatus::Attached));
+        assert!(!startup.emits_probe_events);
+        assert!(startup
+            .no_event_reason
+            .as_deref()
+            .expect("preflight should explain no-event behavior")
+            .contains("does not load eBPF programs or read ring buffers"));
+
+        let shutdown = source.stop().expect("shutdown should succeed");
+        assert!(shutdown
+            .stop_reason
+            .contains("attaching 2 probe(s) and rejecting 0 probe(s)"));
+    }
+
+    #[test]
+    fn preflight_driver_rejects_missing_kprobe_symbol() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::MajorPageFault],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let host = FakeLinuxProbeHost::new(Vec::<String>::new());
+        let reader = DriverBackedProbeEventReader::new(PreflightLinuxProbeDriver::new(host));
+        let mut source = LinuxProbeSource::with_reader(plan, reader);
+
+        let error = source
+            .next_event()
+            .expect_err("missing kprobe symbol should fail startup");
+
+        assert!(matches!(error, SourceError::Unsupported(_)));
+        assert!(error.to_string().contains("missing kprobe:handle_mm_fault"));
+    }
+}

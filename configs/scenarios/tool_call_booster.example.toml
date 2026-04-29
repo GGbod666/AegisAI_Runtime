@@ -1,0 +1,15 @@
+[policy]
+active_scenarios = ["tool_call_booster"]
+evaluation_window_ms = 300
+cooldown_ms = 800
+max_boost_duration_ms = 1200
+
+[triggers.tool_call_booster]
+subprocess_start_delay_us = 1500
+queue_wait_us = 2000
+optional_io_latency_us = 4000
+
+[actions.tool_call_booster]
+raise_nice = -3
+pin_strategy = "prefer_low_contention_cores"
+warmup_executor = true

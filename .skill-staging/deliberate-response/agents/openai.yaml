@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deliberate Response"
+  short_description: "Adaptive deep analysis for careful final answers."
+  default_prompt: "Use this skill when the user wants especially thorough analysis, careful planning, or a custom reasoning protocol before answering."
