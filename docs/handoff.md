@@ -1,167 +1,163 @@
-﻿# Handoff
+# Handoff
 
 ## Current State
 
-The project has moved from architecture-only skeleton work into runnable pre-integration infrastructure.
+As of `2026-04-29`, the project is no longer at the pre-Ollama gate.
 
-The current Windows-side development baseline is:
+The current Linux-side baseline is:
 
-- unified runtime contracts are in place
-- orchestrator mainline is wired
-- `runtime_daemon` exists and runs with mock sources
-- actuator backends are split from lifecycle control
-- Linux probe planning exists
-- Linux probe reading is now split into `LinuxProbeDriver -> DriverBackedProbeEventReader`
-- Linux probe preflight now validates tracefs / tracepoint / kprobe prerequisites before real loading
-- Linux syscall execution is now split into `LinuxProcessStateProvider + LinuxSyscallApplier + LinuxSyscallExecutor`
-- a Linux-only `linux-command` daemon backend is now available for command-backed preflight validation
-- `git_control` now provides repository discovery, dirty-state snapshots, and checkpoint naming plans
+- the shared runtime mainline is wired:
+  `collector -> classifier -> policy_engine -> actuator -> metrics`
+- `runtime_daemon` runs with:
+  - `mock` source for deterministic local validation
+  - `linux` source backed by the procfs schedstat driver for real `run_queue_delay` observation
+  - `procfs` metadata enrichment for process name, cmdline, cgroup, and parent fields
+- `inference_tail_guard` has been observed on a real `ollama` request using the local `qwen2.5:0.5b` model
+- the bench layer now has:
+  - pre-Ollama readiness gate
+  - first real `ollama` smoke harness
+  - append-only verification logging in `docs/verification_log.md`
+- a safe command-path preview mode now exists:
+  `linux-command-dry-run`
 
-## What Is Done
+## What Is Verified
 
-### 1. Unified control-loop mainline
+### 1. Preflight gate
 
-The shared mainline is active:
+The project already has a safe pre-Ollama gate:
 
-`collector -> classifier -> policy_engine -> actuator -> metrics`
-
-The orchestrator composes the real crates instead of private shadow implementations.
-
-### 2. Runnable daemon entrypoint
-
-`agent/runtime_daemon/` now provides:
-
-- CLI entrypoint
-- `EventSource` abstraction
-- `MetadataProvider` abstraction
-- `RuntimeLoop`
-- mock development path for Windows
-- lazy `ProbeEventReader` startup and shutdown tracking
-- reader config scaffolding for partial attach policy and ring-buffer sizing
-- `LinuxProbeDriver` as the attach / poll / stop seam for real probe ingestion
-- `DriverBackedProbeEventReader` as the managed reader wrapper for future Linux probe wiring
-- `PreflightLinuxProbeDriver` for Linux-side attach-point validation before real eBPF loading
-
-Current runnable command:
-
-```powershell
-cargo run -p aegisai-runtime-daemon -- --repo-root . --source mock --metadata demo --actuator-backend noop
+```bash
+bash bench/scripts/inference_tail_guard_preflight.sh
 ```
 
-### 3. Actuator backend split
+This confirms:
 
-`agent/actuator/` now has:
+- procfs / cgroup / cpuset visibility
+- mock/noop daemon path health
+- optional tool inventory for `ollama`, `llama.cpp`, `stress-ng`, and `taskset`
 
-- `Actuator` for lease tracking and rollback
-- `NoopActuatorBackend`
-- `RecordingActuatorBackend`
-- `LinuxActuatorBackend`
-- `LinuxSyscallExecutor` interface
-- `LinuxSyscallApplier`
-- `CommandLinuxSyscallApplier`
-- `PlannedOnlyLinuxSyscallExecutor`
-- `LinuxProcessStateProvider`
-- `ProcfsLinuxProcessStateProvider`
-- `LinuxCapturedState`
-- `LinuxRollbackReport`
+### 2. Real runtime observation
 
-This means Linux syscall work can be added later without changing orchestrator wiring.
+The current real-runtime smoke entrypoint is:
 
-### 4. Git state helper
+```bash
+bash bench/scripts/inference_tail_guard_ollama_smoke.sh
+```
 
-`agent/git_control/` now provides:
+Default behavior:
 
-- repository root discovery
-- branch / HEAD / ahead-behind / dirty-state snapshots
-- normalized checkpoint naming plans for future experiment checkpoints
-- a small CLI for `status` and `checkpoint --label ...`
+- target runtime: `ollama`
+- default model: `qwen2.5:0.5b`
+- optional interference: `stress-ng --cpu 2 --timeout 12s`
+- observation backend: `noop`
 
-### 4. Linux probe planning
+Most recent strong signal:
 
-`LinuxProbeSource` now supports:
+- verification log entry:
+  `2026-04-29T13:51:10+00:00 - Inference Tail Guard Ollama smoke`
+- result:
+  - `processed_events: 6`
+  - `inference_tail_guard: 5`
+  - `Overall result: PASS`
 
-- `focus_signals -> planned probes` mapping
-- separation of kernel-probe signals vs runtime-only signals
-- `ProbeEventReader` interface
-- `StaticProbeEventReader` for adapter tests
-- probe-event to source-event adaptation
+This proves:
 
-Current `linux` source mode is intentionally a planning skeleton, not a real reader.
+- a real `ollama` request can be observed through the Linux procfs source
+- the classifier/runtime selection matches the real target process
+- the policy can trigger on a real model request under controlled CPU pressure
 
-## Verification Status
+### 3. Safe command-path preview
 
-The following pass at the end of today:
+The daemon now supports:
 
-- `cargo check`
-- `cargo test`
-- `cargo clippy --all-targets --all-features -- -D warnings`
-- `cargo fmt --all -- --check`
+- `noop`
+- `linux-skeleton`
+- `linux-command`
+- `linux-command-dry-run`
 
-Current test count:
+`linux-command-dry-run` is the next safe checkpoint because it:
 
-- `81` tests passing
+- captures real process state from `/proc`
+- computes the same bounded actions as the real command backend
+- records dry-run `renice` / `taskset` audit details
+- does **not** apply those commands to the live process
 
-Known environment warning:
+Latest dry-run checkpoint:
 
-- Rust tooling prints `could not canonicalize path C:\Users\Administrator`
-- this has not blocked build or test execution
+- verification log entry:
+  `2026-04-29T14:18:59+00:00 - Inference Tail Guard Ollama smoke`
+- result:
+  - `actuator_backend: linux-command-dry-run`
+  - `inference_tail_guard: 1`
+  - dry-run audit highlights were emitted for both apply and rollback paths
+  - cpuset rollback noise is no longer emitted when policy keeps `use_cpuset = false`
+  - `Overall result: PASS`
 
-## Windows vs Linux Split
+### 4. Workspace regression check
 
-### Windows now
+Post-change workspace verification has also been re-run through:
 
-Use Windows for:
+```bash
+bash bench/scripts/verify_workspace.sh
+```
 
-- architecture and integration work
-- mock-source control-loop validation
-- daemon CLI verification
-- backend contract design
+Most recent result:
 
-### Linux later
+- `cargo test --workspace`: `PASS`
+- `cargo fmt --all -- --check`: `PASS`
+- `cargo clippy --all-targets --all-features -- -D warnings`: `PASS`
+- mock daemon smoke: `PASS`
+- Linux source preflight smoke: `PASS`
 
-Use Linux VM for:
+## Current Route
 
-- real eBPF probe loading
-- real probe event reader wiring
-- `/proc`-based metadata validation
-- real syscall executor wiring
-- benchmark runs and final measurements
+The recommended continuation path is:
 
-## Immediate Next Step
+1. keep `qwen2.5:0.5b` as the default first model
+2. re-run the real smoke with `noop` when validating runtime visibility only
+3. run the same smoke with `linux-command-dry-run`
+4. inspect audit highlights in `docs/verification_log.md`, especially that rollback remains limited to the actions actually enabled by policy
+5. only then decide whether the environment is ready for a real `linux-command` A/B run
 
-The next implementation target is:
+## Recommended Commands
 
-### A. Real Linux reader implementation
+### Reconfirm current observation path
 
-The reader scaffold now exists. The next step is to plug in a real Linux reader behind it:
+```bash
+bash bench/scripts/inference_tail_guard_ollama_smoke.sh
+```
 
-- real attach / detach logic inside `LinuxProbeDriver`
-- ring-buffer ownership and polling loop inside the driver implementation
-- partial startup handling backed by real probe failures
-- startup and shutdown summaries populated from real driver state
+### Preview planned command actions safely
 
-### B. Real Linux syscall executor implementation
+```bash
+AEGISAI_DAEMON_BACKEND=linux-command-dry-run \
+  bash bench/scripts/inference_tail_guard_ollama_smoke.sh
+```
 
-The rollback state scaffold now exists. The next step is to replace placeholder capture with real Linux state:
+### Re-run workspace checks
 
-- original nice capture
-- original affinity capture
-- cpuset membership capture
-- real syscall apply / rollback through `LinuxSyscallApplier`
-- real rollback success / failure reporting
+```bash
+bash bench/scripts/verify_workspace.sh
+```
 
-These should still be implemented as safe scaffolding first, without requiring Linux execution on Windows.
+## Known Constraints
 
-## Linux VM Checklist
+- `linux-command` may attempt real `renice` and `taskset` changes against the observed target PID
+- those changes may require privileges depending on the host policy and target process ownership
+- `linux-command-dry-run` is safe for logging and route validation, but it is not an A/B performance result by itself
+- current smoke validation is strongest for `run_queue_delay`; the other planned Linux signals still need broader real-runtime coverage
 
-The first Linux-side validation checklist now lives at:
+## Resume Prompt
 
-`docs/linux_vm_checklist.md`
+If a future session needs a direct restart prompt, use this:
 
-## Resume Plan For Tomorrow
+> Continue from the current post-Ollama-smoke state in `/home/gg/AegisAI_Runtime`. Treat `docs/handoff.md` and the latest `Inference Tail Guard Ollama smoke` entries in `docs/verification_log.md` as the source of truth. Keep `qwen2.5:0.5b` as the default first model, preserve append-only logging, and prefer `linux-command-dry-run` before any real `linux-command` experiment.
 
-1. Start with the real Linux `LinuxProbeDriver` implementation behind the managed reader scaffold.
-2. Then replace `CommandLinuxSyscallApplier` with a lower-level Linux syscall applier.
-3. Use `git_control` to define the checkpoint convention we will follow before Linux VM runs.
-4. Re-run full workspace verification.
-5. Only after that prepare the Linux VM execution checklist.
+## Source Of Truth
+
+When resuming, read these first:
+
+- `docs/handoff.md`
+- `docs/verification_log.md`
+- `bench/scripts/inference_tail_guard_ollama_smoke.sh`
+- `bench/inference_tail_guard/README.md`

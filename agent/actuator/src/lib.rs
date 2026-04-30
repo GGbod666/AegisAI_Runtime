@@ -58,6 +58,12 @@ mod tests {
         }
     }
 
+    fn sample_plan_with_disabled_cpuset() -> ActionPlan {
+        let mut plan = sample_plan();
+        plan.actions.push(Action::UseCpuset { enabled: false });
+        plan
+    }
+
     #[test]
     fn tracks_revertible_actions_until_lease_expiry() {
         let mut actuator = Actuator::default();
@@ -419,6 +425,50 @@ mod tests {
                     .to_string()
             )
         );
+    }
+
+    #[test]
+    fn disabled_cpuset_action_does_not_emit_cpuset_rollback_noise() {
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            CommandLinuxSyscallApplier::dry_run(),
+        );
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_named_executor(
+            "linux-command-dry-run",
+            executor,
+        ));
+
+        let applied = actuator.apply(sample_plan_with_disabled_cpuset(), 6_500, true);
+
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.2.detail"),
+            Some(&"cpuset disabled by policy".to_string())
+        );
+        assert_eq!(
+            applied
+                .audit_fields
+                .get("backend.apply.capture.cpuset.captured"),
+            None
+        );
+
+        let rollbacks = actuator.expire(7_300);
+        assert_eq!(rollbacks.len(), 1);
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.restored"),
+            Some(&"nice,affinity".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.failed"),
+            None
+        );
+        assert!(!rollbacks[0]
+            .audit_fields
+            .values()
+            .any(|value| value.contains("cpuset restore requires")));
     }
 
     #[test]

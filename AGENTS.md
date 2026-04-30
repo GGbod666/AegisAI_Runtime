@@ -41,6 +41,10 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 Use subagents only when the user explicitly asks for subagents, delegation, or parallel agent work.
 
+When that trigger is present, the current main thread must actually run the
+workflow by spawning subagents. It is not enough to describe the workflow,
+promise to use it, or format an answer as if subagents had been used.
+
 Default starter roster for this project:
 
 - `explorer`: explore code and constraints first, without implementation
@@ -62,6 +66,17 @@ Default execution order:
 5. `main-brain` audits subagent outputs, fixes inconsistencies, and decides whether another pass is needed
 6. If no dedicated `tester` or `reporter` exists, `main-brain` handles final verification and reporting
 
+Required runtime behavior when subagents are requested:
+
+1. `main-brain` must send a real subagent task to `explorer` first
+2. `pm` must run after `explorer`, using `explorer` evidence rather than filling gaps from guesswork
+3. `builder` must run after `pm`, using both prior handoffs as input
+4. `main-brain` must review the final subagent artifact before replying to the user
+5. For read-only or diagnostic work, `builder` still runs a verification-only pass and must explicitly say when there were no code changes
+6. Do not skip directly from `main-brain` to `builder` unless the user explicitly asks to bypass the normal workflow
+7. If a required upstream handoff is missing, the next role should report blocked instead of improvising
+8. In sequential mode, close or reuse the completed role thread before spawning the next role so the chain does not stall on agent thread limits
+
 Working rules for subagent tasks:
 
 - Explore before implementing
@@ -70,6 +85,7 @@ Working rules for subagent tasks:
 - Verify with tests or explicit smoke checks before closing
 - Escalate ambiguity instead of guessing
 - Treat subagent output as draft input until `main-brain` reviews it
+- Treat "I will use subagents" without actual delegation as non-compliant for this project
 
 Main-brain responsibilities:
 
@@ -89,3 +105,4 @@ Prompt shape for delegated work:
 6. State the role flow: `main-brain -> explorer -> pm -> builder -> main-brain review`
 7. Optionally extend to `tester` and `reporter` only when the task needs them
 8. State done criteria: feature works, verification passes, changed files and risks are listed
+9. If the task is read-only, say that `builder` should do a verification-only pass and report `no code changes`

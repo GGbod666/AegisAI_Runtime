@@ -125,7 +125,7 @@ impl CliConfig {
                 }
                 "--actuator-backend" => {
                     config.actuator_backend = args.next().ok_or_else(|| {
-                        "--actuator-backend expects `noop`, `linux-skeleton`, or `linux-command`"
+                        "--actuator-backend expects `noop`, `linux-skeleton`, `linux-command`, or `linux-command-dry-run`"
                             .to_string()
                     })?;
                 }
@@ -189,7 +189,7 @@ impl CliConfig {
             "  --repo-root <path>   Repository root containing configs/ (default: current dir)",
             "  --source <mode>      Source mode: mock | linux (default: mock)",
             "  --metadata <mode>    Metadata mode: demo | noop | procfs (default: demo)",
-            "  --actuator-backend <mode>  Backend mode: noop | linux-skeleton | linux-command (default: noop)",
+            "  --actuator-backend <mode>  Backend mode: noop | linux-skeleton | linux-command | linux-command-dry-run (default: noop)",
             "  --allow-partial-probes     Continue when some Linux probes cannot attach",
             "  --probe-buffer-events <n>  Linux reader buffered-event hint (default: 4096)",
             "  --probe-poll-timeout-ms <n>  Linux reader poll timeout hint (default: 100)",
@@ -244,6 +244,12 @@ fn append_summary_to_log(
     writeln!(file, "- Tick rollbacks: `{}`", summary.tick_rollbacks)?;
     writeln!(file, "- Metric records: `{}`", summary.metric_records)?;
     writeln!(file, "- Trace records: `{}`", summary.trace_records)?;
+    if !summary.audit_highlights.is_empty() {
+        writeln!(file, "- Audit highlights:")?;
+        for highlight in &summary.audit_highlights {
+            writeln!(file, "  - `{highlight}`")?;
+        }
+    }
     if summary.triggered_scenarios.is_empty() {
         writeln!(file, "- Triggered scenarios: `none`")?;
     } else {
@@ -277,6 +283,12 @@ fn print_summary(summary: &aegisai_runtime_daemon::RuntimeRunSummary) {
     println!("tick_rollbacks: {}", summary.tick_rollbacks);
     println!("metric_records: {}", summary.metric_records);
     println!("trace_records: {}", summary.trace_records);
+    if !summary.audit_highlights.is_empty() {
+        println!("audit_highlights:");
+        for highlight in &summary.audit_highlights {
+            println!("  {highlight}");
+        }
+    }
 
     if summary.triggered_scenarios.is_empty() {
         println!("triggered_scenarios: none");
@@ -313,8 +325,9 @@ fn build_actuator(cli: &CliConfig) -> Result<Actuator, String> {
         "noop" => Ok(Actuator::with_backend(NoopActuatorBackend)),
         "linux-skeleton" => Ok(Actuator::with_backend(LinuxActuatorBackend::default())),
         "linux-command" => build_linux_command_actuator(),
+        "linux-command-dry-run" => build_linux_command_dry_run_actuator(),
         other => Err(format!(
-            "unsupported actuator backend `{other}`; expected `noop`, `linux-skeleton`, or `linux-command`"
+            "unsupported actuator backend `{other}`; expected `noop`, `linux-skeleton`, `linux-command`, or `linux-command-dry-run`"
         )),
     }
 }
@@ -336,9 +349,30 @@ fn build_linux_command_actuator() -> Result<Actuator, String> {
     Err("`linux-command` actuator backend is only available on Linux".to_string())
 }
 
+#[cfg(target_os = "linux")]
+fn build_linux_command_dry_run_actuator() -> Result<Actuator, String> {
+    let executor =
+        aegisai_actuator::PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            aegisai_actuator::ProcfsLinuxProcessStateProvider,
+            aegisai_actuator::CommandLinuxSyscallApplier::dry_run(),
+        );
+    Ok(Actuator::with_backend(
+        LinuxActuatorBackend::with_named_executor("linux-command-dry-run", executor),
+    ))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn build_linux_command_dry_run_actuator() -> Result<Actuator, String> {
+    Err("`linux-command-dry-run` actuator backend is only available on Linux".to_string())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::CliConfig;
+    use std::fs;
+
+    use aegisai_runtime_daemon::RuntimeRunSummary;
+
+    use super::{append_summary_to_log, build_linux_command_dry_run_actuator, CliConfig};
 
     #[test]
     fn cli_supports_probe_reader_flags() {
@@ -366,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn cli_accepts_linux_command_backend_name() {
+    fn cli_accepts_linux_command_backend_names() {
         let cli = CliConfig::parse(
             ["--actuator-backend", "linux-command"]
                 .into_iter()
@@ -375,6 +409,15 @@ mod tests {
         .expect("cli should parse");
 
         assert_eq!(cli.actuator_backend, "linux-command");
+
+        let cli = CliConfig::parse(
+            ["--actuator-backend", "linux-command-dry-run"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        assert_eq!(cli.actuator_backend, "linux-command-dry-run");
     }
 
     #[test]
@@ -390,5 +433,45 @@ mod tests {
             cli.verification_log.as_deref(),
             Some(std::path::Path::new("docs/verification_log.md"))
         );
+    }
+
+    #[test]
+    fn linux_command_dry_run_backend_uses_named_backend() {
+        let actuator = build_linux_command_dry_run_actuator().expect("backend should build");
+        assert_eq!(actuator.backend_name(), "linux-command-dry-run");
+    }
+
+    #[test]
+    fn verification_log_includes_audit_highlights() {
+        let log_path = std::env::temp_dir().join(format!(
+            "aegisai-runtime-daemon-{}-verification.md",
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&log_path);
+
+        let summary = RuntimeRunSummary {
+            source_name: "mock".to_string(),
+            metadata_provider_name: "demo".to_string(),
+            actuator_backend_name: "linux-command-dry-run".to_string(),
+            processed_events: 3,
+            applied_actions: 2,
+            inline_rollbacks: 1,
+            tick_rollbacks: 0,
+            metric_records: 3,
+            trace_records: 4,
+            audit_highlights: vec![
+                "pid=42;scenario=inference_tail_guard;backend.apply.apply.result=ok".to_string(),
+            ],
+            ..RuntimeRunSummary::default()
+        };
+
+        append_summary_to_log(&log_path, &summary).expect("summary should append");
+        let contents = fs::read_to_string(&log_path).expect("log should be readable");
+        let _ = fs::remove_file(&log_path);
+
+        assert!(contents.contains("- Audit highlights:"));
+        assert!(contents.contains(
+            "pid=42;scenario=inference_tail_guard;backend.apply.apply.result=ok"
+        ));
     }
 }

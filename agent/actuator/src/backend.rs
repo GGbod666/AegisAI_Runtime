@@ -1071,11 +1071,13 @@ fn build_linux_rollback_plan(applied: &AppliedAction) -> LinuxSyscallPlan {
         operations: applied
             .actions
             .iter()
-            .map(|action| match action {
-                Action::RaiseNice { .. } => LinuxSyscallOperation::RestoreNice,
-                Action::SetAffinity { .. } => LinuxSyscallOperation::RestoreAffinity,
-                Action::UseCpuset { .. } => LinuxSyscallOperation::RestoreCpuset,
-                Action::WarmupExecutor => LinuxSyscallOperation::NoopWarmupRollback,
+            .filter_map(|action| match action {
+                Action::RaiseNice { .. } => Some(LinuxSyscallOperation::RestoreNice),
+                Action::SetAffinity { .. } => Some(LinuxSyscallOperation::RestoreAffinity),
+                Action::UseCpuset { enabled } => {
+                    enabled.then_some(LinuxSyscallOperation::RestoreCpuset)
+                }
+                Action::WarmupExecutor => Some(LinuxSyscallOperation::NoopWarmupRollback),
             })
             .collect(),
     }
@@ -1106,11 +1108,12 @@ fn capture_linux_state(
                     .affinity
                     .get_or_insert_with(|| provider.capture_affinity(plan.target_pid));
             }
-            LinuxSyscallOperation::UseCpuset { .. } => {
+            LinuxSyscallOperation::UseCpuset { enabled: true } => {
                 state
                     .cpuset
                     .get_or_insert_with(|| provider.capture_cpuset(plan.target_pid));
             }
+            LinuxSyscallOperation::UseCpuset { enabled: false } => {}
             LinuxSyscallOperation::WarmupExecutor
             | LinuxSyscallOperation::RestoreNice
             | LinuxSyscallOperation::RestoreAffinity

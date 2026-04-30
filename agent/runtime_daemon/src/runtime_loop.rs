@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::{enrich_source_event, EventSource, MetadataError, MetadataProvider, SourceError};
@@ -65,6 +65,7 @@ pub struct RuntimeRunSummary {
     pub metric_records: usize,
     pub trace_records: usize,
     pub last_timestamp_ms: Option<u64>,
+    pub audit_highlights: Vec<String>,
 }
 
 impl RuntimeRunSummary {
@@ -102,6 +103,7 @@ impl RuntimeLoop {
             actuator_backend_name: orchestrator.actuator_backend_name().to_string(),
             ..RuntimeRunSummary::default()
         };
+        let mut audit_highlights = BTreeSet::new();
         let mut next_tick_at_ms = None;
 
         loop {
@@ -116,6 +118,7 @@ impl RuntimeLoop {
                         while next_tick <= raw_event.timestamp_ms {
                             let rollbacks = orchestrator.tick(next_tick);
                             summary.tick_rollbacks += rollbacks.len() as u64;
+                            collect_audit_highlights(&mut audit_highlights, &rollbacks);
                             next_tick = next_tick.saturating_add(self.config.tick_interval_ms);
                         }
                         next_tick_at_ms = Some(next_tick);
@@ -136,6 +139,8 @@ impl RuntimeLoop {
                 summary.applied_actions += outcome.applied_actions.len() as u64;
                 summary.inline_rollbacks += outcome.rollbacks.len() as u64;
                 summary.last_timestamp_ms = Some(timestamp_ms);
+                collect_audit_highlights(&mut audit_highlights, &outcome.applied_actions);
+                collect_audit_highlights(&mut audit_highlights, &outcome.rollbacks);
 
                 for action in outcome.applied_actions {
                     *summary
@@ -150,12 +155,39 @@ impl RuntimeLoop {
             let rollbacks = orchestrator
                 .tick(last_timestamp_ms.saturating_add(self.config.drain_after_source_ms));
             summary.tick_rollbacks += rollbacks.len() as u64;
+            collect_audit_highlights(&mut audit_highlights, &rollbacks);
         }
 
         summary.metric_records = orchestrator.metrics().len();
         summary.trace_records = orchestrator.traces().len();
+        summary.audit_highlights = audit_highlights.into_iter().collect();
 
         Ok(summary)
+    }
+}
+
+fn collect_audit_highlights(
+    highlights: &mut BTreeSet<String>,
+    actions: &[runtime_orchestrator::AppliedAction],
+) {
+    const AUDIT_PREFIXES: [&str; 3] = [
+        "backend.apply.capture.",
+        "backend.apply.apply.",
+        "backend.rollback.rollback.",
+    ];
+
+    for action in actions {
+        for (key, value) in &action.audit_fields {
+            if AUDIT_PREFIXES.iter().any(|prefix| key.starts_with(prefix)) {
+                highlights.insert(format!(
+                    "pid={};scenario={};{}={}",
+                    action.target_pid,
+                    action.scenario.as_str(),
+                    key,
+                    value
+                ));
+            }
+        }
     }
 }
 
@@ -163,11 +195,15 @@ impl RuntimeLoop {
 mod tests {
     use std::path::{Path, PathBuf};
 
+    use aegisai_actuator::{
+        Actuator, CommandLinuxSyscallApplier, LinuxActuatorBackend,
+        PlannedOnlyLinuxSyscallExecutor, UnavailableLinuxProcessStateProvider,
+    };
     use crate::{
         MockEventSource, NoopMetadataProvider, RuntimeLoop, RuntimeLoopConfig,
         StaticMetadataProvider,
     };
-    use runtime_orchestrator::RuntimeOrchestrator;
+    use runtime_orchestrator::{RuntimeOrchestrator, RuntimeOrchestratorConfig};
 
     fn repo_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -221,5 +257,34 @@ mod tests {
         assert!(summary
             .triggered_scenarios
             .contains_key("tool_call_booster"));
+    }
+
+    #[test]
+    fn runtime_loop_collects_audit_highlights_from_backend_execution() {
+        let config =
+            RuntimeOrchestratorConfig::load_from_repo_root(repo_root()).expect("config should load");
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            UnavailableLinuxProcessStateProvider,
+            CommandLinuxSyscallApplier::dry_run(),
+        );
+        let actuator = Actuator::with_backend(LinuxActuatorBackend::with_named_executor(
+            "linux-command-dry-run",
+            executor,
+        ));
+        let mut orchestrator =
+            RuntimeOrchestrator::with_actuator(config, actuator).expect("orchestrator should init");
+        let mut source = MockEventSource::demo_sequence();
+        let mut metadata = StaticMetadataProvider::demo();
+        let runtime_loop = RuntimeLoop::new(RuntimeLoopConfig::default()).expect("valid config");
+
+        let summary = runtime_loop
+            .run(&mut orchestrator, &mut source, &mut metadata)
+            .expect("runtime loop should succeed");
+
+        assert_eq!(summary.actuator_backend_name, "linux-command-dry-run");
+        assert!(summary
+            .audit_highlights
+            .iter()
+            .any(|highlight| highlight.contains("backend.apply.apply.result=")));
     }
 }

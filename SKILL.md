@@ -4,6 +4,9 @@
 
 Use this project workflow when the user explicitly asks to use subagents. Keep the starter setup small: `explorer`, `pm`, and `builder`, and treat the current main thread as the `main-brain` orchestrator.
 
+When that trigger is present, `main-brain` must actually spawn the subagents in
+order. Simply restating the flow is a workflow failure.
+
 ## Default Flow
 
 Starter flow:
@@ -13,6 +16,15 @@ Starter flow:
 3. `pm` turns that context into sub-tasks and acceptance criteria
 4. `builder` implements the smallest viable change and verifies it
 5. `main-brain` reviews the outputs, fixes mistakes, and decides whether to loop again
+
+Runtime rule:
+
+1. `main-brain` dispatches `explorer`
+2. `main-brain` waits for `explorer` output and passes it into `pm`
+3. `main-brain` waits for `pm` output and passes both handoffs into `builder`
+4. `main-brain` reviews `builder` before answering the user
+5. For read-only tasks, `builder` still runs and reports `no code changes`
+6. In sequential runs, close the finished role thread before opening the next one if thread limits are tight
 
 Expanded flow when needed:
 
@@ -41,6 +53,7 @@ Then provide:
 4. Statement that the current main thread is `main-brain`
 5. Role flow
 6. Done criteria
+7. Whether `builder` should implement changes or run verification-only
 
 Example:
 
@@ -80,3 +93,4 @@ tester -> reporter
 - 角色定义写进 `.codex/agents/`
 - 主脑中枢职责固定由当前主线程承担，不额外建成第 4 个子智能体
 - 重复任务沉淀成正式 skill
+- 真的要走工作流时，必须发生真实的子智能体派发与回收，而不是只写流程说明
