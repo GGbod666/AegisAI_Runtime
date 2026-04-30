@@ -4600,3 +4600,536 @@ qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from
 - Safety note: `linux-command-dry-run` keeps this smoke run in observation mode; no privileged boost/rollback syscalls were applied.
 
 - Overall result: `PASS`
+
+### 2026-04-30T13:40:32+00:00 - Inference Tail Guard Ollama smoke
+
+- Scope: first real-runtime smoke run after the pre-Ollama preflight gate.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Runtime: `ollama`
+- Selected model: `qwen2.5:0.5b`
+- Observation backend: `noop`
+- Daemon poll timeout: `2000ms`
+- Planned interference: `stress-ng --cpu 2 --timeout 12s` when available.
+- A/B status: `not applicable` in this smoke run; this pass validates real model execution plus policy observation.
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `1`
+```text
+Error: could not connect to ollama server, run 'ollama serve' to start it
+```
+
+#### Ollama process inventory before warmup
+
+- Requirement: informational
+- Command: `ollama ps`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `1`
+```text
+Error: could not connect to ollama server, run 'ollama serve' to start it
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Command: `curl -sS -X POST http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=false`, `num_predict=96`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `7`
+```text
+curl: (7) Failed to connect to 127.0.0.1 port 11434 after 0 ms: Couldn't connect to server
+```
+
+#### Monitored inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Command: `curl -sS -X POST http://127.0.0.1:11434/api/generate`
+- Observation backend: `noop`
+- Interference: `stress-ng --cpu 2 --timeout 12s` when available
+- Exit status: `7`
+```text
+curl: (7) Failed to connect to 127.0.0.1 port 11434 after 0 ms: Couldn't connect to server
+```
+
+#### Runtime daemon observation
+
+- Requirement: required
+- Command: `cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata procfs --actuator-backend noop --allow-partial-probes --probe-poll-timeout-ms 2000`
+- Exit status: `0`
+```text
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running `target/debug/aegisai-runtime-daemon --repo-root . --source linux --metadata procfs --actuator-backend noop --allow-partial-probes --probe-poll-timeout-ms 2000`
+AegisAI Runtime Daemon Summary
+source: linux-probe
+metadata: procfs
+actuator_backend: noop
+processed_events: 1
+applied_actions: 0
+inline_rollbacks: 0
+tick_rollbacks: 0
+metric_records: 1
+trace_records: 2
+triggered_scenarios: none
+```
+
+#### stress-ng interference
+
+- Requirement: optional
+- Command: `stress-ng --cpu 2 --timeout 12s`
+- Exit status: `0`
+```text
+stress-ng: info:  [19235] setting to a 12 secs run per stressor
+stress-ng: info:  [19235] dispatching hogs: 2 cpu
+stress-ng: info:  [19235] skipped: 0
+stress-ng: info:  [19235] passed: 2: cpu (2)
+stress-ng: info:  [19235] failed: 0
+stress-ng: info:  [19235] metrics untrustworthy: 0
+stress-ng: info:  [19235] successful run completed in 12.01 secs
+```
+
+#### Ollama process inventory after monitored request
+
+- Requirement: informational
+- Command: `ollama ps`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `1`
+```text
+Error: could not connect to ollama server, run 'ollama serve' to start it
+```
+
+- Monitored request total duration: `n/ams`
+- Monitored request eval duration: `n/ams`
+- Monitored request load duration: `n/ams`
+- Daemon processed events: `1`
+- Observed `inference_tail_guard` trigger count: `0`
+- Interpretation: `real-runtime events observed without trigger`
+- Safety note: `noop backend keeps this smoke run in observation mode; no privileged boost/rollback syscalls were applied`
+
+- Overall result: `FAIL`
+
+### 2026-04-30T13:48:03+00:00 - Inference Tail Guard Ollama smoke
+
+- Scope: first real-runtime smoke run after the pre-Ollama preflight gate.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Runtime: `ollama`
+- Selected model: `qwen2.5:0.5b`
+- Observation backend: `noop`
+- Daemon poll timeout: `2000ms`
+- Planned interference: `stress-ng --cpu 2 --timeout 12s` when available.
+- A/B status: `not applicable` in this smoke run; this pass validates real model execution plus policy observation.
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before warmup
+
+- Requirement: informational
+- Command: `ollama ps`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+NAME    ID    SIZE    PROCESSOR    CONTEXT    UNTIL 
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Command: `curl -sS -X POST http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=false`, `num_predict=96`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-04-30T13:48:12.607612395Z","response":"AegisAI正在进行实时推理测试，以确保其预测的烟雾检测准确性。当前的目标是对尾部延迟的技术评估和优化。","done":true,"done_reason":"stop","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,16205,1273,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,113872,105143,113272,81705,3837,23031,103944,41146,104538,9370,99752,102393,101978,111076,1773,67949,104820,106273,101143,32948,112881,105535,102086,33108,103983,1773],"total_duration":8474439583,"load_duration":3182138960,"prompt_eval_count":55,"prompt_eval_duration":3147649265,"eval_count":30,"eval_duration":2104802117}```
+
+#### Monitored inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Command: `curl -sS -X POST http://127.0.0.1:11434/api/generate`
+- Observation backend: `noop`
+- Interference: `stress-ng --cpu 2 --timeout 12s` when available
+- Exit status: `0`
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-04-30T13:48:28.327518235Z","response":"AegisAI 在进行实时推理时，已经启动了“烟雾测试”，目的是全面检查其处理能力和适应性。目前目标就是监测和跟踪模型的性能，在此过程中，我们将密切关注每个步骤中的输出结果，以便及时发现可能的问题并采取改进措施。","done":true,"done_reason":"stop","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,16205,1273,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,71817,105143,113272,13343,3837,99461,101159,34187,2073,99752,102393,81705,33590,108765,100011,101071,41146,54542,106712,104117,33071,1773,100004,100160,99486,104375,33108,105946,104949,9370,102111,96050,31991,101925,3837,105564,116920,103991,105652,101047,66017,59151,3837,105920,100667,99879,87267,103936,62926,103975,105023,101082,1773],"total_duration":15190000278,"load_duration":199220935,"prompt_eval_count":55,"prompt_eval_duration":1076803844,"eval_count":58,"eval_duration":13858642939}```
+
+#### Runtime daemon observation
+
+- Requirement: required
+- Command: `cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata procfs --actuator-backend noop --allow-partial-probes --probe-poll-timeout-ms 2000`
+- Exit status: `0`
+```text
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running `target/debug/aegisai-runtime-daemon --repo-root . --source linux --metadata procfs --actuator-backend noop --allow-partial-probes --probe-poll-timeout-ms 2000`
+AegisAI Runtime Daemon Summary
+source: linux-probe
+metadata: procfs
+actuator_backend: noop
+processed_events: 9
+applied_actions: 5
+inline_rollbacks: 0
+tick_rollbacks: 5
+metric_records: 14
+trace_records: 28
+triggered_scenarios:
+  inference_tail_guard: 5
+```
+
+#### stress-ng interference
+
+- Requirement: optional
+- Command: `stress-ng --cpu 2 --timeout 12s`
+- Exit status: `0`
+```text
+stress-ng: info:  [19928] setting to a 12 secs run per stressor
+stress-ng: info:  [19928] dispatching hogs: 2 cpu
+stress-ng: info:  [19928] skipped: 0
+stress-ng: info:  [19928] passed: 2: cpu (2)
+stress-ng: info:  [19928] failed: 0
+stress-ng: info:  [19928] metrics untrustworthy: 0
+stress-ng: info:  [19928] successful run completed in 12.01 secs
+```
+
+#### Ollama process inventory after monitored request
+
+- Requirement: informational
+- Command: `ollama ps`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Monitored request total duration: `15190ms`
+- Monitored request eval duration: `13858ms`
+- Monitored request load duration: `199ms`
+- Daemon processed events: `9`
+- Observed `inference_tail_guard` trigger count: `5`
+- Interpretation: `real-runtime trigger observed`
+- Safety note: `noop backend keeps this smoke run in observation mode; no privileged boost/rollback syscalls were applied`
+
+- Overall result: `PASS`
+
+### 2026-04-30T13:51:36+00:00 - Inference Tail Guard Ollama smoke
+
+- Scope: first real-runtime smoke run after the pre-Ollama preflight gate.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Runtime: `ollama`
+- Selected model: `qwen2.5:0.5b`
+- Observation backend: `noop`
+- Daemon poll timeout: `2000ms`
+- Planned interference: `stress-ng --cpu 2 --timeout 12s` when available.
+- A/B status: `not applicable` in this smoke run; this pass validates real model execution plus policy observation.
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before warmup
+
+- Requirement: informational
+- Command: `ollama ps`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL                   
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       About a minute from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Command: `curl -sS -X POST http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=false`, `num_predict=96`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-04-30T13:51:42.68080993Z","response":"AegisAI 在进行实时推理（Real-time inference）过程中，正积极地执行烟雾测试（Smoke Test）。当前的目标是在观察到尾延迟（Tail Delay）时做出适当的反应或调整策略。通过这种方式，AegisAI 可以更准确地预测和适应环境中的潜在威胁，并为用户构建更为安全的网络环境。","done":true,"done_reason":"stop","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,16205,1273,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,71817,105143,113272,9909,12768,7246,44378,7552,101925,3837,36556,99666,29490,75117,99752,102393,81705,9909,76880,3393,74276,67949,104820,101219,104144,26939,101143,112881,9909,44795,39793,7552,13343,104086,109776,104175,57191,101921,104238,1773,67338,115550,3837,32,89967,15469,26853,107,23031,33126,102188,29490,104538,33108,104117,99719,101047,106362,105204,90395,17714,20002,104004,104652,99464,9370,71356,99719,1773],"total_duration":5681915567,"load_duration":95633873,"prompt_eval_count":55,"prompt_eval_duration":90440455,"eval_count":74,"eval_duration":5443265808}```
+
+#### Monitored inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Command: `curl -sS -X POST http://127.0.0.1:11434/api/generate`
+- Observation backend: `noop`
+- Interference: `stress-ng --cpu 2 --timeout 12s` when available
+- Exit status: `0`
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-04-30T13:52:01.394247576Z","response":"AegisAI 在进行实时推理的 smoke test 时，重点在于检查其在实际运行环境中的功能和性能表现。目前，我们正在对某段代码或框架进行全面的测试，旨在确保其能够稳定、高效地执行预期的任务，并且不会引入任何潜在的问题。尾延迟是关键指标之一，由于当前目标是为了观察 AegisAI 在高负载下的应用表现，所以这里可以暂时忽略这个部分，专注于其他性能和稳定性方面","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,16205,1273,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,71817,105143,113272,9370,16205,1273,220,13343,3837,99887,101321,101071,41146,18493,99912,104001,99719,101047,98380,33108,102111,101107,1773,100004,3837,97639,96555,32664,99569,37474,46100,57191,102724,115746,9370,81705,3837,106166,103944,41146,100006,100407,5373,102202,29490,75117,104394,108530,90395,100136,99670,104914,99885,106362,103936,1773,101143,112881,20412,99936,104118,100653,3837,101887,67949,100160,104802,104144,362,89967,15469,73562,44636,118878,101373,99892,101107,3837,99999,99817,73670,105253,103325,99487,99659,3837,107782,92894,102111,33108,108239,99522],"total_duration":18201231859,"load_duration":120136007,"prompt_eval_count":55,"prompt_eval_duration":2462105865,"eval_count":96,"eval_duration":15549419143}```
+
+#### Runtime daemon observation
+
+- Requirement: required
+- Command: `cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata procfs --actuator-backend noop --allow-partial-probes --probe-poll-timeout-ms 2000`
+- Exit status: `0`
+```text
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running `target/debug/aegisai-runtime-daemon --repo-root . --source linux --metadata procfs --actuator-backend noop --allow-partial-probes --probe-poll-timeout-ms 2000`
+AegisAI Runtime Daemon Summary
+source: linux-probe
+metadata: procfs
+actuator_backend: noop
+processed_events: 2
+applied_actions: 0
+inline_rollbacks: 0
+tick_rollbacks: 0
+metric_records: 2
+trace_records: 4
+triggered_scenarios: none
+```
+
+#### stress-ng interference
+
+- Requirement: optional
+- Command: `stress-ng --cpu 2 --timeout 12s`
+- Exit status: `0`
+```text
+stress-ng: info:  [20944] setting to a 12 secs run per stressor
+stress-ng: info:  [20944] dispatching hogs: 2 cpu
+stress-ng: info:  [20944] skipped: 0
+stress-ng: info:  [20944] passed: 2: cpu (2)
+stress-ng: info:  [20944] failed: 0
+stress-ng: info:  [20944] metrics untrustworthy: 0
+stress-ng: info:  [20944] successful run completed in 12.02 secs
+```
+
+#### Ollama process inventory after monitored request
+
+- Requirement: informational
+- Command: `ollama ps`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Monitored request total duration: `18201ms`
+- Monitored request eval duration: `15549ms`
+- Monitored request load duration: `120ms`
+- Daemon processed events: `2`
+- Observed `inference_tail_guard` trigger count: `0`
+- Interpretation: `real-runtime events observed without trigger`
+- Safety note: `noop backend keeps this smoke run in observation mode; no privileged boost/rollback syscalls were applied`
+
+- Overall result: `PASS`
+
+### 2026-04-30T13:54:21+00:00 - Inference Tail Guard Ollama smoke
+
+- Scope: first real-runtime smoke run after the pre-Ollama preflight gate.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Runtime: `ollama`
+- Selected model: `qwen2.5:0.5b`
+- Observation backend: `linux-command-dry-run`
+- Daemon poll timeout: `2000ms`
+- Planned interference: `stress-ng --cpu 2 --timeout 12s` when available.
+- A/B status: `not applicable` in this smoke run; this pass validates real model execution plus policy observation.
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before warmup
+
+- Requirement: informational
+- Command: `ollama ps`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       2 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Command: `curl -sS -X POST http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=false`, `num_predict=96`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-04-30T13:54:26.789891774Z","response":"AegisAI 在实时推理过程中正在进行“烟雾测试”，以确保其系统能够及时识别和检测异常行为或潜在的安全风险。目前，我们的目标是探索并深入了解系统在实际环境下的表现，特别是关注尾部延迟这一特定参数的监控与分析。","done":true,"done_reason":"stop","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,16205,1273,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,101925,113872,2073,99752,102393,81705,33590,23031,103944,41146,72448,100006,100667,102450,33108,101978,70633,101070,57191,106362,106552,101052,1773,100004,3837,103952,100160,20412,101964,62926,118347,72448,18493,99912,99719,101373,101107,3837,104050,100020,101143,32948,112881,100147,105149,32665,9370,104814,57218,101042,1773],"total_duration":4746896189,"load_duration":100850061,"prompt_eval_count":55,"prompt_eval_duration":82699256,"eval_count":58,"eval_duration":4520584814}```
+
+#### Monitored inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Command: `curl -sS -X POST http://127.0.0.1:11434/api/generate`
+- Observation backend: `linux-command-dry-run`
+- Interference: `stress-ng --cpu 2 --timeout 12s` when available
+- Exit status: `0`
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-04-30T13:54:41.564994167Z","response":"AegisAI 在实时推理阶段正在进行一个烟雾测试，目前的监测点在于评估尾延迟，请注意此操作旨在确保我们的模型性能稳定且准确地识别和模拟真实场景中的尾气排放情况。","done":true,"done_reason":"stop","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,16205,1273,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,100385,113872,46944,99752,102393,81705,3837,100004,9370,104375,27442,101321,102086,101143,112881,37945,60533,31991,40090,106166,103944,103952,104949,102111,100407,100136,102188,29490,102450,33108,105717,100267,102122,101047,101143,99180,105054,99559,1773],"total_duration":14262753921,"load_duration":98770416,"prompt_eval_count":55,"prompt_eval_duration":1376470817,"eval_count":46,"eval_duration":12752650135}```
+
+#### Runtime daemon observation
+
+- Requirement: required
+- Command: `cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata procfs --actuator-backend linux-command-dry-run --allow-partial-probes --probe-poll-timeout-ms 2000`
+- Exit status: `0`
+```text
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running `target/debug/aegisai-runtime-daemon --repo-root . --source linux --metadata procfs --actuator-backend linux-command-dry-run --allow-partial-probes --probe-poll-timeout-ms 2000`
+AegisAI Runtime Daemon Summary
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command-dry-run
+processed_events: 31
+applied_actions: 7
+inline_rollbacks: 0
+tick_rollbacks: 7
+metric_records: 38
+trace_records: 76
+audit_highlights:
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.0.detail=runner=dry-run-command-runner;command=renice -5 -p 19773;output=dry_run:renice -5 -p 19773
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.0.status=ok
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.1.detail=runner=dry-run-command-runner;command=taskset -pc 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63 19773;output=dry_run:taskset -pc 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63 19773
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.1.status=ok
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.2.detail=cpuset disabled by policy
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.2.status=ok
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.applied_count=3
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.attempted_count=3
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.failed_count=0
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.partial=false
+  pid=19773;scenario=inference_tail_guard;backend.apply.apply.result=ok
+  pid=19773;scenario=inference_tail_guard;backend.apply.capture.affinity.captured=true
+  pid=19773;scenario=inference_tail_guard;backend.apply.capture.affinity.original_cpus=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127
+  pid=19773;scenario=inference_tail_guard;backend.apply.capture.nice.captured=true
+  pid=19773;scenario=inference_tail_guard;backend.apply.capture.nice.original=0
+  pid=19773;scenario=inference_tail_guard;backend.apply.capture.provider=procfs
+  pid=19773;scenario=inference_tail_guard;backend.rollback.rollback.0.detail=runner=dry-run-command-runner;command=renice 0 -p 19773;output=dry_run:renice 0 -p 19773
+  pid=19773;scenario=inference_tail_guard;backend.rollback.rollback.0.status=ok
+  pid=19773;scenario=inference_tail_guard;backend.rollback.rollback.1.detail=runner=dry-run-command-runner;command=taskset -pc 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127 19773;output=dry_run:taskset -pc 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127 19773
+  pid=19773;scenario=inference_tail_guard;backend.rollback.rollback.1.status=ok
+  pid=19773;scenario=inference_tail_guard;backend.rollback.rollback.restored=nice,affinity
+triggered_scenarios:
+  inference_tail_guard: 7
+```
+
+#### stress-ng interference
+
+- Requirement: optional
+- Command: `stress-ng --cpu 2 --timeout 12s`
+- Exit status: `0`
+```text
+stress-ng: info:  [21812] setting to a 12 secs run per stressor
+stress-ng: info:  [21812] dispatching hogs: 2 cpu
+stress-ng: info:  [21812] skipped: 0
+stress-ng: info:  [21812] passed: 2: cpu (2)
+stress-ng: info:  [21812] failed: 0
+stress-ng: info:  [21812] metrics untrustworthy: 0
+stress-ng: info:  [21812] successful run completed in 12.02 secs
+```
+
+#### Ollama process inventory after monitored request
+
+- Requirement: informational
+- Command: `ollama ps`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Monitored request total duration: `14262ms`
+- Monitored request eval duration: `12752ms`
+- Monitored request load duration: `98ms`
+- Daemon processed events: `31`
+- Observed `inference_tail_guard` trigger count: `7`
+- Interpretation: `real-runtime trigger observed`
+- Safety note: `linux-command-dry-run records planned renice/taskset commands without applying privileged boost/rollback syscalls`
+
+- Overall result: `PASS`

@@ -49,12 +49,34 @@ bash bench/scripts/inference_tail_guard_preflight.sh
 bash bench/scripts/inference_tail_guard_ollama_smoke.sh
 ```
 
+运行前请先确认：
+
+- 本地 `ollama serve` 已启动，且默认 API 地址 `http://127.0.0.1:11434` 可达
+- 目标模型已经在本机准备好，至少能通过 `ollama show <model>` 成功返回
+- `cargo`、`curl` 在 PATH 中
+
+`bench/scripts/inference_tail_guard_preflight.sh` 仍然是推荐前置，但不是这个 smoke 脚本的内建 gate。
+
 这个脚本默认选择本地 `ollama` 模型并走 `noop` 观测后端，目的不是直接做最终 A/B 结论，而是先确认下面这条真实链路能稳定工作：
 
 - 本地模型可被真实请求唤起
 - `stress-ng` 干扰可以受控叠加
 - `aegisai-runtime-daemon --source linux --metadata procfs` 能捕获真实 runtime 事件
 - `inference_tail_guard` 是否在真实模型请求期间被触发
+
+这条 smoke 当前证明的是“真实请求 + daemon 观测链路”是否能跑通，不证明：
+
+- 当前策略已经执行真实调度干预
+- 没有 runtime 事件时就可以判定 harness 无效
+- 单次 `PASS` 已经足够支撑完整 benchmark 或最终 A/B 结论
+
+日志解读时要额外关注：
+
+- `processed_events`
+- `Observed inference_tail_guard trigger count`
+- `Interpretation`
+
+如果日志里出现 “request succeeded but no runtime events were captured”，当前语义只是把它记录为观察结果，不会单独把本次 smoke 判成失败。因此 `PASS` 不能直接解读为“已经成功观测到 runtime 事件”。
 
 当 `noop` smoke 稳定后，推荐先跑一轮 dry-run：
 

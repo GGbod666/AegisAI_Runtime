@@ -280,7 +280,7 @@ append "- Monitored request load duration: \`$(ns_to_ms "${request_load_duration
 append "- Daemon processed events: \`${processed_events}\`"
 append "- Observed \`inference_tail_guard\` trigger count: \`${observed_trigger_count}\`"
 append "- Interpretation: \`$(if [[ "${observed_trigger_count}" -gt 0 ]]; then printf 'real-runtime trigger observed'; elif [[ "${processed_events}" -gt 0 ]]; then printf 'real-runtime events observed without trigger'; else printf 'request succeeded but no runtime events were captured'; fi)\`"
-append "- Safety note: \`${DAEMON_BACKEND}\` keeps this smoke run in observation mode; no privileged boost/rollback syscalls were applied."
+append "- Safety note: \`$(if [[ "${DAEMON_BACKEND}" == "noop" ]]; then printf 'noop backend keeps this smoke run in observation mode; no privileged boost/rollback syscalls were applied'; elif [[ "${DAEMON_BACKEND}" == "linux-command-dry-run" ]]; then printf 'linux-command-dry-run records planned renice/taskset commands without applying privileged boost/rollback syscalls'; else printf 'backend=%s; interpret the daemon log before assuming whether boost/rollback syscalls were applied' "${DAEMON_BACKEND}"; fi)\`"
 
 append ""
 if [[ "${overall_status}" -eq 0 ]]; then
