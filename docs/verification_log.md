@@ -5287,3 +5287,62 @@ qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from
 - Safety note: `linux-command-dry-run records planned renice/taskset commands without applying privileged boost/rollback syscalls`
 
 - Overall result: `PASS`
+
+### 2026-04-30T14:27:45+00:00 - Targeted actuator and smoke verification summary
+
+- Scope: final verification artifacts for real `ollama` smoke, `linux-command-dry-run` smoke, and the cpuset rollback noise cleanup.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Evidence entrypoints:
+  - latest real smoke: `2026-04-30T13:48:03+00:00 - Inference Tail Guard Ollama smoke`
+  - latest dry-run smoke: `2026-04-30T14:14:20+00:00 - Inference Tail Guard Ollama smoke`
+
+#### Targeted actuator tests
+
+- Requirement: required
+- Command: `cargo test -p aegisai-actuator`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+running 12 tests
+test tests::disabled_cpuset_action_does_not_emit_cpuset_rollback_noise ... ok
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+Doc-tests aegisai_actuator
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+#### Targeted runtime daemon tests
+
+- Requirement: required
+- Command: `cargo test -p aegisai-runtime-daemon`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+running 19 tests
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+running 5 tests
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+Doc-tests aegisai_runtime_daemon
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+#### Final state summary
+
+- Latest real smoke (`2026-04-30T13:48:03+00:00`):
+  - `Observation backend: noop`
+  - `Daemon processed events: 9`
+  - `Observed inference_tail_guard trigger count: 5`
+  - `Interpretation: real-runtime trigger observed`
+  - `Overall result: PASS`
+- Latest dry-run smoke (`2026-04-30T14:14:20+00:00`):
+  - `Observation backend: linux-command-dry-run`
+  - `Daemon processed events: 24`
+  - `Observed inference_tail_guard trigger count: 7`
+  - `backend.apply.apply.2.detail=cpuset disabled by policy`
+  - `backend.rollback.rollback.restored=nice,affinity`
+  - latest entry did not emit `cpuset restore requires`
+  - `Overall result: PASS`
+
+- Overall result: `PASS`

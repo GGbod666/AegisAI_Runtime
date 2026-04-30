@@ -2,7 +2,7 @@
 
 ## Current State
 
-As of `2026-04-29`, the project is no longer at the pre-Ollama gate.
+As of `2026-04-30`, the project is no longer at the pre-Ollama gate.
 
 The current Linux-side baseline is:
 
@@ -12,13 +12,13 @@ The current Linux-side baseline is:
   - `mock` source for deterministic local validation
   - `linux` source backed by the procfs schedstat driver for real `run_queue_delay` observation
   - `procfs` metadata enrichment for process name, cmdline, cgroup, and parent fields
-- `inference_tail_guard` has been observed on a real `ollama` request using the local `qwen2.5:0.5b` model
+- `inference_tail_guard` has been observed on a real `ollama` request using the local `qwen2.5:0.5b` model, and the latest `noop` smoke passed with live runtime events plus real triggers
 - the bench layer now has:
   - pre-Ollama readiness gate
   - first real `ollama` smoke harness
   - append-only verification logging in `docs/verification_log.md`
 - a safe command-path preview mode now exists:
-  `linux-command-dry-run`
+  `linux-command-dry-run`, and the latest dry-run smoke passed while keeping rollback limited to the actions actually enabled by policy
 
 ## What Is Verified
 
@@ -54,9 +54,9 @@ Default behavior:
 Most recent strong signal:
 
 - verification log entry:
-  `2026-04-29T13:51:10+00:00 - Inference Tail Guard Ollama smoke`
+  `2026-04-30T13:48:03+00:00 - Inference Tail Guard Ollama smoke`
 - result:
-  - `processed_events: 6`
+  - `processed_events: 9`
   - `inference_tail_guard: 5`
   - `Overall result: PASS`
 
@@ -85,13 +85,20 @@ The daemon now supports:
 Latest dry-run checkpoint:
 
 - verification log entry:
-  `2026-04-29T14:18:59+00:00 - Inference Tail Guard Ollama smoke`
+  `2026-04-30T14:14:20+00:00 - Inference Tail Guard Ollama smoke`
 - result:
   - `actuator_backend: linux-command-dry-run`
-  - `inference_tail_guard: 1`
+  - `processed_events: 24`
+  - `inference_tail_guard: 7`
   - dry-run audit highlights were emitted for both apply and rollback paths
+  - latest rollback audit remained limited to `nice,affinity`
   - cpuset rollback noise is no longer emitted when policy keeps `use_cpuset = false`
   - `Overall result: PASS`
+
+Targeted follow-up verification after the cpuset cleanup fix:
+
+- `cargo test -p aegisai-actuator`: `PASS`
+- `cargo test -p aegisai-runtime-daemon`: `PASS`
 
 ### 4. Workspace regression check
 
@@ -116,7 +123,7 @@ The recommended continuation path is:
 1. keep `qwen2.5:0.5b` as the default first model
 2. re-run the real smoke with `noop` when validating runtime visibility only
 3. run the same smoke with `linux-command-dry-run`
-4. inspect audit highlights in `docs/verification_log.md`, especially that rollback remains limited to the actions actually enabled by policy
+4. inspect audit highlights in `docs/verification_log.md`, especially that rollback remains limited to the actions actually enabled by policy and that `use_cpuset = false` ends with `backend.rollback.rollback.restored=nice,affinity` without a `cpuset restore requires` line
 5. only then decide whether the environment is ready for a real `linux-command` A/B run
 
 ## Recommended Commands
