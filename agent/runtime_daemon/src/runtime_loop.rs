@@ -66,11 +66,30 @@ pub struct RuntimeRunSummary {
     pub trace_records: usize,
     pub last_timestamp_ms: Option<u64>,
     pub audit_highlights: Vec<String>,
+    pub tool_call_lifecycles: Vec<ToolCallLifecycleSummary>,
 }
 
 impl RuntimeRunSummary {
     pub fn total_rollbacks(&self) -> u64 {
         self.inline_rollbacks + self.tick_rollbacks
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ToolCallLifecycleSummary {
+    pub lifecycle_id: String,
+    pub started_at_ms: u64,
+    pub ended_at_ms: u64,
+    pub stages: BTreeMap<String, u64>,
+    pub boosted_actions: u64,
+    pub background_events: u64,
+    pub isolation_events: u64,
+    pub target_pids: BTreeSet<u32>,
+}
+
+impl ToolCallLifecycleSummary {
+    pub fn duration_ms(&self) -> u64 {
+        self.ended_at_ms.saturating_sub(self.started_at_ms)
     }
 }
 
@@ -104,6 +123,7 @@ impl RuntimeLoop {
             ..RuntimeRunSummary::default()
         };
         let mut audit_highlights = BTreeSet::new();
+        let mut lifecycle_tracker = ToolCallLifecycleTracker::default();
         let mut next_tick_at_ms = None;
 
         loop {
@@ -133,7 +153,10 @@ impl RuntimeLoop {
 
                 let runtime_event = enrich_source_event(raw_event, metadata_provider)?;
                 let timestamp_ms = runtime_event.timestamp_ms;
+                lifecycle_tracker.observe_event(&runtime_event);
                 let outcome = orchestrator.process_event(runtime_event);
+                lifecycle_tracker.observe_actions(&outcome.applied_actions);
+                lifecycle_tracker.observe_actions(&outcome.rollbacks);
 
                 summary.processed_events += 1;
                 summary.applied_actions += outcome.applied_actions.len() as u64;
@@ -161,8 +184,134 @@ impl RuntimeLoop {
         summary.metric_records = orchestrator.metrics().len();
         summary.trace_records = orchestrator.traces().len();
         summary.audit_highlights = audit_highlights.into_iter().collect();
+        summary.tool_call_lifecycles = lifecycle_tracker.finish();
 
         Ok(summary)
+    }
+}
+
+#[derive(Default)]
+struct ToolCallLifecycleTracker {
+    lifecycles: BTreeMap<String, ToolCallLifecycleSummary>,
+}
+
+impl ToolCallLifecycleTracker {
+    fn observe_event(&mut self, event: &runtime_orchestrator::Event) {
+        let Some(lifecycle_id) = tool_call_lifecycle_id(event) else {
+            return;
+        };
+
+        let entry = self
+            .lifecycles
+            .entry(lifecycle_id.clone())
+            .or_insert_with(|| ToolCallLifecycleSummary {
+                lifecycle_id,
+                started_at_ms: event.timestamp_ms,
+                ended_at_ms: event.timestamp_ms,
+                ..ToolCallLifecycleSummary::default()
+            });
+        entry.started_at_ms = entry.started_at_ms.min(event.timestamp_ms);
+        entry.ended_at_ms = entry.ended_at_ms.max(event.timestamp_ms);
+        entry.target_pids.insert(event.pid);
+
+        let stage = event_stage_label(event);
+        *entry.stages.entry(stage).or_default() += 1;
+        if event_stage_label(event) == "background" {
+            entry.background_events += 1;
+        }
+    }
+
+    fn observe_actions(&mut self, actions: &[runtime_orchestrator::AppliedAction]) {
+        for action in actions {
+            let Some(lifecycle_id) = action.audit_fields.get("tool_call_id").cloned() else {
+                continue;
+            };
+
+            let entry = self
+                .lifecycles
+                .entry(lifecycle_id.clone())
+                .or_insert_with(|| ToolCallLifecycleSummary {
+                    lifecycle_id,
+                    started_at_ms: action.applied_at_ms,
+                    ended_at_ms: action.expires_at_ms,
+                    ..ToolCallLifecycleSummary::default()
+                });
+            entry.started_at_ms = entry.started_at_ms.min(action.applied_at_ms);
+            entry.ended_at_ms = entry.ended_at_ms.max(action.expires_at_ms);
+            entry.target_pids.insert(action.target_pid);
+
+            if action.state == runtime_orchestrator::AppliedActionState::Applied {
+                entry.boosted_actions += action.actions.len() as u64;
+            }
+            if action
+                .audit_fields
+                .get("isolation_mode")
+                .is_some_and(|mode| mode != "none")
+            {
+                entry.isolation_events += 1;
+            }
+        }
+    }
+
+    fn finish(self) -> Vec<ToolCallLifecycleSummary> {
+        self.lifecycles.into_values().collect()
+    }
+}
+
+fn tool_call_lifecycle_id(event: &runtime_orchestrator::Event) -> Option<String> {
+    event
+        .tag_markers
+        .iter()
+        .find_map(|tag| tag.strip_prefix("tool_call_id=").map(str::to_string))
+        .or_else(|| extract_tool_call_id(&event.cmdline))
+        .or_else(|| extract_tool_call_id(event.cgroup.as_deref().unwrap_or_default()))
+        .or_else(|| extract_tool_call_id(event.parent_cmdline.as_deref().unwrap_or_default()))
+}
+
+fn extract_tool_call_id(value: &str) -> Option<String> {
+    for marker in ["tool_call_id=", "--tool-call-id "] {
+        if let Some(found) = extract_after_marker(value, marker) {
+            return Some(found);
+        }
+    }
+    if let Some(rest) = value.split("/tool-call/").nth(1) {
+        return rest
+            .split('/')
+            .next()
+            .filter(|item| !item.is_empty())
+            .map(str::to_string);
+    }
+    None
+}
+
+fn extract_after_marker(value: &str, marker: &str) -> Option<String> {
+    let rest = value.split(marker).nth(1)?;
+    rest.split(|ch: char| ch.is_ascii_whitespace() || ch == ',' || ch == ';' || ch == '/')
+        .next()
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+}
+
+fn event_stage_label(event: &runtime_orchestrator::Event) -> String {
+    let cmdline = event.cmdline.to_ascii_lowercase();
+    let cgroup = event
+        .cgroup
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let process_name = event.process_name.to_ascii_lowercase();
+
+    if cmdline.contains("rerank") || cgroup.contains("rerank") {
+        "rerank".to_string()
+    } else if cmdline.contains("retrieval") || cgroup.contains("retrieval") {
+        "retrieval".to_string()
+    } else if process_name == "stress-ng"
+        || cmdline.contains("background")
+        || cgroup.contains("background")
+    {
+        "background".to_string()
+    } else {
+        "executor".to_string()
     }
 }
 
@@ -170,9 +319,11 @@ fn collect_audit_highlights(
     highlights: &mut BTreeSet<String>,
     actions: &[runtime_orchestrator::AppliedAction],
 ) {
-    const AUDIT_PREFIXES: [&str; 3] = [
+    const AUDIT_PREFIXES: [&str; 5] = [
+        "backend.apply.live_guard.",
         "backend.apply.capture.",
         "backend.apply.apply.",
+        "backend.rollback.live_guard.",
         "backend.rollback.rollback.",
     ];
 
@@ -195,13 +346,13 @@ fn collect_audit_highlights(
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use aegisai_actuator::{
-        Actuator, CommandLinuxSyscallApplier, LinuxActuatorBackend,
-        PlannedOnlyLinuxSyscallExecutor, UnavailableLinuxProcessStateProvider,
-    };
     use crate::{
         MockEventSource, NoopMetadataProvider, RuntimeLoop, RuntimeLoopConfig,
         StaticMetadataProvider,
+    };
+    use aegisai_actuator::{
+        Actuator, CommandLinuxSyscallApplier, LinuxActuatorBackend,
+        PlannedOnlyLinuxSyscallExecutor, UnavailableLinuxProcessStateProvider,
     };
     use runtime_orchestrator::{RuntimeOrchestrator, RuntimeOrchestratorConfig};
 
@@ -260,9 +411,36 @@ mod tests {
     }
 
     #[test]
+    fn tool_call_lifecycle_mock_tracks_subchains_and_isolation() {
+        let mut orchestrator =
+            RuntimeOrchestrator::from_repo_root(repo_root()).expect("config should load");
+        let mut source = MockEventSource::tool_call_lifecycle_sequence();
+        let mut metadata = NoopMetadataProvider;
+        let runtime_loop = RuntimeLoop::new(RuntimeLoopConfig::default()).expect("valid config");
+
+        let summary = runtime_loop
+            .run(&mut orchestrator, &mut source, &mut metadata)
+            .expect("runtime loop should succeed");
+
+        assert_eq!(summary.source_name, "mock-tool-call-lifecycle");
+        assert!(summary
+            .triggered_scenarios
+            .contains_key("tool_call_booster"));
+        assert_eq!(summary.tool_call_lifecycles.len(), 1);
+        let lifecycle = &summary.tool_call_lifecycles[0];
+        assert_eq!(lifecycle.lifecycle_id, "tc-001");
+        assert_eq!(lifecycle.stages.get("executor"), Some(&1));
+        assert_eq!(lifecycle.stages.get("retrieval"), Some(&2));
+        assert_eq!(lifecycle.stages.get("rerank"), Some(&1));
+        assert_eq!(lifecycle.background_events, 1);
+        assert!(lifecycle.boosted_actions >= 3);
+        assert!(lifecycle.isolation_events >= 3);
+    }
+
+    #[test]
     fn runtime_loop_collects_audit_highlights_from_backend_execution() {
-        let config =
-            RuntimeOrchestratorConfig::load_from_repo_root(repo_root()).expect("config should load");
+        let config = RuntimeOrchestratorConfig::load_from_repo_root(repo_root())
+            .expect("config should load");
         let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
             UnavailableLinuxProcessStateProvider,
             CommandLinuxSyscallApplier::dry_run(),

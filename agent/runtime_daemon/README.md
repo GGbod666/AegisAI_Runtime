@@ -19,13 +19,15 @@ Current host strategy:
 Current source modes:
 
 - `mock`: runnable today and intended for Windows-side development
-- `linux`: minimal Linux ingestion path using procfs schedstat for run queue delay,
-  with preflight support still available in the source layer
+- `linux`: minimal Linux ingestion path using procfs for run queue delay,
+  CPU migration, and major page fault deltas, with preflight support still
+  available in the source layer
 
 Current Linux source behavior:
 
-- samples `/proc/<pid>/schedstat` for target runtimes to produce minimal
-  `run_queue_delay` events before the full eBPF reader is wired
+- samples `/proc/<pid>/schedstat`, `/proc/<pid>/sched`, and `/proc/<pid>/stat`
+  for target runtimes to produce minimal `run_queue_delay`, `cpu_migration`,
+  and `major_page_fault` events before the full eBPF reader is wired
 - plans the required probe set from `focus_signals`
 - separates kernel probe signals from runtime-only signals
 - exposes a `ProbeEventReader` hook for the later real probe reader
@@ -34,7 +36,8 @@ Current Linux source behavior:
 - carries a `ProbeReaderConfig` with startup policy and ring-buffer sizing hints
 - records reader startup and shutdown state so Linux integration can validate attach/drain behavior
 - records whether a driver is expected to stream events or is an explicit no-event preflight/audit path
-- can be run with `--allow-partial-probes` while only `run_queue_delay` is backed by procfs schedstat
+- can be run with `--allow-partial-probes` while `offcpu_time` and `io_latency`
+  still wait for the later eBPF reader path
 - preflight may attach successfully and still return no events by design because it does not load eBPF programs or read ring buffers
 
 Current Linux reader CLI knobs:
@@ -48,15 +51,25 @@ Current actuator backend modes:
 
 - `noop`: safe default for Windows-side development
 - `linux-skeleton`: integration placeholder for the later Linux validation phase
-- `linux-command`: Linux-only command-backed actuator path for preflight `renice` / `taskset` validation
+- `linux-command-dry-run`: command-backed audit path that records planned `renice` / `taskset` apply and rollback without changing host state
+- `linux-command`: guarded Linux-only live path. It requires `--confirm-live-actuator` plus a non-empty PID allowlist from `--live-pid-allowlist <pids>` or `[selection].pid_allowlist`. The live scope starts with `nice`; add `--enable-live-affinity` only after nice-only validation is stable. `cpuset` remains disabled.
 
 Current mock source behavior:
 
 - `MockEventSource::demo_sequence()` is self-describing enough to run with `noop` metadata
+- `--mock-profile tool-call-lifecycle` replays a self-contained tool call chain
+  with executor startup, retrieval, rerank, and background noise events carrying a
+  shared `tool_call_id`
 - `StaticMetadataProvider` remains useful when we want to test enrichment and tag-marker merge paths
 
 Example:
 
 ```powershell
 cargo run -p aegisai-runtime-daemon -- --repo-root . --source mock --metadata demo --actuator-backend noop
+```
+
+Tool call lifecycle harness:
+
+```powershell
+cargo run -p aegisai-runtime-daemon -- --repo-root . --source mock --mock-profile tool-call-lifecycle --metadata noop --actuator-backend noop
 ```

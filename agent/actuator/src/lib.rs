@@ -17,9 +17,9 @@ pub use backend::{
     LinuxActuatorBackend, LinuxAffinityState, LinuxCapturedState, LinuxCommandRunner,
     LinuxCpusetState, LinuxNiceState, LinuxProcessStateProvider, LinuxRollbackReport,
     LinuxSyscallApplier, LinuxSyscallExecutor, LinuxSyscallOperation, LinuxSyscallPhase,
-    LinuxSyscallPlan, NoopActuatorBackend, PlannedLinuxSyscallApplier,
+    LinuxSyscallPlan, LiveLinuxCommandGuard, NoopActuatorBackend, PlannedLinuxSyscallApplier,
     PlannedOnlyLinuxSyscallExecutor, ProcfsLinuxProcessStateProvider, RecordingActuatorBackend,
-    SystemLinuxCommandRunner, UnavailableLinuxProcessStateProvider,
+    SystemLinuxCommandRunner, UnavailableLinuxProcessStateProvider, UnconfirmedLinuxCommandRunner,
 };
 pub use model::{Action, ActionPlan, AppliedAction, AppliedActionState, PinStrategy, ScenarioKind};
 
@@ -33,8 +33,8 @@ mod tests {
         Action, ActionPlan, Actuator, AppliedActionState, CommandLinuxSyscallApplier,
         LinuxActuatorBackend, LinuxAffinityState, LinuxCommandRunner, LinuxCpusetState,
         LinuxNiceState, LinuxProcessStateProvider, LinuxSyscallApplier, LinuxSyscallOperation,
-        NoopActuatorBackend, PinStrategy, PlannedOnlyLinuxSyscallExecutor, ScenarioKind,
-        UnavailableLinuxProcessStateProvider,
+        LiveLinuxCommandGuard, NoopActuatorBackend, PinStrategy, PlannedOnlyLinuxSyscallExecutor,
+        ScenarioKind, UnavailableLinuxProcessStateProvider,
     };
 
     fn sample_plan() -> ActionPlan {
@@ -472,6 +472,239 @@ mod tests {
     }
 
     #[test]
+    fn live_command_guard_stage_one_applies_only_nice_and_rolls_back_only_nice() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let guard = LiveLinuxCommandGuard::nice_only([42], true);
+        let applier = CommandLinuxSyscallApplier::guarded_live(
+            FakeCommandRunner::new(calls.clone()),
+            guard.clone(),
+        );
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            applier,
+        )
+        .with_live_guard(guard);
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_named_executor(
+            "linux-command",
+            executor,
+        ));
+
+        let applied = actuator.apply(sample_plan_with_disabled_cpuset(), 6_600, true);
+
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.live_guard.scope"),
+            Some(&"nice".to_string())
+        );
+        assert_eq!(
+            applied
+                .audit_fields
+                .get("backend.apply.live_guard.target_allowed"),
+            Some(&"true".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.0.status"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.1.status"),
+            Some(&"skipped".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.2.status"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            applied
+                .audit_fields
+                .get("backend.apply.apply.skipped_count"),
+            Some(&"1".to_string())
+        );
+        assert_eq!(
+            applied
+                .audit_fields
+                .get("backend.apply.lease.linux.live_guard.scope"),
+            None
+        );
+
+        let rollbacks = actuator.expire(7_400);
+        assert_eq!(rollbacks.len(), 1);
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.restored"),
+            Some(&"nice".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.skipped"),
+            Some(&"affinity".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.failed"),
+            None
+        );
+
+        let commands = calls.borrow();
+        assert_eq!(commands.as_slice(), ["renice 2 -p 42", "renice 7 -p 42"]);
+    }
+
+    #[test]
+    fn live_command_guard_keeps_cpuset_disabled_even_when_policy_requests_it() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let guard = LiveLinuxCommandGuard::nice_and_affinity([42], true);
+        let applier = CommandLinuxSyscallApplier::guarded_live(
+            FakeCommandRunner::new(calls.clone()),
+            guard.clone(),
+        );
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            applier,
+        )
+        .with_live_guard(guard);
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_named_executor(
+            "linux-command",
+            executor,
+        ));
+        let mut plan = sample_plan();
+        plan.actions.push(Action::UseCpuset { enabled: true });
+
+        let applied = actuator.apply(plan, 6_650, true);
+
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.live_guard.scope"),
+            Some(&"nice,affinity".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.2.status"),
+            Some(&"skipped".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.2.detail"),
+            Some(&"cpuset command disabled by live guard".to_string())
+        );
+
+        let rollbacks = actuator.expire(7_450);
+        assert_eq!(rollbacks.len(), 1);
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.restored"),
+            Some(&"nice,affinity".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.skipped"),
+            Some(&"cpuset".to_string())
+        );
+        assert!(!rollbacks[0]
+            .audit_fields
+            .values()
+            .any(|value| value.contains("cpuset restore requires")));
+
+        let commands = calls.borrow();
+        assert_eq!(commands.len(), 4);
+        assert!(!commands.iter().any(|command| command.contains("cpuset")));
+    }
+
+    #[test]
+    fn live_command_guard_stage_two_applies_nice_and_affinity_with_rollback() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let guard = LiveLinuxCommandGuard::nice_and_affinity([42], true);
+        let applier = CommandLinuxSyscallApplier::guarded_live(
+            FakeCommandRunner::new(calls.clone()),
+            guard.clone(),
+        );
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            applier,
+        )
+        .with_live_guard(guard);
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_named_executor(
+            "linux-command",
+            executor,
+        ));
+
+        let applied = actuator.apply(sample_plan(), 6_700, true);
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.live_guard.scope"),
+            Some(&"nice,affinity".to_string())
+        );
+        assert_eq!(
+            applied
+                .audit_fields
+                .get("backend.apply.apply.applied_count"),
+            Some(&"2".to_string())
+        );
+        assert_eq!(
+            applied
+                .audit_fields
+                .get("backend.apply.apply.skipped_count"),
+            Some(&"0".to_string())
+        );
+
+        let rollbacks = actuator.expire(7_500);
+        assert_eq!(rollbacks.len(), 1);
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.restored"),
+            Some(&"nice,affinity".to_string())
+        );
+
+        let commands = calls.borrow();
+        assert_eq!(commands.len(), 4);
+        assert_eq!(commands[0], "renice 2 -p 42");
+        assert_eq!(commands[1], "taskset -pc 0,2 42");
+        assert_eq!(commands[2], "renice 7 -p 42");
+        assert_eq!(commands[3], "taskset -pc 0,2,4 42");
+    }
+
+    #[test]
+    fn live_command_guard_rejects_pid_outside_allowlist_before_commands() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let guard = LiveLinuxCommandGuard::nice_and_affinity([77], true);
+        let applier = CommandLinuxSyscallApplier::guarded_live(
+            FakeCommandRunner::new(calls.clone()),
+            guard.clone(),
+        );
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            applier,
+        )
+        .with_live_guard(guard);
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_named_executor(
+            "linux-command",
+            executor,
+        ));
+
+        let applied = actuator.apply(sample_plan(), 6_800, true);
+
+        assert_eq!(
+            applied
+                .audit_fields
+                .get("backend.apply.live_guard.target_allowed"),
+            Some(&"false".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.result"),
+            Some(&"error".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.failed_count"),
+            Some(&"2".to_string())
+        );
+        assert!(applied
+            .audit_fields
+            .get("backend.apply.apply.0.error")
+            .is_some_and(|value| value.contains("PID allowlist")));
+        assert!(calls.borrow().is_empty());
+    }
+
+    #[test]
     fn linux_apply_reports_partial_command_application() {
         let calls = Rc::new(RefCell::new(Vec::new()));
         let applier =
@@ -536,5 +769,30 @@ mod tests {
             Some(&"refusing to apply Linux command to pid 0".to_string())
         );
         assert!(calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn default_command_applier_requires_guarded_live_constructor() {
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            CommandLinuxSyscallApplier::new(),
+        );
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_named_executor(
+            "linux-command",
+            executor,
+        ));
+        let mut plan = sample_plan();
+        plan.actions = vec![Action::RaiseNice { delta: -5 }];
+
+        let applied = actuator.apply(plan, 8_100, true);
+
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.result"),
+            Some(&"error".to_string())
+        );
+        assert!(applied
+            .audit_fields
+            .get("backend.apply.apply.0.error")
+            .is_some_and(|value| value.contains("explicit confirmation")));
     }
 }

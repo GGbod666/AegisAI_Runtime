@@ -15,8 +15,8 @@ mod model;
 pub use config::{ExplainTuneConfig, ExplainTuneConfigError};
 pub use engine::ExplainTuneEngine;
 pub use model::{
-    ExperimentReport, MetricInsight, MetricSummary, ScenarioReport, TraceEvidence,
-    TriggerExplanation, TuneDirection, TuneSuggestion,
+    ExperimentReport, MetricInsight, MetricSummary, ScenarioReport, ToolCallChainReport,
+    TraceEvidence, TriggerExplanation, TuneDirection, TuneSuggestion,
 };
 
 #[cfg(test)]
@@ -186,6 +186,85 @@ mod tests {
             suggestion.scenario == "inference_tail_guard"
                 && suggestion.target == "triggers"
                 && suggestion.direction == TuneDirection::Decrease
+        }));
+    }
+
+    #[test]
+    fn reports_tool_call_lifecycle_subchains_and_isolation_evidence() {
+        let mut recorder = MetricsRecorder::new(
+            MetricsConfig::default()
+                .with_tracked_metrics(vec![MetricKind::Custom("tool_call_latency".to_string())]),
+        )
+        .expect("valid recorder");
+
+        recorder.record(
+            RecordInput::new(1_000, 61, "python")
+                .with_evaluated_scenarios(["tool_call_booster"])
+                .with_triggered_scenarios(["tool_call_booster"])
+                .with_action_count(2)
+                .with_measurements([Measurement::new(
+                    MetricKind::Custom("tool_call_latency".to_string()),
+                    120.0,
+                )])
+                .with_traces([MetricTrace::new(
+                    1_000,
+                    61,
+                    "python",
+                    TraceKind::ActionApplied,
+                    "applied retrieval boost",
+                )
+                .with_scenario("tool_call_booster")
+                .with_field("tool_call_id", "tc-001")
+                .with_field("tool_call_stage", "retrieval")
+                .with_field("tool_call_subchain", "retrieval_io")
+                .with_field("isolation_mode", "retrieval_affinity_only")
+                .with_field("background_isolation", "blocked_by_safety")])
+                .with_notes(["tool_call_booster:queue_wait_us:2600>=2000".to_string()]),
+        );
+
+        recorder.record(
+            RecordInput::new(1_200, 62, "python")
+                .with_evaluated_scenarios(["tool_call_booster"])
+                .with_triggered_scenarios(["tool_call_booster"])
+                .with_action_count(1)
+                .with_traces([MetricTrace::new(
+                    1_200,
+                    62,
+                    "python",
+                    TraceKind::ActionApplied,
+                    "applied rerank boost",
+                )
+                .with_scenario("tool_call_booster")
+                .with_field("tool_call_id", "tc-001")
+                .with_field("tool_call_stage", "rerank")
+                .with_field("tool_call_subchain", "rerank_queue")
+                .with_field("isolation_mode", "rerank_affinity_only")
+                .with_field("background_isolation", "blocked_by_safety")]),
+        );
+
+        let engine = ExplainTuneEngine::default();
+        let report = engine.analyze(recorder.records(), recorder.traces(), &sample_policies());
+
+        assert_eq!(report.tool_call_chain_reports.len(), 1);
+        let chain = &report.tool_call_chain_reports[0];
+        assert_eq!(chain.lifecycle_id, "tc-001");
+        assert_eq!(chain.stages.get("retrieval"), Some(&1));
+        assert_eq!(chain.stages.get("rerank"), Some(&1));
+        assert_eq!(
+            chain.isolation_modes.get("retrieval_affinity_only"),
+            Some(&1)
+        );
+        assert_eq!(
+            chain.background_isolation.get("blocked_by_safety"),
+            Some(&2)
+        );
+        assert!(report.findings.iter().any(|finding| {
+            finding.contains("lifecycle tc-001") && finding.contains("isolation")
+        }));
+        assert!(report.trigger_explanations.iter().any(|explanation| {
+            explanation
+                .rationale
+                .contains(&"tool_call_subchain:retrieval_io".to_string())
         }));
     }
 

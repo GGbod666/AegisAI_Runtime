@@ -5346,3 +5346,2438 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
   - `Overall result: PASS`
 
 - Overall result: `PASS`
+
+### 2026-05-01T03:34:56+00:00 - Phase 0 engineering health closeout
+
+- Scope: rustfmt cleanup for runtime daemon sources, followed by the requested validation pass.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Notes: `cargo clippy -D warnings` was executed exactly as requested and failed during Cargo argument parsing.
+
+#### Cargo fmt check
+
+- Requirement: required
+- Command: `cargo fmt --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+- Result: `PASS`
+```text
+No output.
+```
+
+#### Cargo test workspace
+
+- Requirement: required
+- Command: `cargo test --workspace`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+- Result: `PASS`
+```text
+Finished `test` profile [unoptimized + debuginfo] target(s) in 1.12s
+
+Unit test summary:
+- aegisai-actuator: 12 passed
+- aegisai-classifier: 6 passed
+- aegisai-collector: 5 passed
+- aegisai-explain-tune: 4 passed
+- aegisai-git-control lib/bin: 7 passed
+- aegisai-metrics: 6 passed
+- aegisai-policy-engine: 9 passed
+- aegisai-runtime-contracts: 0 passed
+- aegisai-runtime-daemon lib/bin: 24 passed
+- ebpf-probe: 8 passed
+- runtime-orchestrator: 6 passed
+
+Doc-tests for all workspace crates completed with 0 tests and 0 failures.
+```
+
+#### Cargo clippy requested form
+
+- Requirement: required
+- Command: `cargo clippy -D warnings`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `1`
+- Result: `FAIL`
+```text
+error: unexpected argument '-D' found
+
+Usage: cargo check [OPTIONS]
+
+For more information, try '--help'.
+```
+
+#### Runtime daemon mock smoke
+
+- Requirement: required
+- Command: `cargo run -p aegisai-runtime-daemon -- --repo-root . --source mock --metadata demo --actuator-backend noop`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+- Result: `PASS`
+```text
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.22s
+AegisAI Runtime Daemon Summary
+source: mock-demo
+metadata: static
+actuator_backend: noop
+processed_events: 3
+applied_actions: 2
+inline_rollbacks: 0
+tick_rollbacks: 2
+metric_records: 5
+trace_records: 10
+triggered_scenarios:
+  inference_tail_guard: 1
+  tool_call_booster: 1
+```
+
+- Overall result: `FAIL`
+- Failure reason: the requested clippy command form exits with Cargo argument parsing error before linting starts.
+
+### 2026-05-01T07:36:56+00:00 - Phase 0 engineering health closeout rerun
+
+- Scope: requested Phase 0 validation after confirming the formatter check is already green.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Notes: clippy deny-warnings was run with Cargo's `--` separator so `-D warnings` is passed to clippy/rustc instead of being parsed as a Cargo argument.
+
+#### Cargo fmt check
+
+- Requirement: required
+- Command: `cargo fmt --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+- Result: `PASS`
+```text
+No output.
+```
+
+#### Cargo test workspace
+
+- Requirement: required
+- Command: `cargo test --workspace`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+- Result: `PASS`
+```text
+Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+Unit test summary:
+- aegisai-actuator: 12 passed
+- aegisai-classifier: 6 passed
+- aegisai-collector: 5 passed
+- aegisai-explain-tune: 4 passed
+- aegisai-git-control lib/bin: 7 passed
+- aegisai-metrics: 6 passed
+- aegisai-policy-engine: 9 passed
+- aegisai-runtime-contracts: 0 passed
+- aegisai-runtime-daemon lib/bin: 24 passed
+- ebpf-probe: 8 passed
+- runtime-orchestrator: 6 passed
+
+Doc-tests for all workspace crates completed with 0 tests and 0 failures.
+```
+
+#### Cargo clippy deny warnings
+
+- Requirement: required
+- Command: `cargo clippy --workspace -- -D warnings`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+- Result: `PASS`
+```text
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+```
+
+#### Runtime daemon mock smoke
+
+- Requirement: required
+- Command: `cargo run -p aegisai-runtime-daemon -- --repo-root . --source mock --metadata demo --actuator-backend noop`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+- Result: `PASS`
+```text
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
+AegisAI Runtime Daemon Summary
+source: mock-demo
+metadata: static
+actuator_backend: noop
+processed_events: 3
+applied_actions: 2
+inline_rollbacks: 0
+tick_rollbacks: 2
+metric_records: 5
+trace_records: 10
+triggered_scenarios:
+  inference_tail_guard: 1
+  tool_call_booster: 1
+```
+
+- Overall result: `PASS`
+
+### 2026-05-01T10:49:37+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `.cache/aegisai/inference_tail_guard/phase4_smoke_baseline`
+- Runtime: `ollama`
+- Selected modes: `baseline`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=96`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Run environment artifact: `.cache/aegisai/inference_tail_guard/phase4_smoke_baseline/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME    ID    SIZE    PROCESSOR    CONTEXT    UNTIL 
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=12.562032
+time_total=12.562245
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T10:49:50.279782981Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化，以提高用户体验和业务效率。我们正在通过实时分析用户的反馈和行为模式来预测和调整广告策略，从而实现更精准的广告投放。目前，我们的目标是深入观察尾延迟这一关键指标，以便更好地理解用户在不同场景下的表现，并据此优化广告内容和展示方式，提升整体用户体验。","done":true,"done_reason":"stop","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983,3837,23031,100627,112458,33108,103923,101991,1773,97639,96555,67338,105143,101042,107494,102468,33108,101070,100144,36407,104538,33108,101921,101927,104238,3837,101982,101884,33126,102146,9370,101927,106029,1773,100004,3837,103952,100160,20412,100403,104144,101143,112881,100147,99936,104118,3837,105920,105344,101128,20002,18493,99604,102122,101373,101107,90395,113696,103983,101927,43815,33108,101987,75768,3837,100341,101932,112458,1773],"total_duration":12559021126,"load_duration":2821268886,"prompt_eval_count":56,"prompt_eval_duration":3167457844,"eval_count":86,"eval_duration":6504267012}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard/phase4_smoke_baseline/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `.cache/aegisai/inference_tail_guard/phase4_smoke_baseline/samples.csv`
+- Mode counts: `.cache/aegisai/inference_tail_guard/phase4_smoke_baseline/mode_counts.csv`
+- Summary CSV: `.cache/aegisai/inference_tail_guard/phase4_smoke_baseline/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 781.290 | 42762.655 | 42762.655 | 86454.302 | 86454.302 | 23517.972 | 0 | 0 | 0.000 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `PASS`
+
+### 2026-05-01T10:54:20+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke`
+- Report path: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Run ID: `phase4_report_smoke`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds.
+
+#### Phase 4 round: No interference / 1
+
+- Artifact directory: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1`
+- Modes: `baseline,dry_run`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `0`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-01T10:54:20+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1`
+- Runtime: `ollama`
+- Selected modes: `baseline dry_run`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `disabled`
+- Stress lifecycle: `disabled`
+- Daemon poll timeout: `3000ms`
+- Run environment artifact: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       3 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.872513
+time_total=1.872594
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T10:54:22.824006151Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1870453572,"load_duration":109328800,"prompt_eval_count":56,"prompt_eval_duration":81039013,"eval_count":16,"eval_duration":1664855135}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `disabled`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `disabled`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: dry-run guarded
+
+- Backend: `linux-command-dry-run`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `disabled`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `disabled`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1/dry_run`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command-dry-run
+processed_events: 0
+applied_actions: 0
+inline_rollbacks: 0
+tick_rollbacks: 0
+metric_records: 0
+trace_records: 0
+triggered_scenarios: none
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1/samples.csv`
+- Mode counts: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1/mode_counts.csv`
+- Summary CSV: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 185.110 | 1490.204 | 1490.204 | 2706.415 | 2706.415 | 731.202 | 0 | 0 | 0.000 |
+| dry_run | linux-command-dry-run | 4/4 | 231.726 | 1609.729 | 1609.729 | 2904.622 | 2904.622 | 818.479 | 0 | 0 | -7.324 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+- Round exit status: `1`
+- Harness stdout: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1/harness.stdout`
+- Harness stderr: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/no_interference/round_1/harness.stderr`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/phase4_runs.csv`
+- Aggregate CSV: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke/phase4_aggregate.csv`
+- Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Harness aggregate exit status: `1`
+- Benefit verdict: `FAIL`
+
+### 2026-05-01T10:55:49+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2`
+- Report path: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Run ID: `phase4_report_smoke2`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds.
+
+#### Phase 4 round: No interference / 1
+
+- Artifact directory: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1`
+- Modes: `baseline,dry_run`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `0`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-01T10:55:49+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1`
+- Runtime: `ollama`
+- Selected modes: `baseline dry_run`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `disabled`
+- Stress lifecycle: `disabled`
+- Daemon poll timeout: `3000ms`
+- Run environment artifact: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       3 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.455013
+time_total=1.455134
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T10:55:51.629048613Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1453065958,"load_duration":97007042,"prompt_eval_count":56,"prompt_eval_duration":72529955,"eval_count":16,"eval_duration":1269079901}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `disabled`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `disabled`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: dry-run guarded
+
+- Backend: `linux-command-dry-run`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `disabled`
+- Request success: `4/4`
+- Daemon status: `124`
+- Stress status: `disabled`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1/dry_run`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1/samples.csv`
+- Mode counts: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1/mode_counts.csv`
+- Summary CSV: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 211.429 | 1721.398 | 1721.398 | 2952.831 | 2952.831 | 825.554 | 0 | 0 | 0.000 |
+| dry_run | linux-command-dry-run | 4/4 | 235.018 | 1620.628 | 1620.628 | 2917.569 | 2917.569 | 820.650 | 0 | 0 | 1.194 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+- Round exit status: `1`
+- Harness stdout: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1/harness.stdout`
+- Harness stderr: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/no_interference/round_1/harness.stderr`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/phase4_runs.csv`
+- Aggregate CSV: `.cache/aegisai/inference_tail_guard_phase4/phase4_report_smoke2/phase4_aggregate.csv`
+- Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Harness aggregate exit status: `1`
+- Benefit verdict: `FAIL`
+
+### 2026-05-01T10:59:16+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `.cache/aegisai/inference_tail_guard/phase4_live_probe`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `.cache/aegisai/inference_tail_guard/phase4_live_probe/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL                   
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       About a minute from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.742926
+time_total=1.743026
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T10:59:18.208056051Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1740777112,"load_duration":91350793,"prompt_eval_count":56,"prompt_eval_duration":66815039,"eval_count":16,"eval_duration":1565337106}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard/phase4_live_probe/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard/phase4_live_probe/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command
+processed_events: 0
+applied_actions: 0
+inline_rollbacks: 0
+tick_rollbacks: 0
+metric_records: 0
+trace_records: 0
+triggered_scenarios: none
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `.cache/aegisai/inference_tail_guard/phase4_live_probe/samples.csv`
+- Mode counts: `.cache/aegisai/inference_tail_guard/phase4_live_probe/mode_counts.csv`
+- Summary CSV: `.cache/aegisai/inference_tail_guard/phase4_live_probe/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 583.244 | 7947.939 | 7947.939 | 16562.535 | 16562.535 | 4821.500 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 459.471 | 8252.064 | 8252.064 | 15149.885 | 15149.885 | 4224.945 | 0 | 0 | 8.529 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+
+### 2026-05-01T11:02:28+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `.cache/aegisai/inference_tail_guard/phase4_live_probe_schedstats`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `.cache/aegisai/inference_tail_guard/phase4_live_probe_schedstats/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       2 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.834722
+time_total=1.834821
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:02:30.733316636Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1832509007,"load_duration":112196012,"prompt_eval_count":56,"prompt_eval_duration":72545065,"eval_count":16,"eval_duration":1633573536}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard/phase4_live_probe_schedstats/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard/phase4_live_probe_schedstats/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command
+processed_events: 0
+applied_actions: 0
+inline_rollbacks: 0
+tick_rollbacks: 0
+metric_records: 0
+trace_records: 0
+triggered_scenarios: none
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `.cache/aegisai/inference_tail_guard/phase4_live_probe_schedstats/samples.csv`
+- Mode counts: `.cache/aegisai/inference_tail_guard/phase4_live_probe_schedstats/mode_counts.csv`
+- Summary CSV: `.cache/aegisai/inference_tail_guard/phase4_live_probe_schedstats/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 605.474 | 8920.867 | 8920.867 | 15765.310 | 15765.310 | 4362.085 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 516.445 | 10430.212 | 10430.212 | 18676.174 | 18676.174 | 5081.536 | 0 | 0 | -18.464 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+
+### 2026-05-01T11:06:09+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `.cache/aegisai/inference_tail_guard/phase4_live_probe_threads`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `.cache/aegisai/inference_tail_guard/phase4_live_probe_threads/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       2 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.771132
+time_total=1.771289
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:06:11.748922466Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1769467927,"load_duration":112385533,"prompt_eval_count":56,"prompt_eval_duration":84759015,"eval_count":16,"eval_duration":1558304050}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard/phase4_live_probe_threads/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `124`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `.cache/aegisai/inference_tail_guard/phase4_live_probe_threads/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `.cache/aegisai/inference_tail_guard/phase4_live_probe_threads/samples.csv`
+- Mode counts: `.cache/aegisai/inference_tail_guard/phase4_live_probe_threads/mode_counts.csv`
+- Summary CSV: `.cache/aegisai/inference_tail_guard/phase4_live_probe_threads/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 461.848 | 9756.917 | 9756.917 | 15321.474 | 15321.474 | 3818.546 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 687.391 | 10482.028 | 10482.028 | 38248.713 | 38248.713 | 15538.900 | 0 | 0 | -149.641 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+
+### 2026-05-01T11:09:42+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z`
+- Report path: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Run ID: `phase4_mvp_benefit_20260501T110942Z`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds.
+
+#### Phase 4 round: CPU interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1`
+- Modes: `baseline,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `1`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-01T11:09:42+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       3 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.405328
+time_total=1.405451
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:09:43.801568327Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1403192531,"load_duration":94682562,"prompt_eval_count":56,"prompt_eval_duration":67360221,"eval_count":16,"eval_duration":1227761730}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `7824`
+- Trigger count: `32`
+- Rollback count: `32`
+- Action audit error count: `4`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command
+processed_events: 7824
+applied_actions: 32
+inline_rollbacks: 18
+tick_rollbacks: 14
+metric_records: 1024
+trace_records: 4096
+triggered_scenarios:
+  inference_tail_guard: 32
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1/mode_counts.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 1060.914 | 8416.242 | 8416.242 | 15547.109 | 15547.109 | 4602.024 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 827.926 | 18612.641 | 18612.641 | 27887.854 | 27887.854 | 7153.110 | 32 | 32 | -79.376 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+- Round exit status: `1`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_1/harness.stderr`
+
+#### Phase 4 round: CPU interference / 2
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_2`
+- Modes: `baseline,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `1`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-01T11:11:21+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_2`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_2/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.469628
+time_total=1.469730
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:11:23.070943859Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1467902065,"load_duration":95872784,"prompt_eval_count":56,"prompt_eval_duration":86260208,"eval_count":16,"eval_duration":1270486782}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_20260501T110942Z/cpu/round_2/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+
+### 2026-05-01T11:13:48+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final`
+- Report path: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Run ID: `phase4_mvp_benefit_final`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds.
+
+#### Phase 4 round: CPU interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1`
+- Modes: `baseline,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `1`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-01T11:13:48+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       3 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.684768
+time_total=1.684866
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:13:50.717301554Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1682958854,"load_duration":96240151,"prompt_eval_count":56,"prompt_eval_duration":82474242,"eval_count":16,"eval_duration":1490544135}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `124`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1/mode_counts.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 947.558 | 7692.007 | 7692.007 | 13186.262 | 13186.262 | 3740.412 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 1158.382 | 16242.332 | 16242.332 | 24073.401 | 24073.401 | 6094.334 | 0 | 0 | -82.564 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+- Round exit status: `1`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu/round_1/harness.stderr`
+
+#### Phase 4 round: CPU + optional I/O interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1`
+- Modes: `baseline,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `1`
+- I/O sync workers: `1`
+- I/O disk workers: `1`
+
+### 2026-05-01T11:15:35+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1 --io 1 --hdd 1 --hdd-bytes 64M --temp-path /home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/stress-tmp`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.603415
+time_total=1.603541
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:15:37.146109498Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1601498012,"load_duration":103142707,"prompt_eval_count":56,"prompt_eval_duration":84920822,"eval_count":16,"eval_duration":1400043559}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1 --io 1 --hdd 1 --hdd-bytes 64M --temp-path /home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/stress-tmp`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1 --io 1 --hdd 1 --hdd-bytes 64M --temp-path /home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/stress-tmp`
+- Request success: `4/4`
+- Daemon status: `124`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/mode_counts.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 1708.025 | 17901.261 | 17901.261 | 33942.969 | 33942.969 | 9046.690 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 1999.435 | 21341.532 | 21341.532 | 36575.191 | 36575.191 | 9927.038 | 0 | 0 | -7.755 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+- Round exit status: `1`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/cpu_io/round_1/harness.stderr`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/phase4_runs.csv`
+- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_final/phase4_aggregate.csv`
+- Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Harness aggregate exit status: `1`
+- Benefit verdict: `FAIL`
+
+### 2026-05-01T11:20:49+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround`
+- Report path: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Run ID: `phase4_mvp_benefit_multiround`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds.
+
+#### Phase 4 round: CPU interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1`
+- Modes: `baseline,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `1`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-01T11:20:49+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=8`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       2 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=0.782921
+time_total=0.783045
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:20:50.457802597Z","response":"AegisAI 在实时推理 A/B","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276],"total_duration":781121839,"load_duration":99225449,"prompt_eval_count":56,"prompt_eval_duration":72641601,"eval_count":8,"eval_duration":600378838}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `124`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1/mode_counts.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 577.520 | 3984.873 | 3984.873 | 6494.342 | 6494.342 | 2025.855 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 1056.482 | 12830.614 | 12830.614 | 17180.116 | 17180.116 | 4934.194 | 0 | 0 | -164.540 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+- Round exit status: `1`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_1/harness.stderr`
+
+#### Phase 4 round: CPU interference / 2
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2`
+- Modes: `baseline,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `1`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-01T11:22:02+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=8`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=0.883151
+time_total=0.883249
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:22:03.452591962Z","response":"AegisAI 在实时推理 A/B","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276],"total_duration":881312026,"load_duration":98444191,"prompt_eval_count":56,"prompt_eval_duration":79803509,"eval_count":8,"eval_duration":693318838}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `5056`
+- Trigger count: `20`
+- Rollback count: `20`
+- Action audit error count: `4`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command
+processed_events: 5056
+applied_actions: 20
+inline_rollbacks: 12
+tick_rollbacks: 8
+metric_records: 1024
+trace_records: 4096
+triggered_scenarios:
+  inference_tail_guard: 20
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2/mode_counts.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 722.454 | 4299.447 | 4299.447 | 7480.473 | 7480.473 | 2161.795 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 567.205 | 5965.667 | 5965.667 | 17718.500 | 17718.500 | 6092.436 | 20 | 20 | -136.863 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+- Round exit status: `1`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu/round_2/harness.stderr`
+
+#### Phase 4 round: CPU + optional I/O interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1`
+- Modes: `baseline,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `1`
+- I/O sync workers: `1`
+- I/O disk workers: `1`
+
+### 2026-05-01T11:22:57+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=8`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1 --io 1 --hdd 1 --hdd-bytes 64M --temp-path /home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/stress-tmp`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=0.874622
+time_total=0.874735
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:22:59.012227794Z","response":"AegisAI 在实时推理 A/B","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276],"total_duration":872629856,"load_duration":86016623,"prompt_eval_count":56,"prompt_eval_duration":77766122,"eval_count":8,"eval_duration":698660789}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1 --io 1 --hdd 1 --hdd-bytes 64M --temp-path /home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/stress-tmp`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1 --io 1 --hdd 1 --hdd-bytes 64M --temp-path /home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/stress-tmp`
+- Request success: `4/4`
+- Daemon status: `124`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/mode_counts.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 1532.922 | 10583.054 | 10583.054 | 18795.864 | 18795.864 | 5518.367 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 1960.503 | 11486.957 | 11486.957 | 18644.215 | 18644.215 | 4431.643 | 0 | 0 | 0.807 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+- Round exit status: `1`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_1/harness.stderr`
+
+#### Phase 4 round: CPU + optional I/O interference / 2
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2`
+- Modes: `baseline,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `1`
+- I/O sync workers: `1`
+- I/O disk workers: `1`
+
+### 2026-05-01T11:24:47+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2`
+- Runtime: `ollama`
+- Selected modes: `baseline live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, and have no action audit errors.
+
+#### Fixed experiment controls
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=8`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1 --io 1 --hdd 1 --hdd-bytes 64M --temp-path /home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/stress-tmp`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2576,20803`
+- Live actuator scope: `nice`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/run.env`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2      
+    parameters          494.03M    
+    context length      32768      
+    embedding length    896        
+    quantization        Q4_K_M     
+
+  Capabilities
+    completion    
+    tools         
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.    
+
+  License
+    Apache License               
+    Version 2.0, January 2004    
+    ...                          
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=0.757431
+time_total=0.757539
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-01T11:24:48.119830486Z","response":"AegisAI 在实时推理 A/B","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276],"total_duration":755431256,"load_duration":91976703,"prompt_eval_count":56,"prompt_eval_duration":77772345,"eval_count":8,"eval_duration":576684540}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1 --io 1 --hdd 1 --hdd-bytes 64M --temp-path /home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/stress-tmp`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/baseline`
+- Mode result: `PASS`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 1 --io 1 --hdd 1 --hdd-bytes 64M --temp-path /home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/stress-tmp`
+- Request success: `4/4`
+- Daemon status: `124`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/live_guarded`
+- Mode result: `FAIL`
+
+Daemon summary excerpt:
+```text
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/mode_counts.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 2038.915 | 10554.848 | 10554.848 | 19763.219 | 19763.219 | 6314.422 | 0 | 0 | 0.000 |
+| live_guarded | linux-command | 4/4 | 1516.085 | 12129.535 | 12129.535 | 20588.914 | 20588.914 | 5691.821 | 0 | 0 | -4.178 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now    
+```
+
+- Overall result: `FAIL`
+- Round exit status: `1`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/cpu_io/round_2/harness.stderr`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/phase4_runs.csv`
+- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase4_mvp_benefit_multiround/phase4_aggregate.csv`
+- Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Harness aggregate exit status: `1`
+- Benefit verdict: `FAIL`

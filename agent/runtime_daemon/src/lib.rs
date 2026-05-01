@@ -8,7 +8,9 @@ pub use metadata::{
     enrich_source_event, MetadataError, MetadataProvider, NoopMetadataProvider, ProcessMetadata,
     ProcfsMetadataProvider, StaticMetadataProvider,
 };
-pub use runtime_loop::{RuntimeLoop, RuntimeLoopConfig, RuntimeLoopError, RuntimeRunSummary};
+pub use runtime_loop::{
+    RuntimeLoop, RuntimeLoopConfig, RuntimeLoopError, RuntimeRunSummary, ToolCallLifecycleSummary,
+};
 pub use source::{
     DriverBackedProbeEventReader, EventSource, LinuxProbeDriver, LinuxProbeHost, LinuxProbePlan,
     LinuxProbeSource, MockEventSource, PlannedProbe, PreflightLinuxProbeDriver, ProbeAttachment,

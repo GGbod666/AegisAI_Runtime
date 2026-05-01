@@ -147,7 +147,7 @@ impl RuntimeOrchestrator {
                 event: EventContext::new(event.timestamp_ms, event.pid, event.process_name.clone()),
                 feature_window,
                 profile: profile.clone(),
-                audit_fields: BTreeMap::new(),
+                audit_fields: event_audit_fields(&event),
             });
         }
 
@@ -458,6 +458,48 @@ fn should_collect_signal(runtime: &RuntimeConfig, signal: &SignalKind) -> bool {
     runtime.focus_signals.is_empty() || runtime.focus_signals.contains(signal)
 }
 
+fn event_audit_fields(event: &Event) -> BTreeMap<String, String> {
+    let mut audit_fields = BTreeMap::new();
+    if let Some(tool_call_id) = tool_call_lifecycle_id(event) {
+        audit_fields.insert("tool_call_id".to_string(), tool_call_id);
+    }
+    audit_fields
+}
+
+fn tool_call_lifecycle_id(event: &Event) -> Option<String> {
+    event
+        .tag_markers
+        .iter()
+        .find_map(|tag| tag.strip_prefix("tool_call_id=").map(str::to_string))
+        .or_else(|| extract_tool_call_id(&event.cmdline))
+        .or_else(|| extract_tool_call_id(event.cgroup.as_deref().unwrap_or_default()))
+        .or_else(|| extract_tool_call_id(event.parent_cmdline.as_deref().unwrap_or_default()))
+}
+
+fn extract_tool_call_id(value: &str) -> Option<String> {
+    for marker in ["tool_call_id=", "--tool-call-id "] {
+        if let Some(found) = extract_after_marker(value, marker) {
+            return Some(found);
+        }
+    }
+    if let Some(rest) = value.split("/tool-call/").nth(1) {
+        return rest
+            .split('/')
+            .next()
+            .filter(|item| !item.is_empty())
+            .map(str::to_string);
+    }
+    None
+}
+
+fn extract_after_marker(value: &str, marker: &str) -> Option<String> {
+    let rest = value.split(marker).nth(1)?;
+    rest.split(|ch: char| ch.is_ascii_whitespace() || ch == ',' || ch == ';' || ch == '/')
+        .next()
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+}
+
 fn action_traces(
     applied_actions: &[AppliedAction],
     rollbacks: &[AppliedAction],
@@ -465,36 +507,53 @@ fn action_traces(
     let mut traces = Vec::new();
 
     for action in applied_actions {
-        traces.push(
-            MetricTrace::new(
-                action.applied_at_ms,
-                action.target_pid,
-                action.target_process_name.clone(),
-                TraceKind::ActionApplied,
-                format!("applied {} action(s)", action.actions.len()),
-            )
-            .with_scenario(action.scenario.as_str())
-            .with_field("actions", action_names(&action.actions).join(","))
-            .with_field("expires_at_ms", action.expires_at_ms.to_string()),
-        );
+        let trace = MetricTrace::new(
+            action.applied_at_ms,
+            action.target_pid,
+            action.target_process_name.clone(),
+            TraceKind::ActionApplied,
+            format!("applied {} action(s)", action.actions.len()),
+        )
+        .with_scenario(action.scenario.as_str())
+        .with_field("actions", action_names(&action.actions).join(","))
+        .with_field("expires_at_ms", action.expires_at_ms.to_string());
+        traces.push(with_action_audit_fields(trace, action));
     }
 
     for rollback in rollbacks {
-        traces.push(
-            MetricTrace::new(
-                rollback.expires_at_ms,
-                rollback.target_pid,
-                rollback.target_process_name.clone(),
-                TraceKind::ActionRolledBack,
-                format!("rolled back {} action(s)", rollback.actions.len()),
-            )
-            .with_scenario(rollback.scenario.as_str())
-            .with_field("actions", action_names(&rollback.actions).join(","))
-            .with_field("rolled_back", "true"),
-        );
+        let trace = MetricTrace::new(
+            rollback.expires_at_ms,
+            rollback.target_pid,
+            rollback.target_process_name.clone(),
+            TraceKind::ActionRolledBack,
+            format!("rolled back {} action(s)", rollback.actions.len()),
+        )
+        .with_scenario(rollback.scenario.as_str())
+        .with_field("actions", action_names(&rollback.actions).join(","))
+        .with_field("rolled_back", "true");
+        traces.push(with_action_audit_fields(trace, rollback));
     }
 
     traces
+}
+
+fn with_action_audit_fields(mut trace: MetricTrace, action: &AppliedAction) -> MetricTrace {
+    const TRACE_AUDIT_FIELDS: [&str; 7] = [
+        "tool_call_id",
+        "tool_call_stage",
+        "tool_call_focus",
+        "tool_call_subchain",
+        "isolation_mode",
+        "isolation_scope",
+        "background_isolation",
+    ];
+
+    for field in TRACE_AUDIT_FIELDS {
+        if let Some(value) = action.audit_fields.get(field) {
+            trace = trace.with_field(field, value.as_str());
+        }
+    }
+    trace
 }
 
 fn action_names(actions: &[Action]) -> Vec<String> {
@@ -603,7 +662,7 @@ mod tests {
 
         let outcome = orchestrator.process_event(
             Event::new(2_000, 202, "python", SignalKind::QueueWait, 2_500)
-                .with_cmdline("python tool-executor retrieval-worker"),
+                .with_cmdline("python tool-executor retrieval-worker --tool-call-id tc-001"),
         );
 
         assert!(outcome.profile.has_tag(&WorkloadTag::ToolCall));
@@ -619,6 +678,22 @@ mod tests {
             .actions
             .iter()
             .any(|action| matches!(action, Action::WarmupExecutor)));
+        assert_eq!(
+            outcome.applied_actions[0].audit_fields.get("tool_call_id"),
+            Some(&"tc-001".to_string())
+        );
+        assert_eq!(
+            outcome.applied_actions[0]
+                .audit_fields
+                .get("tool_call_subchain"),
+            Some(&"retrieval_io".to_string())
+        );
+        assert_eq!(
+            outcome.applied_actions[0]
+                .audit_fields
+                .get("isolation_mode"),
+            Some(&"retrieval_affinity_only".to_string())
+        );
     }
 
     #[test]
@@ -662,6 +737,39 @@ mod tests {
             .traces()
             .iter()
             .any(|trace| trace.kind == TraceKind::ActionApplied));
+    }
+
+    #[test]
+    fn action_traces_include_tool_call_lifecycle_audit_fields() {
+        let mut orchestrator =
+            RuntimeOrchestrator::from_repo_root(repo_root()).expect("config should load");
+
+        orchestrator.process_event(
+            Event::new(9_000, 5151, "python", SignalKind::QueueWait, 2_500)
+                .with_cmdline("python tool-executor retrieval-worker --tool-call-id tc-009"),
+        );
+
+        let trace = orchestrator
+            .traces()
+            .iter()
+            .find(|trace| {
+                trace.kind == TraceKind::ActionApplied
+                    && trace.scenario.as_deref() == Some("tool_call_booster")
+            })
+            .expect("tool call action trace should be recorded");
+
+        assert_eq!(
+            trace.fields.get("tool_call_id"),
+            Some(&"tc-009".to_string())
+        );
+        assert_eq!(
+            trace.fields.get("tool_call_subchain"),
+            Some(&"retrieval_io".to_string())
+        );
+        assert_eq!(
+            trace.fields.get("background_isolation"),
+            Some(&"blocked_by_safety".to_string())
+        );
     }
 
     #[test]

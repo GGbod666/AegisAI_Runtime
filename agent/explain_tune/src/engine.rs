@@ -5,8 +5,8 @@ use aegisai_policy_engine::{ScenarioKind, ScenarioPolicy, TriggerThresholds};
 
 use crate::config::{validate_config, ExplainTuneConfig, ExplainTuneConfigError};
 use crate::model::{
-    ExperimentReport, MetricInsight, MetricSummary, ScenarioReport, TraceEvidence,
-    TriggerExplanation, TuneDirection, TuneSuggestion,
+    ExperimentReport, MetricInsight, MetricSummary, ScenarioReport, ToolCallChainReport,
+    TraceEvidence, TriggerExplanation, TuneDirection, TuneSuggestion,
 };
 
 pub struct ExplainTuneEngine {
@@ -47,15 +47,17 @@ impl ExplainTuneEngine {
             .iter()
             .map(|analysis| analysis.report.clone())
             .collect::<Vec<_>>();
+        let tool_call_chain_reports = self.build_tool_call_chain_reports(traces);
         let trigger_explanations = self.collect_trigger_explanations(records, traces, policies);
         let tune_suggestions = self.build_tune_suggestions(&analyses, policies);
-        let findings = self.build_findings(&scenario_reports);
+        let findings = self.build_findings(&scenario_reports, &tool_call_chain_reports);
 
         ExperimentReport {
             generated_at_ms,
             total_records: records.len(),
             total_traces: traces.len(),
             scenario_reports,
+            tool_call_chain_reports,
             trigger_explanations,
             tune_suggestions,
             findings,
@@ -110,6 +112,21 @@ impl ExplainTuneEngine {
                 let thresholds = format_thresholds(&policy.triggers);
                 if !thresholds.is_empty() {
                     rationale.push(format!("configured_thresholds:{}", thresholds.join(",")));
+                }
+            }
+
+            for field in [
+                "tool_call_id",
+                "tool_call_stage",
+                "tool_call_subchain",
+                "isolation_mode",
+                "background_isolation",
+            ] {
+                for value in scenario_traces
+                    .iter()
+                    .filter_map(|trace| trace.fields.get(field))
+                {
+                    rationale.push(format!("{field}:{value}"));
                 }
             }
 
@@ -489,7 +506,61 @@ impl ExplainTuneEngine {
         suggestions
     }
 
-    fn build_findings(&self, reports: &[ScenarioReport]) -> Vec<String> {
+    fn build_tool_call_chain_reports(&self, traces: &[MetricTrace]) -> Vec<ToolCallChainReport> {
+        let mut chains = BTreeMap::<String, ToolCallChainAccumulator>::new();
+
+        for trace in traces {
+            if trace.scenario.as_deref() != Some("tool_call_booster") {
+                continue;
+            }
+
+            let Some(lifecycle_id) = trace.fields.get("tool_call_id").cloned() else {
+                continue;
+            };
+
+            let entry =
+                chains
+                    .entry(lifecycle_id.clone())
+                    .or_insert_with(|| ToolCallChainAccumulator {
+                        lifecycle_id,
+                        ..ToolCallChainAccumulator::default()
+                    });
+            entry.target_pids.insert(trace.pid);
+
+            if trace.kind == TraceKind::ActionApplied {
+                entry.trigger_count += 1;
+            }
+            if trace.kind == TraceKind::ActionRolledBack {
+                entry.rollback_count += 1;
+            }
+            if let Some(stage) = trace.fields.get("tool_call_stage") {
+                *entry.stages.entry(stage.clone()).or_default() += 1;
+            }
+            if let Some(subchain) = trace.fields.get("tool_call_subchain") {
+                entry.evidence.push(format!("subchain:{subchain}"));
+            }
+            if let Some(mode) = trace.fields.get("isolation_mode") {
+                *entry.isolation_modes.entry(mode.clone()).or_default() += 1;
+            }
+            if let Some(background) = trace.fields.get("background_isolation") {
+                *entry
+                    .background_isolation
+                    .entry(background.clone())
+                    .or_default() += 1;
+            }
+        }
+
+        chains
+            .into_values()
+            .map(ToolCallChainAccumulator::finish)
+            .collect()
+    }
+
+    fn build_findings(
+        &self,
+        reports: &[ScenarioReport],
+        tool_call_chains: &[ToolCallChainReport],
+    ) -> Vec<String> {
         let mut findings = Vec::new();
 
         for report in reports {
@@ -536,6 +607,29 @@ impl ExplainTuneEngine {
             }
         }
 
+        for chain in tool_call_chains {
+            let stages = chain.stages.keys().cloned().collect::<Vec<_>>().join(",");
+            findings.push(format!(
+                "tool_call_booster lifecycle {} covered stages [{}] with {} isolation event(s)",
+                chain.lifecycle_id,
+                stages,
+                chain.isolation_modes.values().sum::<usize>()
+            ));
+
+            if chain
+                .background_isolation
+                .get("blocked_by_safety")
+                .copied()
+                .unwrap_or(0)
+                > 0
+            {
+                findings.push(format!(
+                    "tool_call_booster lifecycle {} kept background isolation blocked by safety",
+                    chain.lifecycle_id
+                ));
+            }
+        }
+
         dedupe_preserving_order(findings)
     }
 
@@ -553,6 +647,33 @@ impl ExplainTuneEngine {
             delta: trend.delta,
             improvement_ratio: trend.improvement_ratio,
             assessment,
+        }
+    }
+}
+
+#[derive(Default)]
+struct ToolCallChainAccumulator {
+    lifecycle_id: String,
+    stages: BTreeMap<String, usize>,
+    trigger_count: usize,
+    rollback_count: usize,
+    isolation_modes: BTreeMap<String, usize>,
+    background_isolation: BTreeMap<String, usize>,
+    target_pids: BTreeSet<u32>,
+    evidence: Vec<String>,
+}
+
+impl ToolCallChainAccumulator {
+    fn finish(self) -> ToolCallChainReport {
+        ToolCallChainReport {
+            lifecycle_id: self.lifecycle_id,
+            stages: self.stages,
+            trigger_count: self.trigger_count,
+            rollback_count: self.rollback_count,
+            isolation_modes: self.isolation_modes,
+            background_isolation: self.background_isolation,
+            target_pids: self.target_pids.into_iter().collect(),
+            evidence: dedupe_preserving_order(self.evidence),
         }
     }
 }

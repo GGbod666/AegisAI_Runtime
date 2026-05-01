@@ -1,10 +1,13 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aegisai_actuator::{Actuator, LinuxActuatorBackend, NoopActuatorBackend};
+use aegisai_actuator::{
+    Actuator, LinuxActuatorBackend, LiveLinuxCommandGuard, NoopActuatorBackend,
+};
 use aegisai_runtime_daemon::{
     LinuxProbeSource, MockEventSource, NoopMetadataProvider, ProbeReaderConfig,
     ProcfsMetadataProvider, RuntimeLoop, RuntimeLoopConfig, StaticMetadataProvider,
@@ -16,7 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = RuntimeOrchestratorConfig::load_from_repo_root(&cli.repo_root)?;
     let runtime_config = config.runtime.clone();
-    let mut orchestrator = RuntimeOrchestrator::with_actuator(config, build_actuator(&cli)?)?;
+    let mut orchestrator =
+        RuntimeOrchestrator::with_actuator(config.clone(), build_actuator(&cli, &config)?)?;
     let runtime_loop = RuntimeLoop::new(RuntimeLoopConfig {
         batch_size: cli.batch_size,
         tick_interval_ms: cli.tick_interval_ms,
@@ -25,17 +29,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let summary = match (cli.source.as_str(), cli.metadata.as_str()) {
         ("mock", "demo") => {
-            let mut source = MockEventSource::demo_sequence();
+            let mut source = build_mock_source(&cli.mock_profile)?;
             let mut metadata = StaticMetadataProvider::demo();
             runtime_loop.run(&mut orchestrator, &mut source, &mut metadata)?
         }
         ("mock", "noop") => {
-            let mut source = MockEventSource::demo_sequence();
+            let mut source = build_mock_source(&cli.mock_profile)?;
             let mut metadata = NoopMetadataProvider;
             runtime_loop.run(&mut orchestrator, &mut source, &mut metadata)?
         }
         ("mock", "procfs") => {
-            let mut source = MockEventSource::demo_sequence();
+            let mut source = build_mock_source(&cli.mock_profile)?;
             let mut metadata = procfs_metadata_provider_for_mock()?;
             runtime_loop.run(&mut orchestrator, &mut source, &mut metadata)?
         }
@@ -68,8 +72,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 struct CliConfig {
     repo_root: PathBuf,
     source: String,
+    mock_profile: String,
     metadata: String,
     actuator_backend: String,
+    confirm_live_actuator: bool,
+    enable_live_affinity: bool,
+    live_pid_allowlist: BTreeSet<u32>,
     require_all_probes: bool,
     probe_buffer_events: usize,
     probe_poll_timeout_ms: u64,
@@ -84,8 +92,12 @@ impl Default for CliConfig {
         Self {
             repo_root: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             source: "mock".to_string(),
+            mock_profile: "demo".to_string(),
             metadata: "demo".to_string(),
             actuator_backend: "noop".to_string(),
+            confirm_live_actuator: false,
+            enable_live_affinity: false,
+            live_pid_allowlist: BTreeSet::new(),
             require_all_probes: true,
             probe_buffer_events: 4_096,
             probe_poll_timeout_ms: 100,
@@ -118,6 +130,11 @@ impl CliConfig {
                         .next()
                         .ok_or_else(|| "--source expects `mock` or `linux`".to_string())?;
                 }
+                "--mock-profile" => {
+                    config.mock_profile = args.next().ok_or_else(|| {
+                        "--mock-profile expects `demo` or `tool-call-lifecycle`".to_string()
+                    })?;
+                }
                 "--metadata" => {
                     config.metadata = args.next().ok_or_else(|| {
                         "--metadata expects `demo`, `noop`, or `procfs`".to_string()
@@ -131,6 +148,18 @@ impl CliConfig {
                 }
                 "--allow-partial-probes" => {
                     config.require_all_probes = false;
+                }
+                "--confirm-live-actuator" => {
+                    config.confirm_live_actuator = true;
+                }
+                "--enable-live-affinity" => {
+                    config.enable_live_affinity = true;
+                }
+                "--live-pid-allowlist" => {
+                    let value = args.next().ok_or_else(|| {
+                        "--live-pid-allowlist expects a comma-separated PID list".to_string()
+                    })?;
+                    config.live_pid_allowlist = parse_pid_allowlist(&value)?;
                 }
                 "--probe-buffer-events" => {
                     config.probe_buffer_events = args
@@ -188,8 +217,12 @@ impl CliConfig {
             "Options:",
             "  --repo-root <path>   Repository root containing configs/ (default: current dir)",
             "  --source <mode>      Source mode: mock | linux (default: mock)",
+            "  --mock-profile <name>  Mock source profile: demo | tool-call-lifecycle (default: demo)",
             "  --metadata <mode>    Metadata mode: demo | noop | procfs (default: demo)",
             "  --actuator-backend <mode>  Backend mode: noop | linux-skeleton | linux-command | linux-command-dry-run (default: noop)",
+            "  --confirm-live-actuator  Required before linux-command may execute host renice/taskset",
+            "  --enable-live-affinity  Allow linux-command to apply taskset after nice-only validation",
+            "  --live-pid-allowlist <pids>  Live actuator PID allowlist override, e.g. 1234,5678",
             "  --allow-partial-probes     Continue when some Linux probes cannot attach",
             "  --probe-buffer-events <n>  Linux reader buffered-event hint (default: 4096)",
             "  --probe-poll-timeout-ms <n>  Linux reader poll timeout hint (default: 100)",
@@ -208,6 +241,37 @@ impl CliConfig {
             poll_timeout_ms: self.probe_poll_timeout_ms,
         }
     }
+}
+
+fn build_mock_source(profile: &str) -> Result<MockEventSource, String> {
+    match profile {
+        "demo" => Ok(MockEventSource::demo_sequence()),
+        "tool-call-lifecycle" => Ok(MockEventSource::tool_call_lifecycle_sequence()),
+        other => Err(format!(
+            "unsupported mock profile `{other}`; expected `demo` or `tool-call-lifecycle`"
+        )),
+    }
+}
+
+fn parse_pid_allowlist(raw: &str) -> Result<BTreeSet<u32>, String> {
+    let mut pids = BTreeSet::new();
+    for value in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let pid = value
+            .parse::<u32>()
+            .map_err(|_| format!("invalid PID `{value}` in --live-pid-allowlist"))?;
+        if pid == 0 {
+            return Err("--live-pid-allowlist cannot include pid 0".to_string());
+        }
+        pids.insert(pid);
+    }
+    if pids.is_empty() {
+        return Err("--live-pid-allowlist expects at least one PID".to_string());
+    }
+    Ok(pids)
 }
 
 fn append_summary_to_log(
@@ -250,6 +314,22 @@ fn append_summary_to_log(
             writeln!(file, "  - `{highlight}`")?;
         }
     }
+    if !summary.tool_call_lifecycles.is_empty() {
+        writeln!(file, "- Tool call lifecycles:")?;
+        for lifecycle in &summary.tool_call_lifecycles {
+            writeln!(
+                file,
+                "  - `{}`: duration_ms={}, stages={}, boosted_actions={}, background_events={}, isolation_events={}, pids={}",
+                lifecycle.lifecycle_id,
+                lifecycle.duration_ms(),
+                format_stage_counts(&lifecycle.stages),
+                lifecycle.boosted_actions,
+                lifecycle.background_events,
+                lifecycle.isolation_events,
+                format_pids(&lifecycle.target_pids)
+            )?;
+        }
+    }
     if summary.triggered_scenarios.is_empty() {
         writeln!(file, "- Triggered scenarios: `none`")?;
     } else {
@@ -289,6 +369,21 @@ fn print_summary(summary: &aegisai_runtime_daemon::RuntimeRunSummary) {
             println!("  {highlight}");
         }
     }
+    if !summary.tool_call_lifecycles.is_empty() {
+        println!("tool_call_lifecycles:");
+        for lifecycle in &summary.tool_call_lifecycles {
+            println!(
+                "  {}: duration_ms={} stages={} boosted_actions={} background_events={} isolation_events={} pids={}",
+                lifecycle.lifecycle_id,
+                lifecycle.duration_ms(),
+                format_stage_counts(&lifecycle.stages),
+                lifecycle.boosted_actions,
+                lifecycle.background_events,
+                lifecycle.isolation_events,
+                format_pids(&lifecycle.target_pids)
+            );
+        }
+    }
 
     if summary.triggered_scenarios.is_empty() {
         println!("triggered_scenarios: none");
@@ -298,6 +393,29 @@ fn print_summary(summary: &aegisai_runtime_daemon::RuntimeRunSummary) {
             println!("  {scenario}: {count}");
         }
     }
+}
+
+fn format_stage_counts(stages: &BTreeMap<String, u64>) -> String {
+    if stages.is_empty() {
+        return "none".to_string();
+    }
+
+    stages
+        .iter()
+        .map(|(stage, count)| format!("{stage}:{count}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn format_pids(pids: &BTreeSet<u32>) -> String {
+    if pids.is_empty() {
+        return "none".to_string();
+    }
+
+    pids.iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 #[cfg(target_os = "linux")]
@@ -320,11 +438,11 @@ fn procfs_metadata_provider_for_mock() -> Result<ProcfsMetadataProvider, String>
     Err("procfs metadata provider is only available on Linux; use `demo` or `noop` metadata on Windows".to_string())
 }
 
-fn build_actuator(cli: &CliConfig) -> Result<Actuator, String> {
+fn build_actuator(cli: &CliConfig, config: &RuntimeOrchestratorConfig) -> Result<Actuator, String> {
     match cli.actuator_backend.as_str() {
         "noop" => Ok(Actuator::with_backend(NoopActuatorBackend)),
         "linux-skeleton" => Ok(Actuator::with_backend(LinuxActuatorBackend::default())),
-        "linux-command" => build_linux_command_actuator(),
+        "linux-command" => build_linux_command_actuator(cli, config),
         "linux-command-dry-run" => build_linux_command_dry_run_actuator(),
         other => Err(format!(
             "unsupported actuator backend `{other}`; expected `noop`, `linux-skeleton`, `linux-command`, or `linux-command-dry-run`"
@@ -333,19 +451,48 @@ fn build_actuator(cli: &CliConfig) -> Result<Actuator, String> {
 }
 
 #[cfg(target_os = "linux")]
-fn build_linux_command_actuator() -> Result<Actuator, String> {
+fn build_linux_command_actuator(
+    cli: &CliConfig,
+    config: &RuntimeOrchestratorConfig,
+) -> Result<Actuator, String> {
+    if !cli.confirm_live_actuator {
+        return Err(
+            "`linux-command` requires --confirm-live-actuator before host commands may run"
+                .to_string(),
+        );
+    }
+    let allowed_pids = if cli.live_pid_allowlist.is_empty() {
+        config.runtime.pid_allowlist.clone()
+    } else {
+        cli.live_pid_allowlist.clone()
+    };
+    if allowed_pids.is_empty() {
+        return Err(
+            "`linux-command` requires a non-empty PID allowlist from --live-pid-allowlist or [selection].pid_allowlist in runtime config".to_string(),
+        );
+    }
+
+    let guard = if cli.enable_live_affinity {
+        LiveLinuxCommandGuard::nice_and_affinity(allowed_pids.iter().copied(), true)
+    } else {
+        LiveLinuxCommandGuard::nice_only(allowed_pids.iter().copied(), true)
+    };
     let executor =
         aegisai_actuator::PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
             aegisai_actuator::ProcfsLinuxProcessStateProvider,
-            aegisai_actuator::CommandLinuxSyscallApplier::new(),
-        );
+            aegisai_actuator::CommandLinuxSyscallApplier::live(guard.clone()),
+        )
+        .with_live_guard(guard);
     Ok(Actuator::with_backend(
         LinuxActuatorBackend::with_named_executor("linux-command", executor),
     ))
 }
 
 #[cfg(not(target_os = "linux"))]
-fn build_linux_command_actuator() -> Result<Actuator, String> {
+fn build_linux_command_actuator(
+    _cli: &CliConfig,
+    _config: &RuntimeOrchestratorConfig,
+) -> Result<Actuator, String> {
     Err("`linux-command` actuator backend is only available on Linux".to_string())
 }
 
@@ -368,11 +515,29 @@ fn build_linux_command_dry_run_actuator() -> Result<Actuator, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
+    use std::path::{Path, PathBuf};
 
-    use aegisai_runtime_daemon::RuntimeRunSummary;
+    use aegisai_runtime_daemon::{EventSource, RuntimeRunSummary, ToolCallLifecycleSummary};
+    use runtime_orchestrator::RuntimeOrchestratorConfig;
 
-    use super::{append_summary_to_log, build_linux_command_dry_run_actuator, CliConfig};
+    use super::{
+        append_summary_to_log, build_actuator, build_linux_command_dry_run_actuator,
+        build_mock_source, CliConfig,
+    };
+
+    fn repo_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("crate lives under agent/runtime_daemon")
+            .to_path_buf()
+    }
+
+    fn sample_config() -> RuntimeOrchestratorConfig {
+        RuntimeOrchestratorConfig::load_from_repo_root(repo_root()).expect("config should load")
+    }
 
     #[test]
     fn cli_supports_probe_reader_flags() {
@@ -421,6 +586,58 @@ mod tests {
     }
 
     #[test]
+    fn cli_accepts_tool_call_lifecycle_mock_profile() {
+        let cli = CliConfig::parse(
+            ["--mock-profile", "tool-call-lifecycle"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        assert_eq!(cli.mock_profile, "tool-call-lifecycle");
+        assert_eq!(
+            build_mock_source(&cli.mock_profile)
+                .expect("profile should exist")
+                .source_name(),
+            "mock-tool-call-lifecycle"
+        );
+    }
+
+    #[test]
+    fn cli_accepts_live_actuator_confirmation_flags() {
+        let cli = CliConfig::parse(
+            [
+                "--actuator-backend",
+                "linux-command",
+                "--confirm-live-actuator",
+                "--enable-live-affinity",
+                "--live-pid-allowlist",
+                "42, 77",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        assert_eq!(cli.actuator_backend, "linux-command");
+        assert!(cli.confirm_live_actuator);
+        assert!(cli.enable_live_affinity);
+        assert_eq!(cli.live_pid_allowlist, [42, 77].into_iter().collect());
+    }
+
+    #[test]
+    fn cli_rejects_invalid_live_pid_allowlist() {
+        let error = CliConfig::parse(
+            ["--live-pid-allowlist", "0,abc"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect_err("invalid pid allowlist should fail");
+
+        assert!(error.contains("pid 0") || error.contains("invalid PID"));
+    }
+
+    #[test]
     fn cli_accepts_verification_log_path() {
         let cli = CliConfig::parse(
             ["--verification-log", "docs/verification_log.md"]
@@ -439,6 +656,88 @@ mod tests {
     fn linux_command_dry_run_backend_uses_named_backend() {
         let actuator = build_linux_command_dry_run_actuator().expect("backend should build");
         assert_eq!(actuator.backend_name(), "linux-command-dry-run");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_command_requires_explicit_confirmation() {
+        let config = sample_config();
+        let cli = CliConfig::parse(
+            ["--actuator-backend", "linux-command"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        let error = match build_actuator(&cli, &config) {
+            Ok(_) => panic!("live command should be gated"),
+            Err(error) => error,
+        };
+        assert!(error.contains("--confirm-live-actuator"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_command_requires_non_empty_pid_allowlist() {
+        let config = sample_config();
+        let cli = CliConfig::parse(
+            [
+                "--actuator-backend",
+                "linux-command",
+                "--confirm-live-actuator",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        let error = match build_actuator(&cli, &config) {
+            Ok(_) => panic!("allowlist should be required"),
+            Err(error) => error,
+        };
+        assert!(error.contains("pid_allowlist"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_command_with_confirmation_and_config_allowlist_builds_live_backend() {
+        let mut config = sample_config();
+        config.runtime.pid_allowlist = [42].into_iter().collect();
+        let cli = CliConfig::parse(
+            [
+                "--actuator-backend",
+                "linux-command",
+                "--confirm-live-actuator",
+                "--enable-live-affinity",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        let actuator = build_actuator(&cli, &config).expect("live backend should build");
+        assert_eq!(actuator.backend_name(), "linux-command");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_command_with_confirmation_and_cli_allowlist_builds_live_backend() {
+        let config = sample_config();
+        let cli = CliConfig::parse(
+            [
+                "--actuator-backend",
+                "linux-command",
+                "--confirm-live-actuator",
+                "--live-pid-allowlist",
+                "42",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        let actuator = build_actuator(&cli, &config).expect("live backend should build");
+        assert_eq!(actuator.backend_name(), "linux-command");
     }
 
     #[test]
@@ -470,8 +769,47 @@ mod tests {
         let _ = fs::remove_file(&log_path);
 
         assert!(contents.contains("- Audit highlights:"));
-        assert!(contents.contains(
-            "pid=42;scenario=inference_tail_guard;backend.apply.apply.result=ok"
+        assert!(
+            contents.contains("pid=42;scenario=inference_tail_guard;backend.apply.apply.result=ok")
+        );
+    }
+
+    #[test]
+    fn verification_log_includes_tool_call_lifecycle_summary() {
+        let log_path = std::env::temp_dir().join(format!(
+            "aegisai-runtime-daemon-lifecycle-{}-verification.md",
+            std::process::id()
         ));
+        let _ = fs::remove_file(&log_path);
+
+        let summary = RuntimeRunSummary {
+            source_name: "mock-tool-call-lifecycle".to_string(),
+            metadata_provider_name: "noop".to_string(),
+            actuator_backend_name: "noop".to_string(),
+            tool_call_lifecycles: vec![ToolCallLifecycleSummary {
+                lifecycle_id: "tc-001".to_string(),
+                started_at_ms: 10_000,
+                ended_at_ms: 10_800,
+                stages: BTreeMap::from([
+                    ("executor".to_string(), 1),
+                    ("retrieval".to_string(), 2),
+                    ("rerank".to_string(), 1),
+                ]),
+                boosted_actions: 7,
+                background_events: 1,
+                isolation_events: 3,
+                target_pids: BTreeSet::from([6_100, 6_101, 6_102]),
+            }],
+            ..RuntimeRunSummary::default()
+        };
+
+        append_summary_to_log(&log_path, &summary).expect("summary should append");
+        let contents = fs::read_to_string(&log_path).expect("log should be readable");
+        let _ = fs::remove_file(&log_path);
+
+        assert!(contents.contains("- Tool call lifecycles:"));
+        assert!(contents.contains("tc-001"));
+        assert!(contents.contains("stages=executor:1,rerank:1,retrieval:2"));
+        assert!(contents.contains("isolation_events=3"));
     }
 }

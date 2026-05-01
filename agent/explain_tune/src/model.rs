@@ -8,6 +8,7 @@ pub struct ExperimentReport {
     pub total_records: usize,
     pub total_traces: usize,
     pub scenario_reports: Vec<ScenarioReport>,
+    pub tool_call_chain_reports: Vec<ToolCallChainReport>,
     pub trigger_explanations: Vec<TriggerExplanation>,
     pub tune_suggestions: Vec<TuneSuggestion>,
     pub findings: Vec<String>,
@@ -19,6 +20,18 @@ impl ExperimentReport {
             .iter()
             .find(|report| report.scenario == scenario)
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolCallChainReport {
+    pub lifecycle_id: String,
+    pub stages: BTreeMap<String, usize>,
+    pub trigger_count: usize,
+    pub rollback_count: usize,
+    pub isolation_modes: BTreeMap<String, usize>,
+    pub background_isolation: BTreeMap<String, usize>,
+    pub target_pids: Vec<u32>,
+    pub evidence: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

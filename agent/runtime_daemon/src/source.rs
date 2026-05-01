@@ -238,7 +238,9 @@ pub struct ProcfsSchedstatSnapshot {
     pub pid: u32,
     pub tid: u32,
     pub comm: String,
-    pub run_queue_delay_ns: u64,
+    pub run_queue_delay_ns: Option<u64>,
+    pub cpu_migrations: Option<u64>,
+    pub major_page_faults: Option<u64>,
 }
 
 pub trait ProcfsSchedstatSampler {
@@ -290,25 +292,73 @@ impl ProcfsSchedstatSampler for SystemProcfsSchedstatSampler {
                 continue;
             }
 
-            let schedstat = match std::fs::read_to_string(root.join("schedstat")) {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            let Some(run_queue_delay_ns) = parse_schedstat_run_delay_ns(&schedstat) else {
-                continue;
-            };
+            let task_root = root.join("task");
+            let mut saw_thread = false;
+            if let Ok(tasks) = std::fs::read_dir(&task_root) {
+                for task in tasks.flatten() {
+                    let Some(tid) = task
+                        .file_name()
+                        .to_str()
+                        .and_then(|value| value.parse::<u32>().ok())
+                    else {
+                        continue;
+                    };
+                    let task_path = task.path();
+                    let task_comm = std::fs::read_to_string(task_path.join("comm"))
+                        .ok()
+                        .map(|value| value.trim().to_string())
+                        .unwrap_or_else(|| comm.clone());
 
-            snapshots.push(ProcfsSchedstatSnapshot {
-                timestamp_ns: now_ns(),
-                pid,
-                tid: pid,
-                comm,
-                run_queue_delay_ns,
-            });
+                    if let Some(snapshot) =
+                        read_procfs_schedstat_snapshot(pid, tid, task_comm, &task_path)
+                    {
+                        saw_thread = true;
+                        snapshots.push(snapshot);
+                    }
+                }
+            }
+
+            if !saw_thread {
+                if let Some(snapshot) = read_procfs_schedstat_snapshot(pid, pid, comm, &root) {
+                    snapshots.push(snapshot);
+                }
+            }
         }
 
         Ok(snapshots)
     }
+}
+
+#[cfg(target_os = "linux")]
+fn read_procfs_schedstat_snapshot(
+    pid: u32,
+    tid: u32,
+    comm: String,
+    root: &std::path::Path,
+) -> Option<ProcfsSchedstatSnapshot> {
+    let run_queue_delay_ns = std::fs::read_to_string(root.join("schedstat"))
+        .ok()
+        .and_then(|raw| parse_schedstat_run_delay_ns(&raw));
+    let cpu_migrations = std::fs::read_to_string(root.join("sched"))
+        .ok()
+        .and_then(|raw| parse_sched_value(&raw, "se.nr_migrations"));
+    let major_page_faults = std::fs::read_to_string(root.join("stat"))
+        .ok()
+        .and_then(|raw| parse_stat_major_page_faults(&raw));
+
+    if run_queue_delay_ns.is_none() && cpu_migrations.is_none() && major_page_faults.is_none() {
+        return None;
+    }
+
+    Some(ProcfsSchedstatSnapshot {
+        timestamp_ns: now_ns(),
+        pid,
+        tid,
+        comm,
+        run_queue_delay_ns,
+        cpu_migrations,
+        major_page_faults,
+    })
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -330,8 +380,12 @@ impl ProcfsSchedstatSampler for SystemProcfsSchedstatSampler {
 pub struct ProcfsSchedstatProbeDriver<S> {
     sampler: S,
     selectors: ProcfsTargetSelectors,
-    attached_sched_probe: bool,
+    attached_run_queue_delay: bool,
+    attached_cpu_migration: bool,
+    attached_major_page_fault: bool,
     previous_run_delay_ns: BTreeMap<(u32, u32), u64>,
+    previous_cpu_migrations: BTreeMap<(u32, u32), u64>,
+    previous_major_page_faults: BTreeMap<(u32, u32), u64>,
 }
 
 impl ProcfsSchedstatProbeDriver<SystemProcfsSchedstatSampler> {
@@ -348,8 +402,12 @@ impl<S> ProcfsSchedstatProbeDriver<S> {
         Self {
             sampler,
             selectors,
-            attached_sched_probe: false,
+            attached_run_queue_delay: false,
+            attached_cpu_migration: false,
+            attached_major_page_fault: false,
             previous_run_delay_ns: BTreeMap::new(),
+            previous_cpu_migrations: BTreeMap::new(),
+            previous_major_page_faults: BTreeMap::new(),
         }
     }
 }
@@ -371,16 +429,31 @@ where
             return ProbeAttachmentStatus::Failed(error.to_string());
         }
 
-        if probe.kind == ProbeKind::Sched
-            && probe.required_signals.contains(&SignalKind::RunQueueDelay)
-        {
-            self.attached_sched_probe = true;
-            ProbeAttachmentStatus::Attached
-        } else {
-            ProbeAttachmentStatus::Failed(
-                "procfs schedstat driver only supports run_queue_delay via sched_probe".to_string(),
+        let supports_all_signals = probe.required_signals.iter().all(|signal| {
+            matches!(
+                (probe.kind, signal),
+                (ProbeKind::Sched, SignalKind::RunQueueDelay)
+                    | (ProbeKind::Sched, SignalKind::CpuMigration)
+                    | (ProbeKind::Fault, SignalKind::MajorPageFault)
             )
+        });
+
+        if !supports_all_signals || probe.required_signals.is_empty() {
+            return ProbeAttachmentStatus::Failed(
+                "procfs driver supports run_queue_delay/cpu_migration via sched_probe and major_page_fault via fault_probe".to_string(),
+            );
         }
+
+        for signal in &probe.required_signals {
+            match signal {
+                SignalKind::RunQueueDelay => self.attached_run_queue_delay = true,
+                SignalKind::CpuMigration => self.attached_cpu_migration = true,
+                SignalKind::MajorPageFault => self.attached_major_page_fault = true,
+                _ => {}
+            }
+        }
+
+        ProbeAttachmentStatus::Attached
     }
 
     fn poll_events(
@@ -388,7 +461,11 @@ where
         max_events: usize,
         timeout_ms: u64,
     ) -> Result<Vec<ProbeEvent>, SourceError> {
-        if !self.attached_sched_probe || max_events == 0 {
+        if max_events == 0
+            || !(self.attached_run_queue_delay
+                || self.attached_cpu_migration
+                || self.attached_major_page_fault)
+        {
             return Ok(Vec::new());
         }
 
@@ -403,8 +480,10 @@ where
 
     fn stop(&mut self) -> Result<String, SourceError> {
         Ok(format!(
-            "procfs schedstat driver stopped after tracking {} target(s) with {}",
+            "procfs driver stopped after tracking {} schedstat target(s), {} migration target(s), and {} fault target(s) with {}",
             self.previous_run_delay_ns.len(),
+            self.previous_cpu_migrations.len(),
+            self.previous_major_page_faults.len(),
             self.sampler.sampler_name()
         ))
     }
@@ -417,35 +496,80 @@ where
     fn collect_delta_events(&mut self, max_events: usize) -> Result<Vec<ProbeEvent>, SourceError> {
         let mut events = Vec::new();
         for snapshot in self.sampler.sample(&self.selectors)? {
-            if events.len() == max_events {
+            if events.len() >= max_events {
                 break;
             }
 
-            let key = (snapshot.pid, snapshot.tid);
-            let previous = self
-                .previous_run_delay_ns
-                .insert(key, snapshot.run_queue_delay_ns);
-            let Some(previous_run_delay_ns) = previous else {
-                continue;
-            };
-            let delay_ns = snapshot
-                .run_queue_delay_ns
-                .saturating_sub(previous_run_delay_ns);
-            if delay_ns == 0 {
-                continue;
+            if self.attached_run_queue_delay {
+                if let Some(event) = delta_probe_event(
+                    &mut self.previous_run_delay_ns,
+                    &snapshot,
+                    snapshot.run_queue_delay_ns,
+                    ProbeKind::Sched,
+                    ProbeEventKind::RunQueueDelay,
+                    ebpf_probe::EventMetric::duration_ns,
+                ) {
+                    events.push(event);
+                }
             }
 
-            events.push(ProbeEvent::new(
-                snapshot.timestamp_ns,
-                ProbeKind::Sched,
-                ProbeEventKind::RunQueueDelay,
-                ebpf_probe::EventTarget::new(snapshot.pid, snapshot.tid, snapshot.comm),
-                ebpf_probe::EventMetric::duration_ns(delay_ns),
-            ));
+            if self.attached_cpu_migration && events.len() < max_events {
+                if let Some(event) = delta_probe_event(
+                    &mut self.previous_cpu_migrations,
+                    &snapshot,
+                    snapshot.cpu_migrations,
+                    ProbeKind::Sched,
+                    ProbeEventKind::CpuMigration,
+                    ebpf_probe::EventMetric::count,
+                ) {
+                    events.push(event);
+                }
+            }
+
+            if self.attached_major_page_fault && events.len() < max_events {
+                if let Some(event) = delta_probe_event(
+                    &mut self.previous_major_page_faults,
+                    &snapshot,
+                    snapshot.major_page_faults,
+                    ProbeKind::Fault,
+                    ProbeEventKind::MajorPageFault,
+                    ebpf_probe::EventMetric::count,
+                ) {
+                    events.push(event);
+                }
+            }
         }
 
         Ok(events)
     }
+}
+
+fn delta_probe_event(
+    previous_values: &mut BTreeMap<(u32, u32), u64>,
+    snapshot: &ProcfsSchedstatSnapshot,
+    current_value: Option<u64>,
+    probe: ProbeKind,
+    kind: ProbeEventKind,
+    metric_from_delta: fn(u64) -> ebpf_probe::EventMetric,
+) -> Option<ProbeEvent> {
+    let current_value = current_value?;
+
+    let key = (snapshot.pid, snapshot.tid);
+    let previous = previous_values.insert(key, current_value);
+    let previous_value = previous?;
+
+    let delta = current_value.saturating_sub(previous_value);
+    if delta == 0 {
+        return None;
+    }
+
+    Some(ProbeEvent::new(
+        snapshot.timestamp_ns,
+        probe,
+        kind,
+        ebpf_probe::EventTarget::new(snapshot.pid, snapshot.tid, snapshot.comm.clone()),
+        metric_from_delta(delta),
+    ))
 }
 
 pub struct PreflightLinuxProbeDriver<H> {
@@ -754,6 +878,64 @@ impl MockEventSource {
                     .with_parent_pid(4_242)
                     .with_parent_process_name("ollama")
                     .with_parent_cmdline("ollama serve"),
+            ],
+        )
+    }
+
+    pub fn tool_call_lifecycle_sequence() -> Self {
+        let lifecycle_id = "tc-001";
+        let lifecycle_tag = format!("tool_call_id={lifecycle_id}");
+        let executor_cmdline = format!("python tool-executor --tool-call-id {lifecycle_id}");
+
+        Self::new(
+            "mock-tool-call-lifecycle",
+            vec![
+                SourceEvent::new(10_000, 6_100, SignalKind::SubprocessStartDelay, 1_800)
+                    .with_process_name("python")
+                    .with_cmdline(executor_cmdline.clone())
+                    .with_cgroup(format!("/aegisai/tool-call/{lifecycle_id}/executor"))
+                    .with_parent_pid(4_242)
+                    .with_parent_process_name("ollama")
+                    .with_parent_cmdline("ollama serve")
+                    .with_tag_marker(lifecycle_tag.clone()),
+                SourceEvent::new(10_120, 6_101, SignalKind::QueueWait, 2_600)
+                    .with_process_name("python")
+                    .with_cmdline(format!(
+                        "python tool-executor retrieval-worker --tool-call-id {lifecycle_id}"
+                    ))
+                    .with_cgroup(format!("/aegisai/tool-call/{lifecycle_id}/retrieval"))
+                    .with_parent_pid(6_100)
+                    .with_parent_process_name("python")
+                    .with_parent_cmdline(executor_cmdline.clone())
+                    .with_tag_marker(lifecycle_tag.clone()),
+                SourceEvent::new(10_260, 6_101, SignalKind::IoLatency, 4_500)
+                    .with_process_name("python")
+                    .with_cmdline(format!(
+                        "python tool-executor retrieval-worker --tool-call-id {lifecycle_id}"
+                    ))
+                    .with_cgroup(format!("/aegisai/tool-call/{lifecycle_id}/retrieval"))
+                    .with_parent_pid(6_100)
+                    .with_parent_process_name("python")
+                    .with_parent_cmdline(executor_cmdline.clone())
+                    .with_tag_marker(lifecycle_tag.clone()),
+                SourceEvent::new(10_360, 6_102, SignalKind::QueueWait, 2_400)
+                    .with_process_name("python")
+                    .with_cmdline(format!(
+                        "python tool-executor rerank-worker --tool-call-id {lifecycle_id}"
+                    ))
+                    .with_cgroup(format!("/aegisai/tool-call/{lifecycle_id}/rerank"))
+                    .with_parent_pid(6_100)
+                    .with_parent_process_name("python")
+                    .with_parent_cmdline(executor_cmdline.clone())
+                    .with_tag_marker(lifecycle_tag.clone()),
+                SourceEvent::new(10_420, 6_200, SignalKind::RunQueueDelay, 3_000)
+                    .with_process_name("stress-ng")
+                    .with_cmdline(format!("stress-ng --cpu 1 --tool-call-id {lifecycle_id}"))
+                    .with_cgroup(format!("/aegisai/tool-call/{lifecycle_id}/background"))
+                    .with_parent_pid(6_100)
+                    .with_parent_process_name("python")
+                    .with_parent_cmdline(executor_cmdline)
+                    .with_tag_marker(lifecycle_tag),
             ],
         )
     }
@@ -1245,6 +1427,22 @@ fn parse_schedstat_run_delay_ns(raw: &str) -> Option<u64> {
     raw.split_whitespace().nth(1)?.parse::<u64>().ok()
 }
 
+fn parse_sched_value(raw: &str, key: &str) -> Option<u64> {
+    raw.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if name.trim() == key {
+            value.split_whitespace().next()?.parse::<u64>().ok()
+        } else {
+            None
+        }
+    })
+}
+
+fn parse_stat_major_page_faults(raw: &str) -> Option<u64> {
+    let mut fields_after_comm = raw.get(raw.rfind(')')? + 1..)?.split_whitespace();
+    fields_after_comm.nth(9)?.parse::<u64>().ok()
+}
+
 fn format_cmdline(bytes: Vec<u8>) -> String {
     bytes
         .split(|byte| *byte == 0)
@@ -1330,11 +1528,11 @@ mod tests {
         }
     }
 
-    struct FakeProcfsSchedstatSampler {
+    struct FakeProcfsSignalSampler {
         samples: RefCell<VecDeque<Vec<ProcfsSchedstatSnapshot>>>,
     }
 
-    impl FakeProcfsSchedstatSampler {
+    impl FakeProcfsSignalSampler {
         fn new(samples: Vec<Vec<ProcfsSchedstatSnapshot>>) -> Self {
             Self {
                 samples: RefCell::new(samples.into()),
@@ -1342,9 +1540,9 @@ mod tests {
         }
     }
 
-    impl ProcfsSchedstatSampler for FakeProcfsSchedstatSampler {
+    impl ProcfsSchedstatSampler for FakeProcfsSignalSampler {
         fn sampler_name(&self) -> &str {
-            "fake-procfs-schedstat"
+            "fake-procfs-signals"
         }
 
         fn sample(
@@ -1353,6 +1551,26 @@ mod tests {
         ) -> Result<Vec<ProcfsSchedstatSnapshot>, SourceError> {
             Ok(self.samples.borrow_mut().pop_front().unwrap_or_default())
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn system_procfs_sampler_reads_migration_and_fault_counters() {
+        let sampler = super::SystemProcfsSchedstatSampler;
+        let selectors = ProcfsTargetSelectors::new(
+            Vec::<String>::new(),
+            [std::process::id()].into_iter().collect(),
+        );
+
+        let snapshots = sampler
+            .sample(&selectors)
+            .expect("system procfs sampler should read current process");
+
+        assert!(snapshots.iter().any(|snapshot| {
+            snapshot.pid == std::process::id()
+                && snapshot.cpu_migrations.is_some()
+                && snapshot.major_page_faults.is_some()
+        }));
     }
 
     struct FakeLinuxProbeHost {
@@ -1597,20 +1815,24 @@ mod tests {
             &ebpf_probe::ProbeRegistry::with_defaults(),
         )
         .expect("plan should build");
-        let sampler = FakeProcfsSchedstatSampler::new(vec![
+        let sampler = FakeProcfsSignalSampler::new(vec![
             vec![ProcfsSchedstatSnapshot {
                 timestamp_ns: 1_000_000,
                 pid: 700,
                 tid: 700,
                 comm: "ollama".to_string(),
-                run_queue_delay_ns: 2_000_000,
+                run_queue_delay_ns: Some(2_000_000),
+                cpu_migrations: None,
+                major_page_faults: None,
             }],
             vec![ProcfsSchedstatSnapshot {
                 timestamp_ns: 2_000_000,
                 pid: 700,
                 tid: 700,
                 comm: "ollama".to_string(),
-                run_queue_delay_ns: 2_500_000,
+                run_queue_delay_ns: Some(2_500_000),
+                cpu_migrations: None,
+                major_page_faults: None,
             }],
         ]);
         let driver = ProcfsSchedstatProbeDriver::new(
@@ -1658,6 +1880,90 @@ mod tests {
     }
 
     #[test]
+    fn procfs_driver_emits_migration_and_major_fault_events() {
+        let plan = LinuxProbePlan::from_signals(
+            [
+                SignalKind::CpuMigration,
+                SignalKind::MajorPageFault,
+                SignalKind::OffCpuTime,
+            ],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let sampler = FakeProcfsSignalSampler::new(vec![
+            vec![ProcfsSchedstatSnapshot {
+                timestamp_ns: 1_000_000,
+                pid: 700,
+                tid: 700,
+                comm: "ollama".to_string(),
+                run_queue_delay_ns: None,
+                cpu_migrations: Some(4),
+                major_page_faults: Some(2),
+            }],
+            vec![ProcfsSchedstatSnapshot {
+                timestamp_ns: 2_000_000,
+                pid: 700,
+                tid: 700,
+                comm: "ollama".to_string(),
+                run_queue_delay_ns: None,
+                cpu_migrations: Some(7),
+                major_page_faults: Some(4),
+            }],
+        ]);
+        let driver = ProcfsSchedstatProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            sampler,
+        );
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                require_all_probes: false,
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        let first = source
+            .next_event()
+            .expect("procfs driver should poll")
+            .expect("second procfs sample should produce a migration event");
+        let second = source
+            .next_event()
+            .expect("procfs driver should keep buffered events")
+            .expect("second procfs sample should produce a fault event");
+
+        assert_eq!(first.signal, SignalKind::CpuMigration);
+        assert_eq!(first.value, 3);
+        assert_eq!(second.signal, SignalKind::MajorPageFault);
+        assert_eq!(second.value, 2);
+
+        let startup = source.startup().expect("startup should exist");
+        assert!(startup
+            .attachments
+            .iter()
+            .any(|attachment| attachment.kind == ProbeKind::Sched
+                && attachment
+                    .required_signals
+                    .contains(&SignalKind::CpuMigration)
+                && attachment.status == ProbeAttachmentStatus::Attached));
+        assert!(startup
+            .attachments
+            .iter()
+            .any(|attachment| attachment.kind == ProbeKind::Fault
+                && attachment
+                    .required_signals
+                    .contains(&SignalKind::MajorPageFault)
+                && attachment.status == ProbeAttachmentStatus::Attached));
+        assert!(startup
+            .attachments
+            .iter()
+            .any(|attachment| attachment.kind == ProbeKind::OffCpu
+                && matches!(attachment.status, ProbeAttachmentStatus::Failed(_))));
+    }
+
+    #[test]
     fn procfs_target_selectors_match_process_names_and_pid_allowlist() {
         let selectors = ProcfsTargetSelectors::new(["ollama"], [42].into_iter().collect());
 
@@ -1672,6 +1978,17 @@ mod tests {
         assert_eq!(
             super::parse_schedstat_run_delay_ns("100 2500 3\n"),
             Some(2500)
+        );
+        assert_eq!(
+            super::parse_sched_value(
+                "se.nr_migrations                             :                    7\n",
+                "se.nr_migrations"
+            ),
+            Some(7)
+        );
+        assert_eq!(
+            super::parse_stat_major_page_faults("123 (ollama worker) S 1 2 3 4 5 6 10 11 12 13 14"),
+            Some(12)
         );
         assert_eq!(
             super::format_cmdline(b"ollama\0serve\0".to_vec()),

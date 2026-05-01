@@ -43,6 +43,25 @@ pub(crate) fn evaluate(
     );
     audit_fields.insert("tool_call_stage".to_string(), stage.as_str().to_string());
     audit_fields.insert("tool_call_focus".to_string(), stage.focus().to_string());
+    audit_fields.insert(
+        "tool_call_subchain".to_string(),
+        stage.subchain().to_string(),
+    );
+    audit_fields.insert(
+        "isolation_mode".to_string(),
+        isolation_mode(stage, safety).to_string(),
+    );
+    audit_fields.insert(
+        "isolation_scope".to_string(),
+        stage.isolation_scope().to_string(),
+    );
+    audit_fields.insert(
+        "background_isolation".to_string(),
+        background_isolation_label(safety).to_string(),
+    );
+    if let Some(tool_call_id) = tool_call_id(&context.audit_fields, &context.profile) {
+        audit_fields.insert("tool_call_id".to_string(), tool_call_id);
+    }
     if duration_ms
         != policy
             .max_boost_duration_ms
@@ -103,6 +122,22 @@ impl ToolCallStage {
         }
     }
 
+    fn subchain(self) -> &'static str {
+        match self {
+            Self::Executor => "executor_startup",
+            Self::Retrieval => "retrieval_io",
+            Self::Rerank => "rerank_queue",
+        }
+    }
+
+    fn isolation_scope(self) -> &'static str {
+        match self {
+            Self::Executor => "executor_process",
+            Self::Retrieval => "retrieval_worker",
+            Self::Rerank => "rerank_worker",
+        }
+    }
+
     fn duration_ratio(self) -> (u64, u64) {
         match self {
             Self::Executor => (1, 1),
@@ -122,6 +157,37 @@ impl ToolCallStage {
     fn keeps_executor_warm(self) -> bool {
         matches!(self, Self::Executor | Self::Retrieval)
     }
+}
+
+fn isolation_mode(stage: ToolCallStage, safety: &SafetyConfig) -> &'static str {
+    match (stage, safety.allow_background_throttle) {
+        (ToolCallStage::Executor, true) => "executor_priority_with_background_soft_throttle",
+        (ToolCallStage::Retrieval, true) => "retrieval_affinity_with_background_soft_throttle",
+        (ToolCallStage::Rerank, true) => "rerank_affinity_with_background_soft_throttle",
+        (ToolCallStage::Executor, false) => "executor_priority_only",
+        (ToolCallStage::Retrieval, false) => "retrieval_affinity_only",
+        (ToolCallStage::Rerank, false) => "rerank_affinity_only",
+    }
+}
+
+fn background_isolation_label(safety: &SafetyConfig) -> &'static str {
+    if safety.allow_background_throttle {
+        "eligible"
+    } else {
+        "blocked_by_safety"
+    }
+}
+
+fn tool_call_id(
+    audit_fields: &BTreeMap<String, String>,
+    profile: &WorkloadProfile,
+) -> Option<String> {
+    audit_fields.get("tool_call_id").cloned().or_else(|| {
+        profile
+            .matched_rules
+            .iter()
+            .find_map(|item| item.strip_prefix("tool_call_id=").map(str::to_string))
+    })
 }
 
 fn trigger_breaches(
@@ -324,6 +390,18 @@ mod tests {
             executor.audit_fields.get("tool_call_focus"),
             Some(&"startup".to_string())
         );
+        assert_eq!(
+            executor.audit_fields.get("tool_call_subchain"),
+            Some(&"executor_startup".to_string())
+        );
+        assert_eq!(
+            executor.audit_fields.get("isolation_mode"),
+            Some(&"executor_priority_only".to_string())
+        );
+        assert_eq!(
+            executor.audit_fields.get("background_isolation"),
+            Some(&"blocked_by_safety".to_string())
+        );
 
         let retrieval = evaluate(
             &policy,
@@ -343,6 +421,14 @@ mod tests {
         assert_eq!(
             retrieval.audit_fields.get("tool_call_stage"),
             Some(&"retrieval".to_string())
+        );
+        assert_eq!(
+            retrieval.audit_fields.get("tool_call_subchain"),
+            Some(&"retrieval_io".to_string())
+        );
+        assert_eq!(
+            retrieval.audit_fields.get("isolation_scope"),
+            Some(&"retrieval_worker".to_string())
         );
         assert!(retrieval.actions.contains(&Action::WarmupExecutor));
 
@@ -364,6 +450,10 @@ mod tests {
         assert_eq!(
             rerank.audit_fields.get("tool_call_stage"),
             Some(&"rerank".to_string())
+        );
+        assert_eq!(
+            rerank.audit_fields.get("isolation_mode"),
+            Some(&"rerank_affinity_only".to_string())
         );
         assert!(!rerank.actions.contains(&Action::WarmupExecutor));
         assert_eq!(
@@ -475,6 +565,45 @@ mod tests {
         assert_eq!(
             plan.audit_fields.get("duration_scaled_by_stage"),
             Some(&"600ms".to_string())
+        );
+    }
+
+    #[test]
+    fn carries_tool_call_id_and_background_isolation_eligibility() {
+        let mut context = context(
+            [WorkloadTag::ToolCall, WorkloadTag::RetrievalStage],
+            FeatureWindow {
+                pid: 42,
+                queue_wait_us_max: 2_500,
+                ended_at_ms: 1_000,
+                ..FeatureWindow::empty(42, 1_000)
+            },
+        );
+        context
+            .audit_fields
+            .insert("tool_call_id".to_string(), "tc-001".to_string());
+
+        let plan = evaluate(
+            &policy(),
+            &SafetyConfig {
+                allow_background_throttle: true,
+                ..default_safety()
+            },
+            &context,
+        )
+        .expect("retrieval stage should trigger");
+
+        assert_eq!(
+            plan.audit_fields.get("tool_call_id"),
+            Some(&"tc-001".to_string())
+        );
+        assert_eq!(
+            plan.audit_fields.get("background_isolation"),
+            Some(&"eligible".to_string())
+        );
+        assert_eq!(
+            plan.audit_fields.get("isolation_mode"),
+            Some(&"retrieval_affinity_with_background_soft_throttle".to_string())
         );
     }
 

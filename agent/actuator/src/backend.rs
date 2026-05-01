@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{Action, ActionPlan, AppliedAction, ScenarioKind};
 
@@ -271,6 +271,128 @@ pub trait LinuxCommandRunner {
     fn run(&mut self, program: &str, args: &[String]) -> Result<String, String>;
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LiveLinuxCommandGuard {
+    allowed_pids: BTreeSet<u32>,
+    explicit_confirmation: bool,
+    enable_nice: bool,
+    enable_affinity: bool,
+    enable_cpuset: bool,
+}
+
+impl LiveLinuxCommandGuard {
+    pub fn nice_only<I>(allowed_pids: I, explicit_confirmation: bool) -> Self
+    where
+        I: IntoIterator<Item = u32>,
+    {
+        Self {
+            allowed_pids: allowed_pids.into_iter().collect(),
+            explicit_confirmation,
+            enable_nice: true,
+            enable_affinity: false,
+            enable_cpuset: false,
+        }
+    }
+
+    pub fn nice_and_affinity<I>(allowed_pids: I, explicit_confirmation: bool) -> Self
+    where
+        I: IntoIterator<Item = u32>,
+    {
+        Self {
+            enable_affinity: true,
+            ..Self::nice_only(allowed_pids, explicit_confirmation)
+        }
+    }
+
+    pub fn allowed_pids(&self) -> &BTreeSet<u32> {
+        &self.allowed_pids
+    }
+
+    fn validate_target(&self, target_pid: u32) -> Result<(), String> {
+        if !self.explicit_confirmation {
+            return Err("linux-command live actuator requires explicit confirmation".to_string());
+        }
+        if self.allowed_pids.is_empty() {
+            return Err(
+                "linux-command live actuator requires a non-empty PID allowlist".to_string(),
+            );
+        }
+        if !self.allowed_pids.contains(&target_pid) {
+            return Err(format!(
+                "target pid {target_pid} is not in linux-command live actuator PID allowlist"
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn target_allowed(&self, target_pid: u32) -> bool {
+        self.explicit_confirmation && self.allowed_pids.contains(&target_pid)
+    }
+
+    fn allows_operation(&self, operation: &LinuxSyscallOperation) -> bool {
+        match operation {
+            LinuxSyscallOperation::SetNice { .. } | LinuxSyscallOperation::RestoreNice => {
+                self.enable_nice
+            }
+            LinuxSyscallOperation::SetAffinity { .. } | LinuxSyscallOperation::RestoreAffinity => {
+                self.enable_affinity
+            }
+            LinuxSyscallOperation::UseCpuset { enabled } => !*enabled || self.enable_cpuset,
+            LinuxSyscallOperation::RestoreCpuset => self.enable_cpuset,
+            LinuxSyscallOperation::WarmupExecutor | LinuxSyscallOperation::NoopWarmupRollback => {
+                true
+            }
+        }
+    }
+
+    fn skipped_detail(&self, operation: &LinuxSyscallOperation) -> String {
+        match operation {
+            LinuxSyscallOperation::SetNice { .. } | LinuxSyscallOperation::RestoreNice => {
+                "nice command disabled by live guard".to_string()
+            }
+            LinuxSyscallOperation::SetAffinity { .. } | LinuxSyscallOperation::RestoreAffinity => {
+                "affinity command disabled by live guard".to_string()
+            }
+            LinuxSyscallOperation::UseCpuset { enabled: true }
+            | LinuxSyscallOperation::RestoreCpuset => {
+                "cpuset command disabled by live guard".to_string()
+            }
+            LinuxSyscallOperation::UseCpuset { enabled: false } => {
+                "cpuset disabled by policy".to_string()
+            }
+            LinuxSyscallOperation::WarmupExecutor => "warmup executor deferred".to_string(),
+            LinuxSyscallOperation::NoopWarmupRollback => "warmup rollback noop".to_string(),
+        }
+    }
+
+    fn scope_label(&self) -> String {
+        let mut enabled = Vec::new();
+        if self.enable_nice {
+            enabled.push("nice");
+        }
+        if self.enable_affinity {
+            enabled.push("affinity");
+        }
+        if self.enable_cpuset {
+            enabled.push("cpuset");
+        }
+        if enabled.is_empty() {
+            "none".to_string()
+        } else {
+            enabled.join(",")
+        }
+    }
+
+    fn allowed_pids_label(&self) -> String {
+        self.allowed_pids
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+}
+
 #[derive(Default)]
 pub struct DryRunLinuxCommandRunner;
 
@@ -330,6 +452,21 @@ impl LinuxCommandRunner for SystemLinuxCommandRunner {
     }
 }
 
+#[derive(Default)]
+pub struct UnconfirmedLinuxCommandRunner;
+
+impl LinuxCommandRunner for UnconfirmedLinuxCommandRunner {
+    fn runner_name(&self) -> &str {
+        "unconfirmed-command-runner"
+    }
+
+    fn run(&mut self, program: &str, _args: &[String]) -> Result<String, String> {
+        Err(format!(
+            "`{program}` requires LiveLinuxCommandGuard and explicit confirmation"
+        ))
+    }
+}
+
 fn command_line(program: &str, args: &[String]) -> String {
     std::iter::once(program.to_string())
         .chain(args.iter().cloned())
@@ -378,6 +515,7 @@ fn captured_affinity(captured_state: &LinuxCapturedState) -> Result<&[u32], Stri
 
 pub struct CommandLinuxSyscallApplier {
     runner: Box<dyn LinuxCommandRunner>,
+    live_guard: Option<LiveLinuxCommandGuard>,
 }
 
 impl Default for CommandLinuxSyscallApplier {
@@ -388,20 +526,35 @@ impl Default for CommandLinuxSyscallApplier {
 
 impl CommandLinuxSyscallApplier {
     pub fn new() -> Self {
-        Self::with_runner(SystemLinuxCommandRunner)
+        Self::with_runner(UnconfirmedLinuxCommandRunner)
     }
 
     pub fn dry_run() -> Self {
         Self::with_runner(DryRunLinuxCommandRunner)
     }
 
-    pub fn with_runner<R>(runner: R) -> Self
+    pub(crate) fn with_runner<R>(runner: R) -> Self
     where
         R: LinuxCommandRunner + 'static,
     {
         Self {
             runner: Box::new(runner),
+            live_guard: None,
         }
+    }
+
+    pub(crate) fn guarded_live<R>(runner: R, guard: LiveLinuxCommandGuard) -> Self
+    where
+        R: LinuxCommandRunner + 'static,
+    {
+        Self {
+            runner: Box::new(runner),
+            live_guard: Some(guard),
+        }
+    }
+
+    pub fn live(guard: LiveLinuxCommandGuard) -> Self {
+        Self::guarded_live(SystemLinuxCommandRunner, guard)
     }
 
     fn run_audited(&mut self, program: &str, args: &[String]) -> Result<String, String> {
@@ -416,6 +569,10 @@ impl CommandLinuxSyscallApplier {
                 "runner={runner_name};command={command};error={error}"
             )),
         }
+    }
+
+    fn live_guard(&self) -> Option<&LiveLinuxCommandGuard> {
+        self.live_guard.as_ref()
     }
 }
 
@@ -432,6 +589,12 @@ impl LinuxSyscallApplier for CommandLinuxSyscallApplier {
         _now_ms: u64,
     ) -> Result<String, String> {
         validate_command_target_pid(target_pid)?;
+        if let Some(guard) = self.live_guard() {
+            guard.validate_target(target_pid)?;
+            if !guard.allows_operation(operation) {
+                return Ok(guard.skipped_detail(operation));
+            }
+        }
 
         match operation {
             LinuxSyscallOperation::SetNice { delta } => {
@@ -654,6 +817,7 @@ impl LinuxProcessStateProvider for ProcfsLinuxProcessStateProvider {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LinuxRollbackReport {
     pub restored: Vec<String>,
+    pub skipped: Vec<String>,
     pub missing_state: Vec<String>,
     pub failed: Vec<String>,
 }
@@ -662,6 +826,9 @@ impl LinuxRollbackReport {
     fn into_execution(self, mut execution: BackendExecution) -> BackendExecution {
         if !self.restored.is_empty() {
             execution = execution.with_field("rollback.restored", self.restored.join(","));
+        }
+        if !self.skipped.is_empty() {
+            execution = execution.with_field("rollback.skipped", self.skipped.join(","));
         }
         if !self.missing_state.is_empty() {
             execution =
@@ -822,6 +989,7 @@ impl ActuatorBackend for RecordingActuatorBackend {
 pub struct PlannedOnlyLinuxSyscallExecutor {
     state_provider: Box<dyn LinuxProcessStateProvider>,
     applier: Box<dyn LinuxSyscallApplier>,
+    live_guard: Option<LiveLinuxCommandGuard>,
 }
 
 impl Default for PlannedOnlyLinuxSyscallExecutor {
@@ -853,7 +1021,13 @@ impl PlannedOnlyLinuxSyscallExecutor {
         Self {
             state_provider: Box::new(state_provider),
             applier: Box::new(applier),
+            live_guard: None,
         }
+    }
+
+    pub fn with_live_guard(mut self, guard: LiveLinuxCommandGuard) -> Self {
+        self.live_guard = Some(guard);
+        self
     }
 }
 
@@ -869,6 +1043,7 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
             .with_field("phase", phase_name(plan.phase))
             .with_field("timestamp_ms", now_ms.to_string())
             .with_field("target_pid", plan.target_pid.to_string());
+        execution = annotate_live_guard(execution, plan.target_pid, self.live_guard.as_ref());
 
         for (index, operation) in plan.operations.iter().enumerate() {
             execution = execution.with_field(
@@ -887,7 +1062,37 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
 
         let mut applied_count = 0usize;
         let mut failed_operations = Vec::new();
+        let mut skipped_count = 0usize;
         for (index, operation) in plan.operations.iter().enumerate() {
+            if let Some(guard) = self.live_guard.as_ref() {
+                if !guard.target_allowed(plan.target_pid) {
+                    let error = guard
+                        .validate_target(plan.target_pid)
+                        .err()
+                        .unwrap_or_else(|| {
+                            "linux-command live actuator target rejected".to_string()
+                        });
+                    failed_operations.push(format!(
+                        "{index}:{}:{error}",
+                        linux_syscall_descriptor(operation)
+                    ));
+                    execution = execution
+                        .with_field(format!("apply.{index}.status"), "error")
+                        .with_field(format!("apply.{index}.error"), error);
+                    continue;
+                }
+                if !guard.allows_operation(operation) {
+                    skipped_count += 1;
+                    execution = execution
+                        .with_field(format!("apply.{index}.status"), "skipped")
+                        .with_field(
+                            format!("apply.{index}.detail"),
+                            guard.skipped_detail(operation),
+                        );
+                    continue;
+                }
+            }
+
             match self
                 .applier
                 .apply_operation(plan.target_pid, operation, &captured_state, now_ms)
@@ -912,6 +1117,7 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
         execution = execution
             .with_field("apply.attempted_count", plan.operations.len().to_string())
             .with_field("apply.applied_count", applied_count.to_string())
+            .with_field("apply.skipped_count", skipped_count.to_string())
             .with_field("apply.failed_count", failed_operations.len().to_string())
             .with_field(
                 "apply.partial",
@@ -941,6 +1147,17 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
                 )
                 .with_field("linux.applier", self.applier.applier_name()),
         );
+        let lease = if let Some(guard) = self.live_guard.as_ref() {
+            lease
+                .with_field(
+                    "linux.live_guard.confirmed",
+                    guard.explicit_confirmation.to_string(),
+                )
+                .with_field("linux.live_guard.scope", guard.scope_label())
+                .with_field("linux.live_guard.allowed_pids", guard.allowed_pids_label())
+        } else {
+            lease
+        };
 
         BackendApplyResult {
             execution,
@@ -961,6 +1178,7 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
             .with_field("phase", phase_name(plan.phase))
             .with_field("timestamp_ms", now_ms.to_string())
             .with_field("target_pid", plan.target_pid.to_string());
+        execution = annotate_live_guard(execution, plan.target_pid, self.live_guard.as_ref());
 
         for (index, operation) in plan.operations.iter().enumerate() {
             execution = execution.with_field(
@@ -976,7 +1194,14 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
         }
 
         execution = execution.with_field("applier", self.applier.applier_name());
-        execute_linux_rollbacks(&mut *self.applier, execution, plan, &captured_state, now_ms)
+        execute_linux_rollbacks(
+            &mut *self.applier,
+            execution,
+            plan,
+            &captured_state,
+            now_ms,
+            self.live_guard.as_ref(),
+        )
     }
 }
 
@@ -1176,14 +1401,57 @@ fn annotate_captured_state(
     execution
 }
 
+fn annotate_live_guard(
+    mut execution: BackendExecution,
+    target_pid: u32,
+    live_guard: Option<&LiveLinuxCommandGuard>,
+) -> BackendExecution {
+    if let Some(guard) = live_guard {
+        execution = execution
+            .with_field(
+                "live_guard.confirmed",
+                guard.explicit_confirmation.to_string(),
+            )
+            .with_field("live_guard.scope", guard.scope_label())
+            .with_field("live_guard.allowed_pids", guard.allowed_pids_label())
+            .with_field(
+                "live_guard.target_allowed",
+                guard.target_allowed(target_pid).to_string(),
+            );
+    }
+
+    execution
+}
+
+fn rollback_component_name(operation: &LinuxSyscallOperation) -> Option<&'static str> {
+    match operation {
+        LinuxSyscallOperation::RestoreNice => Some("nice"),
+        LinuxSyscallOperation::RestoreAffinity => Some("affinity"),
+        LinuxSyscallOperation::RestoreCpuset => Some("cpuset"),
+        LinuxSyscallOperation::NoopWarmupRollback => Some("warmup_executor"),
+        LinuxSyscallOperation::SetNice { .. }
+        | LinuxSyscallOperation::SetAffinity { .. }
+        | LinuxSyscallOperation::UseCpuset { .. }
+        | LinuxSyscallOperation::WarmupExecutor => None,
+    }
+}
+
 fn execute_linux_rollbacks(
     applier: &mut dyn LinuxSyscallApplier,
     mut execution: BackendExecution,
     plan: &LinuxSyscallPlan,
     captured_state: &LinuxCapturedState,
     now_ms: u64,
+    live_guard: Option<&LiveLinuxCommandGuard>,
 ) -> BackendExecution {
-    let report = build_linux_rollback_report(applier, plan, captured_state, now_ms, &mut execution);
+    let report = build_linux_rollback_report(
+        applier,
+        plan,
+        captured_state,
+        now_ms,
+        &mut execution,
+        live_guard,
+    );
     report.into_execution(execution)
 }
 
@@ -1193,10 +1461,42 @@ fn build_linux_rollback_report(
     captured_state: &LinuxCapturedState,
     now_ms: u64,
     execution: &mut BackendExecution,
+    live_guard: Option<&LiveLinuxCommandGuard>,
 ) -> LinuxRollbackReport {
     let mut report = LinuxRollbackReport::default();
 
     for (index, operation) in plan.operations.iter().enumerate() {
+        if let Some(guard) = live_guard {
+            if !guard.target_allowed(plan.target_pid) {
+                let error = guard
+                    .validate_target(plan.target_pid)
+                    .err()
+                    .unwrap_or_else(|| "linux-command live actuator target rejected".to_string());
+                report.failed.push(format!(
+                    "{}:{error}",
+                    rollback_component_name(operation).unwrap_or("operation")
+                ));
+                *execution = std::mem::take(execution)
+                    .with_field(format!("rollback.{index}.status"), "error")
+                    .with_field(format!("rollback.{index}.error"), error);
+                continue;
+            }
+            if !guard.allows_operation(operation) {
+                report.skipped.push(
+                    rollback_component_name(operation)
+                        .unwrap_or("operation")
+                        .to_string(),
+                );
+                *execution = std::mem::take(execution)
+                    .with_field(format!("rollback.{index}.status"), "skipped")
+                    .with_field(
+                        format!("rollback.{index}.detail"),
+                        guard.skipped_detail(operation),
+                    );
+                continue;
+            }
+        }
+
         match operation {
             LinuxSyscallOperation::RestoreNice => {
                 match captured_state.nice.as_ref().map(|state| state.captured) {
