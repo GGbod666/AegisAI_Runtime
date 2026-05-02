@@ -6,6 +6,8 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." >/dev/null 2>&1 && pwd)"
 LOG_PATH="${AEGISAI_VERIFY_LOG:-${REPO_ROOT}/docs/verification_log.md}"
 RUN_ID="${AEGISAI_AB_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 ARTIFACT_DIR="${AEGISAI_AB_ARTIFACT_DIR:-${REPO_ROOT}/.cache/aegisai/inference_tail_guard/${RUN_ID}}"
+ACCEPTANCE_PHASE="${AEGISAI_ACCEPTANCE_PHASE:-2R-0}"
+ACCEPTANCE_GOAL="${AEGISAI_ACCEPTANCE_GOAL:-fixed_controls_and_separate_mode_contracts}"
 
 MODEL="${AEGISAI_OLLAMA_MODEL:-qwen2.5:0.5b}"
 NUM_PREDICT="${AEGISAI_OLLAMA_NUM_PREDICT:-96}"
@@ -33,6 +35,7 @@ DAEMON_POLL_TIMEOUT_MS="${AEGISAI_DAEMON_POLL_TIMEOUT_MS:-3000}"
 DAEMON_BATCH_SIZE="${AEGISAI_DAEMON_BATCH_SIZE:-32}"
 DAEMON_TICK_MS="${AEGISAI_DAEMON_TICK_MS:-200}"
 DAEMON_DRAIN_MS="${AEGISAI_DAEMON_DRAIN_MS:-5000}"
+DAEMON_MAX_EVENTS="${AEGISAI_DAEMON_MAX_EVENTS:-512}"
 MODE_COOLDOWN="${AEGISAI_AB_MODE_COOLDOWN:-1}"
 LIVE_CONFIRM="${AEGISAI_CONFIRM_LIVE_ACTUATOR:-0}"
 LIVE_PID_ALLOWLIST="${AEGISAI_LIVE_PID_ALLOWLIST:-}"
@@ -46,6 +49,10 @@ MODE_COUNTS_CSV="${ARTIFACT_DIR}/mode_counts.csv"
 SUMMARY_CSV="${ARTIFACT_DIR}/summary.csv"
 SUMMARY_MD="${ARTIFACT_DIR}/summary.md"
 RUN_ENV="${ARTIFACT_DIR}/run.env"
+ACCEPTANCE_BASELINE="${ARTIFACT_DIR}/acceptance_baseline.env"
+CPU_TOPOLOGY="${ARTIFACT_DIR}/cpu_topology.txt"
+PERMISSION_STATE="${ARTIFACT_DIR}/permission_state.txt"
+MODE_CONTRACT_CSV="${ARTIFACT_DIR}/mode_contract.csv"
 PAYLOAD_STREAM="${ARTIFACT_DIR}/payload.stream.json"
 PAYLOAD_WARMUP="${ARTIFACT_DIR}/payload.warmup.json"
 
@@ -81,6 +88,7 @@ Common overrides:
   AEGISAI_AB_MODES=baseline,noop_observation,dry_run,live_guarded
   AEGISAI_CONFIRM_LIVE_ACTUATOR=1
   AEGISAI_LIVE_PID_ALLOWLIST=1234
+  AEGISAI_ENABLE_LIVE_AFFINITY=0
   AEGISAI_AB_SAMPLES=12
   AEGISAI_AB_CONCURRENCY=2
   AEGISAI_STRESS_CPU=2
@@ -95,6 +103,11 @@ Metrics:
   TTFT is curl time_starttransfer against streaming Ollama responses.
   P95/P99/jitter use end-to-end streaming request total latency.
   Jitter is the sample standard deviation of total latency.
+
+Acceptance artifacts:
+  acceptance_baseline.env locks model, prompt, concurrency, samples, interference, CPU topology, and permission state.
+  mode_contract.csv records separate acceptance gates for noop_observation, dry_run, live_guarded nice-only, and live_guarded affinity.
+  mode_counts.csv also records procfs-backed cpu_migration and major_page_fault observation totals/rates.
 USAGE
 }
 
@@ -153,9 +166,42 @@ is_pid_allowlist() {
   [[ "${count}" -gt 0 ]]
 }
 
+expand_pid_allowlist_with_children() {
+  local raw="${1//,/ }"
+  local pid child
+  local seen=" "
+  local -a pids=()
+
+  for pid in ${raw}; do
+    if [[ " ${seen} " != *" ${pid} "* ]]; then
+      pids+=("${pid}")
+      seen="${seen}${pid} "
+    fi
+    if [[ -r "/proc/${pid}/task/${pid}/children" ]]; then
+      for child in $(cat "/proc/${pid}/task/${pid}/children" 2>/dev/null); do
+        if is_positive_uint "${child}" && [[ " ${seen} " != *" ${child} "* ]]; then
+          pids+=("${child}")
+          seen="${seen}${child} "
+        fi
+      done
+    fi
+  done
+
+  (IFS=,; printf '%s' "${pids[*]}")
+}
+
 to_ms() {
   local seconds="${1:-0}"
   awk -v value="${seconds}" 'BEGIN { printf "%.3f", value * 1000 }'
+}
+
+file_size_bytes() {
+  local file="$1"
+  if [[ -f "${file}" ]]; then
+    wc -c <"${file}" | tr -d '[:space:]'
+  else
+    printf '0'
+  fi
 }
 
 stress_command_label() {
@@ -179,6 +225,129 @@ stress_command_label() {
   else
     printf 'stress-ng %s' "${parts[*]}"
   fi
+}
+
+command_state() {
+  if has_command "$1"; then
+    printf 'present'
+  else
+    printf 'missing'
+  fi
+}
+
+optional_positive_uint_or_empty() {
+  [[ -z "${1:-}" ]] || is_positive_uint "$1"
+}
+
+status_label() {
+  if [[ "$1" -eq 0 ]]; then
+    printf 'PASS'
+  else
+    printf 'FAIL'
+  fi
+}
+
+file_sha256() {
+  local file="$1"
+
+  if [[ ! -s "${file}" ]]; then
+    printf 'empty'
+  elif has_command sha256sum; then
+    sha256sum "${file}" | awk '{ print $1 }'
+  elif has_command shasum; then
+    shasum -a 256 "${file}" | awk '{ print $1 }'
+  else
+    printf 'unavailable'
+  fi
+}
+
+proc_status_value() {
+  local key="$1"
+  sed -n "s/^${key}:[[:space:]]*//p" /proc/self/status 2>/dev/null | head -n 1
+}
+
+cap_sys_nice_effective() {
+  local cap_eff
+  cap_eff="$(proc_status_value CapEff)"
+
+  if [[ -z "${cap_eff}" ]]; then
+    printf 'unknown'
+    return 0
+  fi
+  if (( (16#${cap_eff} & (1 << 23)) != 0 )); then
+    printf 'true'
+  else
+    printf 'false'
+  fi
+}
+
+live_scope_label() {
+  if [[ "${LIVE_ENABLE_AFFINITY}" == "1" ]]; then
+    printf 'nice,affinity'
+  else
+    printf 'nice-only'
+  fi
+}
+
+mode_acceptance_gate() {
+  case "$1" in
+    baseline)
+      printf 'control_latency'
+      ;;
+    noop_observation)
+      printf 'strategy_recognition_only'
+      ;;
+    dry_run)
+      printf 'strategy_recognition_plus_dry_run_audit'
+      ;;
+    live_guarded)
+      if [[ "${LIVE_ENABLE_AFFINITY}" == "1" ]]; then
+        printf 'live_guarded_nice_affinity'
+      else
+        printf 'live_guarded_nice_only'
+      fi
+      ;;
+    *)
+      printf 'unknown'
+      ;;
+  esac
+}
+
+write_cpu_topology() {
+  {
+    printf 'kernel=%s\n' "$(uname -a 2>/dev/null || true)"
+    printf 'processor_count_configured=%s\n' "$(getconf _NPROCESSORS_CONF 2>/dev/null || true)"
+    printf 'processor_count_online=%s\n' "$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
+    printf 'sysfs_cpu_online=%s\n' "$(cat /sys/devices/system/cpu/online 2>/dev/null || true)"
+    printf 'self_cpus_allowed_list=%s\n' "$(proc_status_value Cpus_allowed_list)"
+    printf 'self_mems_allowed_list=%s\n' "$(proc_status_value Mems_allowed_list)"
+    printf 'self_cpuset=%s\n' "$(cat /proc/self/cpuset 2>/dev/null || true)"
+    printf 'cgroup_membership=%s\n' "$(tr '\n' ';' </proc/self/cgroup 2>/dev/null || true)"
+    if has_command lscpu; then
+      printf '\n[lscpu]\n'
+      lscpu 2>/dev/null | grep -E '^(Architecture|CPU\(s\)|On-line CPU|Thread|Core|Socket|NUMA|Model name|Vendor ID):' || true
+    else
+      printf '\nlscpu=missing\n'
+    fi
+  } >"${CPU_TOPOLOGY}"
+}
+
+write_permission_state() {
+  {
+    printf 'uid=%s\n' "$(id -u 2>/dev/null || true)"
+    printf 'user=%s\n' "$(id -un 2>/dev/null || true)"
+    printf 'groups=%s\n' "$(id -Gn 2>/dev/null || true)"
+    printf 'current_nice=%s\n' "$(ps -o ni= -p "$$" 2>/dev/null | tr -d '[:space:]' || true)"
+    printf 'cap_eff=%s\n' "$(proc_status_value CapEff)"
+    printf 'cap_prm=%s\n' "$(proc_status_value CapPrm)"
+    printf 'cap_sys_nice_effective=%s\n' "$(cap_sys_nice_effective)"
+    printf 'nice_permission_probe=%s\n' "not_performed"
+    printf 'renice_command=%s\n' "$(command_state renice)"
+    printf 'taskset_command=%s\n' "$(command_state taskset)"
+    printf 'live_confirm=%s\n' "${LIVE_CONFIRM}"
+    printf 'live_pid_allowlist=%s\n' "${LIVE_PID_ALLOWLIST}"
+    printf 'live_scope=%s\n' "$(live_scope_label)"
+  } >"${PERMISSION_STATE}"
 }
 
 cleanup() {
@@ -297,6 +466,11 @@ validate_config() {
     printf 'AEGISAI_DAEMON_WAIT_TIMEOUT must be a positive integer.\n' >&2
     exit 1
   fi
+  if ! optional_positive_uint_or_empty "${DAEMON_MAX_EVENTS}"; then
+    append "- Invalid daemon max events: \`${DAEMON_MAX_EVENTS}\`"
+    printf 'AEGISAI_DAEMON_MAX_EVENTS must be empty or a positive integer.\n' >&2
+    exit 1
+  fi
   if [[ " ${SELECTED_MODES[*]} " == *" live_guarded "* ]]; then
     if [[ "${LIVE_CONFIRM}" != "1" ]]; then
       append "- Invalid live actuator confirmation: \`${LIVE_CONFIRM}\`"
@@ -374,6 +548,11 @@ write_run_env() {
     printf 'repo_root=%s\n' "${REPO_ROOT}"
     printf 'log_path=%s\n' "${LOG_PATH}"
     printf 'artifact_dir=%s\n' "${ARTIFACT_DIR}"
+    printf 'acceptance_phase=%s\n' "${ACCEPTANCE_PHASE}"
+    printf 'acceptance_baseline=%s\n' "${ACCEPTANCE_BASELINE}"
+    printf 'cpu_topology_artifact=%s\n' "${CPU_TOPOLOGY}"
+    printf 'permission_state_artifact=%s\n' "${PERMISSION_STATE}"
+    printf 'mode_contract_csv=%s\n' "${MODE_CONTRACT_CSV}"
     printf 'modes=%s\n' "${SELECTED_MODES[*]}"
     printf 'model=%s\n' "${MODEL}"
     printf 'prompt_sha256=%s\n' "${prompt_hash}"
@@ -396,16 +575,71 @@ write_run_env() {
     printf 'daemon_batch_size=%s\n' "${DAEMON_BATCH_SIZE}"
     printf 'daemon_tick_ms=%s\n' "${DAEMON_TICK_MS}"
     printf 'daemon_drain_ms=%s\n' "${DAEMON_DRAIN_MS}"
+    printf 'daemon_max_events=%s\n' "${DAEMON_MAX_EVENTS}"
     printf 'live_confirm=%s\n' "${LIVE_CONFIRM}"
     printf 'live_pid_allowlist=%s\n' "${LIVE_PID_ALLOWLIST}"
     printf 'live_enable_affinity=%s\n' "${LIVE_ENABLE_AFFINITY}"
+    printf 'live_scope=%s\n' "$(live_scope_label)"
     printf 'kernel=%s\n' "$(uname -srmo 2>/dev/null || true)"
     printf 'cpu_count=%s\n' "$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
+    printf 'cpu_count_configured=%s\n' "$(getconf _NPROCESSORS_CONF 2>/dev/null || true)"
+    printf 'sysfs_cpu_online=%s\n' "$(cat /sys/devices/system/cpu/online 2>/dev/null || true)"
+    printf 'self_cpus_allowed_list=%s\n' "$(proc_status_value Cpus_allowed_list)"
+    printf 'self_cpuset=%s\n' "$(cat /proc/self/cpuset 2>/dev/null || true)"
+    printf 'uid=%s\n' "$(id -u 2>/dev/null || true)"
+    printf 'user=%s\n' "$(id -un 2>/dev/null || true)"
+    printf 'cap_eff=%s\n' "$(proc_status_value CapEff)"
+    printf 'cap_sys_nice_effective=%s\n' "$(cap_sys_nice_effective)"
+    printf 'renice_command=%s\n' "$(command_state renice)"
+    printf 'taskset_command=%s\n' "$(command_state taskset)"
     printf 'ollama_version=%s\n' "$(ollama --version 2>/dev/null || true)"
     printf 'cargo_version=%s\n' "$(cargo --version 2>/dev/null || true)"
     printf 'curl_version=%s\n' "$(curl --version 2>/dev/null | head -n 1 || true)"
     printf 'stress_ng_version=%s\n' "$(stress-ng --version 2>/dev/null | head -n 1 || true)"
   } >"${RUN_ENV}"
+}
+
+write_acceptance_baseline() {
+  local prompt_hash="$1"
+
+  {
+    printf 'acceptance_phase=%s\n' "${ACCEPTANCE_PHASE}"
+    printf 'acceptance_goal=%s\n' "${ACCEPTANCE_GOAL}"
+    printf 'run_id=%s\n' "${RUN_ID}"
+    printf 'modes=%s\n' "${SELECTED_MODES[*]}"
+    printf 'model=%s\n' "${MODEL}"
+    printf 'prompt_sha256=%s\n' "${prompt_hash}"
+    printf 'prompt=%s\n' "${PROMPT}"
+    printf 'ollama_api_url=%s\n' "${OLLAMA_API_URL}"
+    printf 'num_predict=%s\n' "${NUM_PREDICT}"
+    printf 'temperature=%s\n' "${TEMPERATURE}"
+    printf 'seed=%s\n' "${SEED}"
+    printf 'keep_alive=%s\n' "${KEEP_ALIVE}"
+    printf 'samples_per_mode=%s\n' "${SAMPLES}"
+    printf 'concurrency=%s\n' "${CONCURRENCY}"
+    printf 'stress_cpu=%s\n' "${STRESS_CPU}"
+    printf 'stress_io=%s\n' "${STRESS_IO}"
+    printf 'stress_hdd=%s\n' "${STRESS_HDD}"
+    printf 'stress_hdd_bytes=%s\n' "${STRESS_HDD_BYTES}"
+    printf 'stress_timeout_s=%s\n' "${STRESS_TIMEOUT}"
+    printf 'stress_command=%s\n' "$(stress_command_label)"
+    printf 'cpu_topology_artifact=%s\n' "${CPU_TOPOLOGY}"
+    printf 'cpu_topology_sha256=%s\n' "$(file_sha256 "${CPU_TOPOLOGY}")"
+    printf 'permission_state_artifact=%s\n' "${PERMISSION_STATE}"
+    printf 'permission_state_sha256=%s\n' "$(file_sha256 "${PERMISSION_STATE}")"
+    printf 'live_confirm=%s\n' "${LIVE_CONFIRM}"
+    printf 'live_pid_allowlist=%s\n' "${LIVE_PID_ALLOWLIST}"
+    printf 'live_scope=%s\n' "$(live_scope_label)"
+    printf 'live_nice_only_required=%s\n' "$([[ "${LIVE_ENABLE_AFFINITY}" == "0" ]] && printf true || printf false)"
+    printf 'live_affinity_enabled=%s\n' "${LIVE_ENABLE_AFFINITY}"
+    printf 'cpuset_enabled=%s\n' "false"
+    printf 'mode_contract_csv=%s\n' "${MODE_CONTRACT_CSV}"
+  } >"${ACCEPTANCE_BASELINE}"
+  if has_command sha256sum; then
+    sha256sum "${ACCEPTANCE_BASELINE}" >"${ACCEPTANCE_BASELINE}.sha256"
+  elif has_command shasum; then
+    shasum -a 256 "${ACCEPTANCE_BASELINE}" >"${ACCEPTANCE_BASELINE}.sha256"
+  fi
 }
 
 run_http_payload() {
@@ -446,8 +680,8 @@ write_ollama_request_sample() {
   if grep -q '"done"[[:space:]]*:[[:space:]]*true' "${body}" 2>/dev/null; then
     stream_done=1
   fi
-  body_bytes="$(wc -c <"${body}" | tr -d '[:space:]')"
-  error_bytes="$(wc -c <"${error_log}" | tr -d '[:space:]')"
+  body_bytes="$(file_size_bytes "${body}")"
+  error_bytes="$(file_size_bytes "${error_log}")"
 
   printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "${sample}" \
@@ -526,9 +760,44 @@ extract_trigger_count() {
   sed -n 's/^  inference_tail_guard: \([0-9][0-9]*\)$/\1/p' "${file}" | head -n 1
 }
 
+extract_signal_observation_field() {
+  local file="$1"
+  local signal="$2"
+  local field="$3"
+  local line
+
+  line="$(sed -n "s/^  ${signal}: //p" "${file}" | head -n 1)"
+  if [[ -z "${line}" ]]; then
+    printf '0'
+    return 0
+  fi
+
+  printf '%s\n' "${line}" | tr ' ' '\n' | sed -n "s/^${field}=\([0-9][0-9]*\),*$/\1/p" | head -n 1
+}
+
+extract_feature_window_maximum() {
+  local file="$1"
+  local metric="$2"
+
+  sed -n "s/^  ${metric}: \([0-9][0-9]*\)$/\1/p" "${file}" | head -n 1
+}
+
+has_feature_window_metric() {
+  local file="$1"
+  local metric="$2"
+
+  grep -Eq "^  ${metric}: [0-9][0-9]*$" "${file}" 2>/dev/null
+}
+
 count_action_errors() {
   local file="$1"
   grep -Ec 'backend\.apply\.apply\.failed_count=[1-9][0-9]*|backend\.apply\.apply\.[0-9]+\.status=error|backend\.rollback\.rollback\.[0-9]+\.status=error|backend\.rollback\.rollback\.failed=' "${file}" 2>/dev/null || true
+}
+
+count_action_highlights() {
+  local file="$1"
+  local pattern="$2"
+  grep -Ec "${pattern}" "${file}" 2>/dev/null || true
 }
 
 start_stress() {
@@ -594,6 +863,8 @@ start_daemon() {
   local backend="$1"
   local daemon_log="$2"
   local -a live_args=()
+  local -a limit_args=()
+  local expanded_live_pid_allowlist="${LIVE_PID_ALLOWLIST}"
 
   daemon_pid=""
   if [[ "${backend}" == "none" ]]; then
@@ -601,13 +872,17 @@ start_daemon() {
     return 0
   fi
   if [[ "${backend}" == "linux-command" ]]; then
+    expanded_live_pid_allowlist="$(expand_pid_allowlist_with_children "${LIVE_PID_ALLOWLIST}")"
     live_args=(
       --confirm-live-actuator
-      --live-pid-allowlist "${LIVE_PID_ALLOWLIST}"
+      --live-pid-allowlist "${expanded_live_pid_allowlist}"
     )
     if [[ "${LIVE_ENABLE_AFFINITY}" == "1" ]]; then
       live_args+=(--enable-live-affinity)
     fi
+  fi
+  if [[ -n "${DAEMON_MAX_EVENTS}" ]]; then
+    limit_args=(--max-events "${DAEMON_MAX_EVENTS}")
   fi
 
   (
@@ -620,6 +895,7 @@ start_daemon() {
         --allow-partial-probes \
         --probe-poll-timeout-ms "${DAEMON_POLL_TIMEOUT_MS}" \
         --batch-size "${DAEMON_BATCH_SIZE}" \
+        "${limit_args[@]}" \
         --tick-ms "${DAEMON_TICK_MS}" \
         --drain-ms "${DAEMON_DRAIN_MS}" \
         "${live_args[@]}"
@@ -731,6 +1007,13 @@ for count in counts:
         "jitter_ms": fmt(statistics.stdev(totals) if len(totals) > 1 else 0.0 if totals else None),
         "trigger_count": count["trigger_count"],
         "rollback_count": count["rollback_count"],
+        "cpu_migration_events": count.get("cpu_migration_events", "0"),
+        "cpu_migration_total": count.get("cpu_migration_total", "0"),
+        "cpu_migrations_per_sec_max": count.get("cpu_migrations_per_sec_max", "0"),
+        "major_page_fault_events": count.get("major_page_fault_events", "0"),
+        "major_page_fault_total": count.get("major_page_fault_total", "0"),
+        "major_page_faults_per_sec_max": count.get("major_page_faults_per_sec_max", "0"),
+        "offcpu_time_events": count.get("offcpu_time_events", "0"),
         "p95_delta_vs_baseline_pct": fmt(p95_delta),
     }
     rows.append(row)
@@ -749,6 +1032,13 @@ fieldnames = [
     "jitter_ms",
     "trigger_count",
     "rollback_count",
+    "cpu_migration_events",
+    "cpu_migration_total",
+    "cpu_migrations_per_sec_max",
+    "major_page_fault_events",
+    "major_page_fault_total",
+    "major_page_faults_per_sec_max",
+    "offcpu_time_events",
     "p95_delta_vs_baseline_pct",
 ]
 
@@ -769,6 +1059,10 @@ headers = [
     "jitter ms",
     "triggers",
     "rollbacks",
+    "cpu mig total",
+    "cpu mig max/s",
+    "maj fault total",
+    "maj fault max/s",
     "P95 delta vs baseline %",
 ]
 lines = [
@@ -791,6 +1085,10 @@ for row in rows:
                 row["jitter_ms"],
                 row["trigger_count"],
                 row["rollback_count"],
+                row["cpu_migration_total"],
+                row["cpu_migrations_per_sec_max"],
+                row["major_page_fault_total"],
+                row["major_page_faults_per_sec_max"],
                 row["p95_delta_vs_baseline_pct"],
             ]
         )
@@ -812,7 +1110,7 @@ append_daemon_excerpt() {
   fi
 
   append '```text'
-  grep -E '^(source|metadata|actuator_backend|processed_events|applied_actions|inline_rollbacks|tick_rollbacks|metric_records|trace_records|triggered_scenarios|  inference_tail_guard:)' "${daemon_log}" >>"${LOG_PATH}" || true
+  grep -E '^(source|metadata|actuator_backend|processed_events|applied_actions|inline_rollbacks|tick_rollbacks|metric_records|trace_records|signal_observations|feature_window_maxima|triggered_scenarios|  (run_queue_delay|cpu_migration|major_page_fault|offcpu_time|cpu_migrations_per_sec|major_page_faults_per_sec|inference_tail_guard):)' "${daemon_log}" >>"${LOG_PATH}" || true
   append '```'
 }
 
@@ -835,6 +1133,29 @@ run_mode() {
   local action_error_count=0
   local success_count=0
   local mode_status=0
+  local request_contract="PASS"
+  local recognition_contract="n/a"
+  local audit_contract="n/a"
+  local live_nice_only_contract="n/a"
+  local live_affinity_contract="n/a"
+  local live_cpuset_disabled_contract="n/a"
+  local actuator_quality_contract="n/a"
+  local live_permission_contract="n/a"
+  local live_command_contract="n/a"
+  local observation_signal_contract="n/a"
+  local lease_audit_count=0
+  local rollback_audit_count=0
+  local cpuset_command_count=0
+  local cpu_migration_events=0
+  local cpu_migration_total=0
+  local cpu_migrations_per_sec_max=0
+  local major_page_fault_events=0
+  local major_page_fault_total=0
+  local major_page_faults_per_sec_max=0
+  local offcpu_time_events=0
+  local feature_window_signal_metrics_present=0
+  local contract_reason="ok"
+  local -a contract_reasons=()
 
   mkdir -p "${mode_dir}"
 
@@ -845,6 +1166,9 @@ run_mode() {
   append "- Samples: \`${SAMPLES}\`"
   append "- Concurrency: \`${CONCURRENCY}\`"
   append "- Interference: \`$(stress_command_label)\`"
+  if [[ "${mode}" == "live_guarded" ]]; then
+    append "- Live PID allowlist expanded with current children: \`$(expand_pid_allowlist_with_children "${LIVE_PID_ALLOWLIST}")\`"
+  fi
 
   start_stress "${stress_log}"
   start_daemon "${backend}" "${daemon_log}"
@@ -864,26 +1188,129 @@ run_mode() {
     inline_rollbacks="$(extract_daemon_number "inline_rollbacks" "${daemon_log}")"
     tick_rollbacks="$(extract_daemon_number "tick_rollbacks" "${daemon_log}")"
     action_error_count="$(count_action_errors "${daemon_log}")"
+    cpu_migration_events="$(extract_signal_observation_field "${daemon_log}" cpu_migration events)"
+    cpu_migration_total="$(extract_signal_observation_field "${daemon_log}" cpu_migration total)"
+    cpu_migrations_per_sec_max="$(extract_feature_window_maximum "${daemon_log}" cpu_migrations_per_sec)"
+    major_page_fault_events="$(extract_signal_observation_field "${daemon_log}" major_page_fault events)"
+    major_page_fault_total="$(extract_signal_observation_field "${daemon_log}" major_page_fault total)"
+    major_page_faults_per_sec_max="$(extract_feature_window_maximum "${daemon_log}" major_page_faults_per_sec)"
+    offcpu_time_events="$(extract_signal_observation_field "${daemon_log}" offcpu_time events)"
+    if has_feature_window_metric "${daemon_log}" cpu_migrations_per_sec && has_feature_window_metric "${daemon_log}" major_page_faults_per_sec; then
+      feature_window_signal_metrics_present=1
+    fi
+    lease_audit_count="$(count_action_highlights "${daemon_log}" 'backend\.apply\.lease\.')"
+    rollback_audit_count="$(count_action_highlights "${daemon_log}" 'backend\.rollback\.rollback\.[0-9]+\.status=ok|backend\.rollback\.rollback\.restored=')"
+    cpuset_command_count="$(count_action_highlights "${daemon_log}" 'cpuset restore requires|cpuset command application is not implemented yet|backend\.(apply|rollback)\.syscall\.[0-9]+=use_cpuset:true|backend\.rollback\.syscall\.[0-9]+=restore_cpuset')"
     processed_events="${processed_events:-0}"
     trigger_count="${trigger_count:-0}"
     inline_rollbacks="${inline_rollbacks:-0}"
     tick_rollbacks="${tick_rollbacks:-0}"
+    cpu_migration_events="${cpu_migration_events:-0}"
+    cpu_migration_total="${cpu_migration_total:-0}"
+    cpu_migrations_per_sec_max="${cpu_migrations_per_sec_max:-0}"
+    major_page_fault_events="${major_page_fault_events:-0}"
+    major_page_fault_total="${major_page_fault_total:-0}"
+    major_page_faults_per_sec_max="${major_page_faults_per_sec_max:-0}"
+    offcpu_time_events="${offcpu_time_events:-0}"
     rollback_count=$((inline_rollbacks + tick_rollbacks))
   fi
 
   if [[ "${mode_request_status}" -ne 0 || "${success_count}" -ne "${SAMPLES}" ]]; then
+    request_contract="FAIL"
     mode_status=1
+    contract_reasons+=("request_samples")
   fi
   if [[ "${stress_exhausted}" -ne 0 ]]; then
+    request_contract="FAIL"
     mode_status=1
+    contract_reasons+=("stress_exhausted")
   fi
   if [[ "${backend}" != "none" ]]; then
-    if [[ "${daemon_status}" -ne 0 || "${processed_events}" -le 0 || "${trigger_count}" -le 0 || "${rollback_count}" -le 0 || "${action_error_count}" -ne 0 ]]; then
+    recognition_contract="PASS"
+    if [[ "${daemon_status}" -ne 0 || "${processed_events}" -le 0 || "${trigger_count}" -le 0 || "${rollback_count}" -le 0 ]]; then
+      recognition_contract="FAIL"
       mode_status=1
+      contract_reasons+=("strategy_recognition")
+    fi
+    observation_signal_contract="PASS"
+    if [[ "${feature_window_signal_metrics_present}" -ne 1 || "${cpu_migration_total}" -lt 0 || "${major_page_fault_total}" -lt 0 || "${cpu_migrations_per_sec_max}" -lt 0 || "${major_page_faults_per_sec_max}" -lt 0 ]]; then
+      observation_signal_contract="FAIL"
+      mode_status=1
+      contract_reasons+=("observation_signal_parse")
     fi
   fi
+  if [[ "${mode}" == "dry_run" || "${mode}" == "live_guarded" ]]; then
+    audit_contract="PASS"
+    if [[ "${action_error_count}" -ne 0 ]]; then
+      audit_contract="FAIL"
+      mode_status=1
+      contract_reasons+=("action_audit")
+    fi
+  fi
+  if [[ "${mode}" == "live_guarded" ]]; then
+    live_nice_only_contract="PASS"
+    live_affinity_contract="n/a"
+    live_cpuset_disabled_contract="PASS"
+    actuator_quality_contract="PASS"
+    live_permission_contract="PASS"
+    live_command_contract="PASS"
+    if [[ "${LIVE_ENABLE_AFFINITY}" == "1" ]]; then
+      live_nice_only_contract="n/a"
+      live_affinity_contract="PASS"
+      if ! grep -Eq 'backend\.apply\.live_guard\.scope=nice,affinity|backend\.rollback\.live_guard\.scope=nice,affinity' "${daemon_log}" 2>/dev/null; then
+        live_affinity_contract="FAIL"
+        mode_status=1
+        contract_reasons+=("live_affinity_scope")
+      fi
+      if ! grep -Eq 'backend\.(apply\.apply|rollback\.rollback)\.[0-9]+\.detail=.*command=taskset -pc' "${daemon_log}" 2>/dev/null; then
+        live_affinity_contract="FAIL"
+        mode_status=1
+        contract_reasons+=("live_affinity_command_audit")
+      fi
+    elif [[ "${LIVE_ENABLE_AFFINITY}" != "0" ]]; then
+      live_nice_only_contract="FAIL"
+      mode_status=1
+      contract_reasons+=("invalid_live_affinity_flag")
+    elif ! grep -Eq 'backend\.apply\.live_guard\.scope=nice|backend\.rollback\.live_guard\.scope=nice' "${daemon_log}" 2>/dev/null; then
+      live_nice_only_contract="FAIL"
+      mode_status=1
+      contract_reasons+=("live_nice_scope")
+    elif grep -Eq 'command=taskset -pc|affinity command disabled by live guard' "${daemon_log}" 2>/dev/null; then
+      live_nice_only_contract="FAIL"
+      mode_status=1
+      contract_reasons+=("live_nice_only_affinity_seen")
+    fi
+    if [[ "${cpuset_command_count}" -ne 0 ]]; then
+      live_cpuset_disabled_contract="FAIL"
+      actuator_quality_contract="FAIL"
+      mode_status=1
+      contract_reasons+=("cpuset_not_disabled")
+    fi
+    if [[ "${lease_audit_count}" -le 0 ]]; then
+      actuator_quality_contract="FAIL"
+      mode_status=1
+      contract_reasons+=("lease_audit")
+    fi
+    if [[ "${rollback_audit_count}" -le 0 ]]; then
+      actuator_quality_contract="FAIL"
+      mode_status=1
+      contract_reasons+=("rollback_audit")
+    fi
+    if [[ "${LIVE_CONFIRM}" != "1" || "$(command_state renice)" != "present" ]] || ! is_pid_allowlist "${LIVE_PID_ALLOWLIST}"; then
+      live_permission_contract="FAIL"
+      mode_status=1
+      contract_reasons+=("live_permission_preflight")
+    fi
+    if [[ "${action_error_count}" -ne 0 ]]; then
+      live_command_contract="FAIL"
+      contract_reasons+=("live_command_permission_or_execution")
+    fi
+  fi
+  if [[ "${#contract_reasons[@]}" -gt 0 ]]; then
+    contract_reason="$(IFS=';'; printf '%s' "${contract_reasons[*]}")"
+  fi
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "${mode}" \
     "${backend}" \
     "${processed_events}" \
@@ -895,8 +1322,44 @@ run_mode() {
     "${action_error_count}" \
     "${success_count}" \
     "${SAMPLES}" \
+    "${cpu_migration_events}" \
+    "${cpu_migration_total}" \
+    "${cpu_migrations_per_sec_max}" \
+    "${major_page_fault_events}" \
+    "${major_page_fault_total}" \
+    "${major_page_faults_per_sec_max}" \
+    "${offcpu_time_events}" \
     >>"${MODE_COUNTS_CSV}"
 
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+    "${mode}" \
+    "$(mode_acceptance_gate "${mode}")" \
+    "${backend}" \
+    "${request_contract}" \
+    "${recognition_contract}" \
+    "${observation_signal_contract}" \
+    "${audit_contract}" \
+    "${live_nice_only_contract}" \
+    "${live_affinity_contract}" \
+    "${live_cpuset_disabled_contract}" \
+    "${actuator_quality_contract}" \
+    "${live_permission_contract}" \
+    "${live_command_contract}" \
+    "$(status_label "${mode_status}")" \
+    "${contract_reason}" \
+    >>"${MODE_CONTRACT_CSV}"
+
+  append "- Acceptance gate: \`$(mode_acceptance_gate "${mode}")\`"
+  append "- Request contract: \`${request_contract}\`"
+  append "- Recognition contract: \`${recognition_contract}\`"
+  append "- Observation signal contract: \`${observation_signal_contract}\`"
+  append "- Action audit contract: \`${audit_contract}\`"
+  append "- Live nice-only contract: \`${live_nice_only_contract}\`"
+  append "- Live affinity contract: \`${live_affinity_contract}\`"
+  append "- Live cpuset-disabled contract: \`${live_cpuset_disabled_contract}\`"
+  append "- Actuator quality contract: \`${actuator_quality_contract}\`"
+  append "- Live permission preflight contract: \`${live_permission_contract}\`"
+  append "- Live command contract: \`${live_command_contract}\`"
   append "- Request success: \`${success_count}/${SAMPLES}\`"
   append "- Daemon status: \`${daemon_status}\`"
   append "- Stress status: \`${stress_status}\`"
@@ -905,8 +1368,14 @@ run_mode() {
   append "- Trigger count: \`${trigger_count}\`"
   append "- Rollback count: \`${rollback_count}\`"
   append "- Action audit error count: \`${action_error_count}\`"
+  append "- CPU migration observations: \`events=${cpu_migration_events}, total=${cpu_migration_total}, max_rate_per_sec=${cpu_migrations_per_sec_max}\`"
+  append "- Major page fault observations: \`events=${major_page_fault_events}, total=${major_page_fault_total}, max_rate_per_sec=${major_page_faults_per_sec_max}\`"
+  append "- Off-CPU observations: \`events=${offcpu_time_events}\` (eBPF/future enhancement; not required for this gate)"
+  append "- Lease audit highlight count: \`${lease_audit_count}\`"
+  append "- Rollback audit highlight count: \`${rollback_audit_count}\`"
   append "- Mode artifacts: \`${mode_dir}\`"
   append "- Mode result: \`$(if [[ "${mode_status}" -eq 0 ]]; then printf 'PASS'; else printf 'FAIL'; fi)\`"
+  append "- Mode contract reason: \`${contract_reason}\`"
   append ""
   append "Daemon summary excerpt:"
   append_daemon_excerpt "${daemon_log}"
@@ -931,7 +1400,8 @@ append "- Log path: \`${LOG_PATH}\`"
 append "- Artifact directory: \`${ARTIFACT_DIR}\`"
 append "- Runtime: \`ollama\`"
 append "- Selected modes: \`${SELECTED_MODES[*]}\`"
-append "- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger \`inference_tail_guard\`, roll back, and have no action audit errors."
+append "- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger \`inference_tail_guard\`, roll back, expose cpu_migration/major_page_fault observation totals, and have no action audit errors."
+append "- Off-CPU note: \`offcpu_time\` remains an eBPF/future enhancement and does not block benefit revalidation."
 
 validate_config
 require_command python3
@@ -959,10 +1429,13 @@ fi
 prompt_hash="$(prompt_sha256)"
 write_payload true "${PAYLOAD_STREAM}"
 write_payload false "${PAYLOAD_WARMUP}"
+write_cpu_topology
+write_permission_state
 write_run_env "${prompt_hash}"
+write_acceptance_baseline "${prompt_hash}"
 
 append ""
-append "#### Fixed experiment controls"
+append "#### ${ACCEPTANCE_PHASE} fixed acceptance baseline"
 append ""
 append "- Model: \`${MODEL}\`"
 append "- Prompt sha256: \`${prompt_hash}\`"
@@ -974,15 +1447,25 @@ append "- Concurrency: \`${CONCURRENCY}\`"
 append "- Interference: \`$(stress_command_label)\`"
 append "- Stress lifecycle: \`$(if [[ "${STRESS_CPU}" -eq 0 && "${STRESS_IO}" -eq 0 && "${STRESS_HDD}" -eq 0 ]]; then printf 'disabled'; elif [[ "${STRESS_TIMEOUT}" -gt 0 ]]; then printf 'self-timeout cap; mode fails if pressure exits early'; else printf 'harness-controlled per mode'; fi)\`"
 append "- Daemon poll timeout: \`${DAEMON_POLL_TIMEOUT_MS}ms\`"
+append "- Daemon max events: \`${DAEMON_MAX_EVENTS:-unbounded}\`"
+append "- CPU topology artifact: \`${CPU_TOPOLOGY}\`"
+append "- Permission state artifact: \`${PERMISSION_STATE}\`"
+append "- Acceptance baseline artifact: \`${ACCEPTANCE_BASELINE}\`"
+append "- Acceptance baseline sha256: \`$(file_sha256 "${ACCEPTANCE_BASELINE}")\`"
 if [[ " ${SELECTED_MODES[*]} " == *" live_guarded "* ]]; then
   append "- Live actuator confirmation: \`${LIVE_CONFIRM}\`"
   append "- Live PID allowlist: \`${LIVE_PID_ALLOWLIST}\`"
-  append "- Live actuator scope: \`$(if [[ "${LIVE_ENABLE_AFFINITY}" == "1" ]]; then printf 'nice,affinity'; else printf 'nice'; fi)\`"
+  append "- Live actuator scope: \`$(live_scope_label)\`"
+  append "- Live nice-only required: \`$([[ "${LIVE_ENABLE_AFFINITY}" == "0" ]] && printf true || printf false)\`"
+  append "- Live affinity enabled: \`${LIVE_ENABLE_AFFINITY}\`"
+  append "- Cpuset enabled: \`false\`"
 fi
 append "- Run environment artifact: \`${RUN_ENV}\`"
+append "- Mode contract artifact: \`${MODE_CONTRACT_CSV}\`"
 
 printf 'sample,mode,backend,curl_status,http_code,stream_done,ttft_ms,total_ms,body_bytes,error_bytes\n' >"${SAMPLES_CSV}"
-printf 'mode,backend,processed_events,trigger_count,rollback_count,daemon_status,stress_status,stress_exhausted,action_error_count,sample_success_count,sample_count\n' >"${MODE_COUNTS_CSV}"
+printf 'mode,backend,processed_events,trigger_count,rollback_count,daemon_status,stress_status,stress_exhausted,action_error_count,sample_success_count,sample_count,cpu_migration_events,cpu_migration_total,cpu_migrations_per_sec_max,major_page_fault_events,major_page_fault_total,major_page_faults_per_sec_max,offcpu_time_events\n' >"${MODE_COUNTS_CSV}"
+printf 'mode,acceptance_gate,backend,request_contract,recognition_contract,observation_signal_contract,audit_contract,live_nice_only_contract,live_affinity_contract,live_cpuset_disabled_contract,actuator_quality_contract,live_permission_contract,live_command_contract,mode_contract,reason\n' >"${MODE_CONTRACT_CSV}"
 
 tmp_show="${ARTIFACT_DIR}/ollama.show.txt"
 tmp_ps_before="${ARTIFACT_DIR}/ollama.ps.before.txt"
@@ -1057,6 +1540,7 @@ append "- P95/P99 columns: end-to-end streaming request total latency."
 append "- Jitter column: sample standard deviation of total latency."
 append "- Raw samples: \`${SAMPLES_CSV}\`"
 append "- Mode counts: \`${MODE_COUNTS_CSV}\`"
+append "- Mode contracts: \`${MODE_CONTRACT_CSV}\`"
 append "- Summary CSV: \`${SUMMARY_CSV}\`"
 append ""
 append_file "${SUMMARY_MD}"
@@ -1084,6 +1568,7 @@ fi
 printf '%s\n' "Inference Tail Guard Ollama A/B harness summary:"
 cat "${SUMMARY_MD}"
 printf '%s\n' "Artifacts: ${ARTIFACT_DIR}"
+printf '%s\n' "Mode contracts: ${MODE_CONTRACT_CSV}"
 printf '%s\n' "Verification log: ${LOG_PATH}"
 
 exit "${overall_status}"

@@ -53,7 +53,7 @@ bash bench/scripts/inference_tail_guard_ollama_smoke.sh
 - 并发：`AEGISAI_AB_CONCURRENCY=2`
 - CPU 干扰：`stress-ng --cpu 2`
 - 压力源生命周期：默认 `AEGISAI_STRESS_TIMEOUT=0`，由 harness 在每个档位开始/结束时启动和停止；设置为正整数时作为 self-timeout 上限，若压力源提前结束则该档失败
-- 输出：`TTFT p50/p95/p99`、latency `P95/P99`、jitter、trigger count、rollback count
+- 输出：`TTFT p50/p95/p99`、latency `P95/P99`、jitter、trigger count、rollback count、`cpu_migration` 与 `major_page_fault` 观测统计
 
 运行前请先确认：
 
@@ -100,13 +100,117 @@ AEGISAI_LIVE_PID_ALLOWLIST=1234 \
 
 - append-only 验证日志：`docs/verification_log.md`
 - 原始样本和汇总：`.cache/aegisai/inference_tail_guard/<run_id>/`
+- 2R-0 验收基线：`.cache/aegisai/inference_tail_guard/<run_id>/acceptance_baseline.env`
+- CPU 拓扑快照：`.cache/aegisai/inference_tail_guard/<run_id>/cpu_topology.txt`
+- 权限状态快照：`.cache/aegisai/inference_tail_guard/<run_id>/permission_state.txt`
+- 分档验收结果：`.cache/aegisai/inference_tail_guard/<run_id>/mode_contract.csv`
+
+`mode_counts.csv` 和 `summary.csv` 会记录 Linux procfs fallback 观测到的
+`cpu_migration_events`、`cpu_migration_total`、`cpu_migrations_per_sec_max`、
+`major_page_fault_events`、`major_page_fault_total` 和
+`major_page_faults_per_sec_max`。这些值来自目标进程/线程的
+`/proc/<pid>/sched` 与 `/proc/<pid>/stat` delta，用于解释实机实验中的调度迁移
+和 major fault 压力；值为 0 表示该轮没有观测到对应 delta，不会被当作采样失败。
+`offcpu_time_events` 只作为后续 eBPF 增强项的占位记录，不阻塞收益复验。
+
+## Phase 2R-0 固定验收基线
+
+阶段 2R-0 的目标不是证明收益，而是先锁住验收条件，避免后续把策略识别、dry-run 审计和主机权限问题混在一起解释。每次 harness 会固定并落盘：
+
+- 模型、prompt 与 prompt sha256
+- Ollama request shape：`num_predict`、`temperature`、`seed`、`keep_alive`
+- 样本数、并发、干扰强度和压力源生命周期
+- CPU 拓扑：online/configured CPU、allowed CPU list、cpuset、cgroup、`lscpu` 摘要
+- 权限状态：uid/user/groups、当前 nice、`CapEff`、`CAP_SYS_NICE` 是否有效、`renice`/`taskset` 是否存在、live allowlist 和 live scope
+
+2R-0 分档验收口径：
+
+- `noop_observation`：只验收 runtime event 捕获、`inference_tail_guard` 触发和 rollback 生命周期，不验收系统命令权限。
+- `dry_run`：验收同一策略识别闭环，加上 `linux-command-dry-run` action audit 无错误；它仍不证明主机层收益。
+- `live_guarded`：只验收 nice-only live 闭环，要求 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1`、`AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>`、`AEGISAI_ENABLE_LIVE_AFFINITY=0`，再看真实 `renice` apply/rollback 是否有 action audit 错误。
+
+## Phase 2R-2 actuator 质量收敛
+
+阶段 2R-2 的目标是先把 live actuator 质量站稳，不做收益判断：
+
+- nice-only 至少 3 轮通过，且 `action_error_count=0`
+- 每次 apply 都能在 audit 中看到原始状态与 `backend.apply.lease.*`
+- rollback 能在 audit 中看到恢复结果
+- cpuset 继续禁用，不能出现 cpuset apply/restore 命令
+- 只有 nice-only gate 通过后才启用 affinity
+
+入口：
+
+```bash
+AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
+AEGISAI_LIVE_PID_ALLOWLIST=1234 \
+  bash bench/scripts/inference_tail_guard_phase2r2_actuator_quality.sh
+```
+
+常用覆盖：
+
+```bash
+AEGISAI_PHASE2R2_NICE_ROUNDS=3 \
+AEGISAI_PHASE2R2_RUN_AFFINITY=1 \
+AEGISAI_AB_SAMPLES=4 \
+AEGISAI_AB_CONCURRENCY=2 \
+AEGISAI_STRESS_CPU=2 \
+  bash bench/scripts/inference_tail_guard_phase2r2_actuator_quality.sh
+```
+
+结果写入 `.cache/aegisai/inference_tail_guard_phase2r2/<run_id>/phase2r2_actuator_quality.csv`。单轮 `mode_contract.csv` 现在包含 `live_nice_only_contract`、`live_affinity_contract`、`live_cpuset_disabled_contract` 和 `actuator_quality_contract`，用于区分 nice-only、affinity、cpuset 禁用和 actuator audit 质量。
+
+## Phase 2R-3 观测信号补齐
+
+阶段 2R-3 保留 procfs fallback，不把 `cpu_migration`、`major_page_fault` 等同于
+eBPF 已完成，而是把它们变成实机实验可解释指标：
+
+- daemon summary 输出 `signal_observations`：每个 signal 的事件数、delta 总量和单次最大 delta
+- daemon summary 输出 `feature_window_maxima`：策略窗口里观察到的最大 `cpu_migrations_per_sec` 与 `major_page_faults_per_sec`
+- harness 把这些值写入 `mode_counts.csv`、`summary.csv` 和验证日志摘录
+- `mode_contract.csv` 增加 `observation_signal_contract`，只要求这些观测字段可解析；不要求每轮必须出现非零迁移或 major fault
+- `offcpu_time` 保持 eBPF/后续增强项，不阻塞 2R-3 和后续收益复验
+
+建议把三类验收拆开跑，且显式复用同一组控制项：
+
+```bash
+AEGISAI_OLLAMA_MODEL=qwen2.5:0.5b \
+AEGISAI_AB_SAMPLES=12 \
+AEGISAI_AB_CONCURRENCY=2 \
+AEGISAI_STRESS_CPU=2 \
+AEGISAI_AB_MODES=noop_observation \
+  bash bench/scripts/inference_tail_guard_ollama_smoke.sh
+```
+
+```bash
+AEGISAI_OLLAMA_MODEL=qwen2.5:0.5b \
+AEGISAI_AB_SAMPLES=12 \
+AEGISAI_AB_CONCURRENCY=2 \
+AEGISAI_STRESS_CPU=2 \
+AEGISAI_AB_MODES=dry_run \
+  bash bench/scripts/inference_tail_guard_ollama_smoke.sh
+```
+
+```bash
+AEGISAI_OLLAMA_MODEL=qwen2.5:0.5b \
+AEGISAI_AB_SAMPLES=12 \
+AEGISAI_AB_CONCURRENCY=2 \
+AEGISAI_STRESS_CPU=2 \
+AEGISAI_AB_MODES=live_guarded \
+AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
+AEGISAI_LIVE_PID_ALLOWLIST=1234 \
+AEGISAI_ENABLE_LIVE_AFFINITY=0 \
+  bash bench/scripts/inference_tail_guard_ollama_smoke.sh
+```
 
 退出条件：
 
 - 每档样本都必须完成，HTTP 200，并收到 Ollama streaming `done=true`
 - 所有档位使用同一模型、prompt、样本数、并发和 CPU 干扰强度
 - `noop_observation`、`dry_run`、`live_guarded` 必须捕获 daemon events、触发 `inference_tail_guard`，并产生 rollback
+- `noop_observation`、`dry_run`、`live_guarded` 必须在 CSV 中暴露可解释的 `cpu_migration` / `major_page_fault` 观测字段
 - `dry_run` 和 `live_guarded` 不能出现 apply/rollback 审计错误
+- `mode_contract.csv` 必须显示每个已选档位的 `mode_contract=PASS`；其中 `live_guarded` 在 2R-0 必须保持 `live_nice_only_contract=PASS`
 - `stress-ng` 不能在单档实验结束前提前耗尽
 
 因此 `PASS` 表示实验矩阵可复现，不再只是“单次请求 smoke 通过”。

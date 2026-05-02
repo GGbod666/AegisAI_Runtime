@@ -262,6 +262,35 @@ mod tests {
         }
     }
 
+    struct DenyingPriorityRaiseCommandRunner {
+        calls: Rc<RefCell<Vec<String>>>,
+    }
+
+    impl DenyingPriorityRaiseCommandRunner {
+        fn new(calls: Rc<RefCell<Vec<String>>>) -> Self {
+            Self { calls }
+        }
+    }
+
+    impl LinuxCommandRunner for DenyingPriorityRaiseCommandRunner {
+        fn runner_name(&self) -> &str {
+            "denying-priority-raise-runner"
+        }
+
+        fn run(&mut self, program: &str, args: &[String]) -> Result<String, String> {
+            let line = std::iter::once(program.to_string())
+                .chain(args.iter().cloned())
+                .collect::<Vec<_>>()
+                .join(" ");
+            self.calls.borrow_mut().push(line.clone());
+            if program == "renice" && args.first().is_some_and(|value| value == "2") {
+                Err("permission denied".to_string())
+            } else {
+                Ok(line)
+            }
+        }
+    }
+
     struct MissingAffinityLinuxProcessStateProvider;
 
     impl LinuxProcessStateProvider for MissingAffinityLinuxProcessStateProvider {
@@ -523,7 +552,13 @@ mod tests {
             applied
                 .audit_fields
                 .get("backend.apply.lease.linux.live_guard.scope"),
-            None
+            Some(&"nice".to_string())
+        );
+        assert_eq!(
+            applied
+                .audit_fields
+                .get("backend.apply.lease.linux.nice.original"),
+            Some(&"7".to_string())
         );
 
         let rollbacks = actuator.expire(7_400);
@@ -533,6 +568,12 @@ mod tests {
                 .audit_fields
                 .get("backend.rollback.rollback.restored"),
             Some(&"nice".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.lease.linux.nice.original"),
+            Some(&"7".to_string())
         );
         assert_eq!(
             rollbacks[0]
@@ -549,6 +590,58 @@ mod tests {
 
         let commands = calls.borrow();
         assert_eq!(commands.as_slice(), ["renice 2 -p 42", "renice 7 -p 42"]);
+    }
+
+    #[test]
+    fn live_command_guard_can_degrade_priority_raise_to_noop_nice() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let guard = LiveLinuxCommandGuard::nice_only([42], true).without_priority_raise();
+        let applier = CommandLinuxSyscallApplier::guarded_live(
+            DenyingPriorityRaiseCommandRunner::new(calls.clone()),
+            guard.clone(),
+        );
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            applier,
+        )
+        .with_live_guard(guard);
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_named_executor(
+            "linux-command",
+            executor,
+        ));
+
+        let applied = actuator.apply(sample_plan_with_disabled_cpuset(), 6_625, true);
+
+        assert_eq!(
+            applied
+                .audit_fields
+                .get("backend.apply.live_guard.priority_raise_allowed"),
+            Some(&"false".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.result"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.0.status"),
+            Some(&"ok".to_string())
+        );
+        assert!(applied
+            .audit_fields
+            .get("backend.apply.apply.0.detail")
+            .is_some_and(|value| value.contains("priority_raise_limited=true")));
+
+        let rollbacks = actuator.expire(7_425);
+        assert_eq!(rollbacks.len(), 1);
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.failed"),
+            None
+        );
+
+        let commands = calls.borrow();
+        assert_eq!(commands.as_slice(), ["renice 7 -p 42", "renice 7 -p 42"]);
     }
 
     #[test]

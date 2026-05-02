@@ -28,6 +28,9 @@ Current Linux source behavior:
 - samples `/proc/<pid>/schedstat`, `/proc/<pid>/sched`, and `/proc/<pid>/stat`
   for target runtimes to produce minimal `run_queue_delay`, `cpu_migration`,
   and `major_page_fault` events before the full eBPF reader is wired
+- prints signal observation summaries and feature-window maxima so
+  `cpu_migration` and `major_page_fault` can be interpreted in real-machine
+  experiments
 - plans the required probe set from `focus_signals`
 - separates kernel probe signals from runtime-only signals
 - exposes a `ProbeEventReader` hook for the later real probe reader
@@ -38,6 +41,8 @@ Current Linux source behavior:
 - records whether a driver is expected to stream events or is an explicit no-event preflight/audit path
 - can be run with `--allow-partial-probes` while `offcpu_time` and `io_latency`
   still wait for the later eBPF reader path
+- treats `offcpu_time` as non-blocking when procfs fallback is active; eBPF is
+  still the intended path for that signal
 - preflight may attach successfully and still return no events by design because it does not load eBPF programs or read ring buffers
 
 Current Linux reader CLI knobs:

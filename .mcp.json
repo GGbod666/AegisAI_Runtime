@@ -6,6 +6,27 @@
         "serve"
       ],
       "type": "stdio"
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "type": "stdio"
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "openspace": {
+      "command": "/home/gg/.local/venvs/openspace/bin/openspace-mcp",
+      "type": "stdio",
+      "toolTimeout": 600,
+      "env": {
+        "OPENSPACE_HOST_SKILL_DIRS": "/home/gg/.codex/skills",
+        "OPENSPACE_WORKSPACE": "/home/gg/OpenSpace"
+      }
     }
   }
 }

@@ -9,7 +9,8 @@ pub use metadata::{
     ProcfsMetadataProvider, StaticMetadataProvider,
 };
 pub use runtime_loop::{
-    RuntimeLoop, RuntimeLoopConfig, RuntimeLoopError, RuntimeRunSummary, ToolCallLifecycleSummary,
+    RuntimeLoop, RuntimeLoopConfig, RuntimeLoopError, RuntimeRunSummary, SignalObservationSummary,
+    ToolCallLifecycleSummary,
 };
 pub use source::{
     DriverBackedProbeEventReader, EventSource, LinuxProbeDriver, LinuxProbeHost, LinuxProbePlan,

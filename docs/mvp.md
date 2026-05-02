@@ -23,9 +23,9 @@ MVP 要证明两件事：
 - 识别目标 AI 推理进程
 - 输出基础 workload label
 - 采集 run queue delay
-- 采集 off-CPU time
 - 采集 CPU migration
 - 采集 major page fault
+- 通过后续 eBPF 增强采集 off-CPU time
 - 根据阈值触发短时 boost
 - 记录优化前后 TTFT、P95/P99 latency、jitter
 
@@ -47,7 +47,7 @@ MVP 要证明两件事：
 
 本阶段只打通最小闭环：
 
-1. `sched/offcpu/fault` 三类 probe 输出事件
+1. procfs fallback 先输出 `run_queue_delay`、`cpu_migration`、`major_page_fault` 可解释指标；`offcpu_time` 后续由 eBPF 补齐
 2. collector 聚合窗口内指标
 3. classifier 用规则识别 AI inference 目标
 4. `inference_tail_guard` 根据阈值决定是否 boost

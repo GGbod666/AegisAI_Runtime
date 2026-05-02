@@ -278,6 +278,7 @@ pub struct LiveLinuxCommandGuard {
     enable_nice: bool,
     enable_affinity: bool,
     enable_cpuset: bool,
+    allow_priority_raise: bool,
 }
 
 impl LiveLinuxCommandGuard {
@@ -291,6 +292,7 @@ impl LiveLinuxCommandGuard {
             enable_nice: true,
             enable_affinity: false,
             enable_cpuset: false,
+            allow_priority_raise: true,
         }
     }
 
@@ -306,6 +308,15 @@ impl LiveLinuxCommandGuard {
 
     pub fn allowed_pids(&self) -> &BTreeSet<u32> {
         &self.allowed_pids
+    }
+
+    pub fn without_priority_raise(mut self) -> Self {
+        self.allow_priority_raise = false;
+        self
+    }
+
+    pub fn allows_priority_raise(&self) -> bool {
+        self.allow_priority_raise
     }
 
     fn validate_target(&self, target_pid: u32) -> Result<(), String> {
@@ -363,6 +374,14 @@ impl LiveLinuxCommandGuard {
             }
             LinuxSyscallOperation::WarmupExecutor => "warmup executor deferred".to_string(),
             LinuxSyscallOperation::NoopWarmupRollback => "warmup rollback noop".to_string(),
+        }
+    }
+
+    fn bounded_live_nice_target(&self, original_nice: i32, requested_nice: i32) -> (i32, bool) {
+        if self.allow_priority_raise || requested_nice >= original_nice {
+            (requested_nice, false)
+        } else {
+            (original_nice, true)
         }
     }
 
@@ -599,15 +618,24 @@ impl LinuxSyscallApplier for CommandLinuxSyscallApplier {
         match operation {
             LinuxSyscallOperation::SetNice { delta } => {
                 let original_nice = captured_nice(captured_state)?;
-                let target_nice = (original_nice + delta).clamp(-20, 19);
-                self.run_audited(
+                let requested_nice = (original_nice + delta).clamp(-20, 19);
+                let (target_nice, priority_limited) = self
+                    .live_guard()
+                    .map(|guard| guard.bounded_live_nice_target(original_nice, requested_nice))
+                    .unwrap_or((requested_nice, false));
+                let detail = self.run_audited(
                     "renice",
                     &[
                         target_nice.to_string(),
                         "-p".to_string(),
                         target_pid.to_string(),
                     ],
-                )
+                )?;
+                if priority_limited {
+                    Ok(format!("{detail};priority_raise_limited=true;requested_nice={requested_nice};applied_nice={target_nice}"))
+                } else {
+                    Ok(detail)
+                }
             }
             LinuxSyscallOperation::SetAffinity {
                 strategy,
@@ -1155,6 +1183,10 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
                 )
                 .with_field("linux.live_guard.scope", guard.scope_label())
                 .with_field("linux.live_guard.allowed_pids", guard.allowed_pids_label())
+                .with_field(
+                    "linux.live_guard.priority_raise_allowed",
+                    guard.allows_priority_raise().to_string(),
+                )
         } else {
             lease
         };
@@ -1414,6 +1446,10 @@ fn annotate_live_guard(
             )
             .with_field("live_guard.scope", guard.scope_label())
             .with_field("live_guard.allowed_pids", guard.allowed_pids_label())
+            .with_field(
+                "live_guard.priority_raise_allowed",
+                guard.allows_priority_raise().to_string(),
+            )
             .with_field(
                 "live_guard.target_allowed",
                 guard.target_allowed(target_pid).to_string(),

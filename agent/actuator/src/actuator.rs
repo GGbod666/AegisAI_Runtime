@@ -50,6 +50,17 @@ impl Actuator {
             "backend.apply",
             &backend_apply.execution.audit_fields,
         );
+        if let Some(lease) = &backend_apply.lease {
+            audit_fields.insert(
+                "backend.apply.lease.backend".to_string(),
+                lease.backend_name.clone(),
+            );
+            merge_prefixed_fields(
+                &mut audit_fields,
+                "backend.apply.lease",
+                &lease.captured_state,
+            );
+        }
 
         let applied = AppliedAction {
             scenario: plan.scenario.clone(),

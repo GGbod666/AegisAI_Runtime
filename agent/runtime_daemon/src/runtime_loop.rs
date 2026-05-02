@@ -9,6 +9,7 @@ pub struct RuntimeLoopConfig {
     pub batch_size: usize,
     pub tick_interval_ms: u64,
     pub drain_after_source_ms: u64,
+    pub max_events: Option<u64>,
 }
 
 impl Default for RuntimeLoopConfig {
@@ -17,6 +18,7 @@ impl Default for RuntimeLoopConfig {
             batch_size: 32,
             tick_interval_ms: 200,
             drain_after_source_ms: 5_000,
+            max_events: None,
         }
     }
 }
@@ -24,6 +26,7 @@ impl Default for RuntimeLoopConfig {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RuntimeLoopError {
     InvalidBatchSize,
+    InvalidMaxEvents,
     Source(SourceError),
     Metadata(MetadataError),
 }
@@ -32,6 +35,7 @@ impl fmt::Display for RuntimeLoopError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidBatchSize => write!(f, "runtime loop batch_size must be greater than 0"),
+            Self::InvalidMaxEvents => write!(f, "runtime loop max_events must be greater than 0"),
             Self::Source(error) => write!(f, "{error}"),
             Self::Metadata(error) => write!(f, "{error}"),
         }
@@ -67,11 +71,28 @@ pub struct RuntimeRunSummary {
     pub last_timestamp_ms: Option<u64>,
     pub audit_highlights: Vec<String>,
     pub tool_call_lifecycles: Vec<ToolCallLifecycleSummary>,
+    pub signal_observations: BTreeMap<String, SignalObservationSummary>,
+    pub feature_window_maxima: BTreeMap<String, u64>,
 }
 
 impl RuntimeRunSummary {
     pub fn total_rollbacks(&self) -> u64 {
         self.inline_rollbacks + self.tick_rollbacks
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SignalObservationSummary {
+    pub event_count: u64,
+    pub value_total: u64,
+    pub value_max: u64,
+}
+
+impl SignalObservationSummary {
+    fn record(&mut self, value: u64) {
+        self.event_count = self.event_count.saturating_add(1);
+        self.value_total = self.value_total.saturating_add(value);
+        self.value_max = self.value_max.max(value);
     }
 }
 
@@ -102,6 +123,9 @@ impl RuntimeLoop {
         if config.batch_size == 0 {
             return Err(RuntimeLoopError::InvalidBatchSize);
         }
+        if config.max_events == Some(0) {
+            return Err(RuntimeLoopError::InvalidMaxEvents);
+        }
 
         Ok(Self { config })
     }
@@ -126,8 +150,21 @@ impl RuntimeLoop {
         let mut lifecycle_tracker = ToolCallLifecycleTracker::default();
         let mut next_tick_at_ms = None;
 
-        loop {
-            let batch = source.poll_batch(self.config.batch_size)?;
+        'outer: loop {
+            let batch_size = self
+                .config
+                .max_events
+                .map(|max_events| {
+                    max_events
+                        .saturating_sub(summary.processed_events)
+                        .min(self.config.batch_size as u64) as usize
+                })
+                .unwrap_or(self.config.batch_size);
+            if batch_size == 0 {
+                break;
+            }
+
+            let batch = source.poll_batch(batch_size)?;
             if batch.is_empty() {
                 break;
             }
@@ -154,7 +191,12 @@ impl RuntimeLoop {
                 let runtime_event = enrich_source_event(raw_event, metadata_provider)?;
                 let timestamp_ms = runtime_event.timestamp_ms;
                 lifecycle_tracker.observe_event(&runtime_event);
+                record_signal_observation(&mut summary.signal_observations, &runtime_event);
                 let outcome = orchestrator.process_event(runtime_event);
+                record_feature_window_maxima(
+                    &mut summary.feature_window_maxima,
+                    outcome.feature_windows.values(),
+                );
                 lifecycle_tracker.observe_actions(&outcome.applied_actions);
                 lifecycle_tracker.observe_actions(&outcome.rollbacks);
 
@@ -170,6 +212,14 @@ impl RuntimeLoop {
                         .triggered_scenarios
                         .entry(action.scenario.as_str().to_string())
                         .or_default() += 1;
+                }
+
+                if self
+                    .config
+                    .max_events
+                    .is_some_and(|max_events| summary.processed_events >= max_events)
+                {
+                    break 'outer;
                 }
             }
         }
@@ -188,6 +238,56 @@ impl RuntimeLoop {
 
         Ok(summary)
     }
+}
+
+fn record_signal_observation(
+    observations: &mut BTreeMap<String, SignalObservationSummary>,
+    event: &runtime_orchestrator::Event,
+) {
+    observations
+        .entry(event.signal.as_str().to_string())
+        .or_default()
+        .record(event.value);
+}
+
+fn record_feature_window_maxima<'a, I>(maxima: &mut BTreeMap<String, u64>, windows: I)
+where
+    I: IntoIterator<Item = &'a runtime_orchestrator::FeatureWindow>,
+{
+    for window in windows {
+        update_maximum(
+            maxima,
+            "run_queue_delay_us_max",
+            window.run_queue_delay_us_max,
+        );
+        update_maximum(maxima, "offcpu_time_us_max", window.offcpu_time_us_max);
+        update_maximum(
+            maxima,
+            "cpu_migrations_per_sec",
+            window.cpu_migrations_per_sec,
+        );
+        update_maximum(
+            maxima,
+            "major_page_faults_per_sec",
+            window.major_page_faults_per_sec,
+        );
+        update_maximum(
+            maxima,
+            "subprocess_start_delay_us_max",
+            window.subprocess_start_delay_us_max,
+        );
+        update_maximum(maxima, "queue_wait_us_max", window.queue_wait_us_max);
+        update_maximum(
+            maxima,
+            "optional_io_latency_us_max",
+            window.optional_io_latency_us_max,
+        );
+    }
+}
+
+fn update_maximum(maxima: &mut BTreeMap<String, u64>, key: &str, value: u64) {
+    let current = maxima.entry(key.to_string()).or_default();
+    *current = (*current).max(value);
 }
 
 #[derive(Default)]
@@ -319,11 +419,13 @@ fn collect_audit_highlights(
     highlights: &mut BTreeSet<String>,
     actions: &[runtime_orchestrator::AppliedAction],
 ) {
-    const AUDIT_PREFIXES: [&str; 5] = [
+    const AUDIT_PREFIXES: [&str; 7] = [
         "backend.apply.live_guard.",
         "backend.apply.capture.",
         "backend.apply.apply.",
+        "backend.apply.lease.",
         "backend.rollback.live_guard.",
+        "backend.rollback.lease.",
         "backend.rollback.rollback.",
     ];
 
@@ -347,14 +449,14 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use crate::{
-        MockEventSource, NoopMetadataProvider, RuntimeLoop, RuntimeLoopConfig,
+        MockEventSource, NoopMetadataProvider, RuntimeLoop, RuntimeLoopConfig, SourceEvent,
         StaticMetadataProvider,
     };
     use aegisai_actuator::{
         Actuator, CommandLinuxSyscallApplier, LinuxActuatorBackend,
         PlannedOnlyLinuxSyscallExecutor, UnavailableLinuxProcessStateProvider,
     };
-    use runtime_orchestrator::{RuntimeOrchestrator, RuntimeOrchestratorConfig};
+    use runtime_orchestrator::{RuntimeOrchestrator, RuntimeOrchestratorConfig, SignalKind};
 
     fn repo_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -387,6 +489,25 @@ mod tests {
             .contains_key("tool_call_booster"));
         assert_eq!(summary.metric_records, orchestrator.metrics().len());
         assert_eq!(summary.trace_records, orchestrator.traces().len());
+    }
+
+    #[test]
+    fn runtime_loop_can_stop_after_max_events() {
+        let mut orchestrator =
+            RuntimeOrchestrator::from_repo_root(repo_root()).expect("config should load");
+        let mut source = MockEventSource::demo_sequence();
+        let mut metadata = StaticMetadataProvider::demo();
+        let runtime_loop = RuntimeLoop::new(RuntimeLoopConfig {
+            max_events: Some(1),
+            ..RuntimeLoopConfig::default()
+        })
+        .expect("valid config");
+
+        let summary = runtime_loop
+            .run(&mut orchestrator, &mut source, &mut metadata)
+            .expect("runtime loop should succeed");
+
+        assert_eq!(summary.processed_events, 1);
     }
 
     #[test]
@@ -438,6 +559,49 @@ mod tests {
     }
 
     #[test]
+    fn runtime_loop_summarizes_procfs_explainability_signals() {
+        let mut orchestrator =
+            RuntimeOrchestrator::from_repo_root(repo_root()).expect("config should load");
+        let mut source = MockEventSource::new(
+            "procfs-signal-summary",
+            vec![
+                SourceEvent::new(1_000, 42, SignalKind::CpuMigration, 3)
+                    .with_process_name("ollama"),
+                SourceEvent::new(1_100, 42, SignalKind::MajorPageFault, 2)
+                    .with_process_name("ollama"),
+            ],
+        );
+        let mut metadata = NoopMetadataProvider;
+        let runtime_loop = RuntimeLoop::new(RuntimeLoopConfig::default()).expect("valid config");
+
+        let summary = runtime_loop
+            .run(&mut orchestrator, &mut source, &mut metadata)
+            .expect("runtime loop should succeed");
+
+        let migrations = summary
+            .signal_observations
+            .get("cpu_migration")
+            .expect("cpu migration summary");
+        assert_eq!(migrations.event_count, 1);
+        assert_eq!(migrations.value_total, 3);
+        assert_eq!(migrations.value_max, 3);
+
+        let faults = summary
+            .signal_observations
+            .get("major_page_fault")
+            .expect("major fault summary");
+        assert_eq!(faults.event_count, 1);
+        assert_eq!(faults.value_total, 2);
+        assert_eq!(faults.value_max, 2);
+        assert!(summary
+            .feature_window_maxima
+            .contains_key("cpu_migrations_per_sec"));
+        assert!(summary
+            .feature_window_maxima
+            .contains_key("major_page_faults_per_sec"));
+    }
+
+    #[test]
     fn runtime_loop_collects_audit_highlights_from_backend_execution() {
         let config = RuntimeOrchestratorConfig::load_from_repo_root(repo_root())
             .expect("config should load");
@@ -464,5 +628,9 @@ mod tests {
             .audit_highlights
             .iter()
             .any(|highlight| highlight.contains("backend.apply.apply.result=")));
+        assert!(summary
+            .audit_highlights
+            .iter()
+            .any(|highlight| highlight.contains("backend.apply.lease.")));
     }
 }

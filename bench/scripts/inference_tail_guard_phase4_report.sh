@@ -130,8 +130,8 @@ run_one_round() {
   append_log "- Harness stderr: \`${run_dir}/harness.stderr\`"
 
   if [[ ! -s "${run_dir}/summary.csv" ]]; then
-    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-      "${scenario}" "${label}" "${round}" "${run_status}" "missing" "" "" "" "" "" "" "" "" "" "" "" "${run_dir}" \
+    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+      "${scenario}" "${label}" "${round}" "${run_status}" "missing" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "${run_dir}" \
       >>"${DETAIL_CSV}"
     return "${run_status}"
   fi
@@ -192,6 +192,11 @@ with open(summary_path, newline="", encoding="utf-8") as handle:
             row["trigger_count"],
             row["rollback_count"],
             count.get("action_error_count", "0"),
+            row.get("cpu_migration_total", count.get("cpu_migration_total", "0")),
+            row.get("cpu_migrations_per_sec_max", count.get("cpu_migrations_per_sec_max", "0")),
+            row.get("major_page_fault_total", count.get("major_page_fault_total", "0")),
+            row.get("major_page_faults_per_sec_max", count.get("major_page_faults_per_sec_max", "0")),
+            row.get("offcpu_time_events", count.get("offcpu_time_events", "0")),
             run_dir,
         ]))
 PY
@@ -225,7 +230,7 @@ append_log "- Report path: \`${REPORT_MD}\`"
 append_log "- Run ID: \`${RUN_ID}\`"
 append_log "- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds."
 
-printf 'scenario,scenario_label,round,run_status,mode,backend,samples_ok,samples_total,ttft_p95_ms,ttft_p99_ms,latency_p95_ms,latency_p99_ms,jitter_ms,trigger_count,rollback_count,action_error_count,artifact_dir\n' >"${DETAIL_CSV}"
+printf 'scenario,scenario_label,round,run_status,mode,backend,samples_ok,samples_total,ttft_p95_ms,ttft_p99_ms,latency_p95_ms,latency_p99_ms,jitter_ms,trigger_count,rollback_count,action_error_count,cpu_migration_total,cpu_migrations_per_sec_max,major_page_fault_total,major_page_faults_per_sec_max,offcpu_time_events,artifact_dir\n' >"${DETAIL_CSV}"
 
 overall_status=0
 for scenario in ${SCENARIOS//,/ }; do
@@ -297,6 +302,11 @@ for (scenario, mode), mode_rows in sorted(by_key.items()):
         "trigger_count_total": str(sum(int(row["trigger_count"] or 0) for row in mode_rows)),
         "rollback_count_total": str(sum(int(row["rollback_count"] or 0) for row in mode_rows)),
         "action_error_count_total": str(sum(int(row["action_error_count"] or 0) for row in mode_rows)),
+        "cpu_migration_total": str(sum(int(row["cpu_migration_total"] or 0) for row in mode_rows)),
+        "cpu_migrations_per_sec_max": str(max(int(row["cpu_migrations_per_sec_max"] or 0) for row in mode_rows)),
+        "major_page_fault_total": str(sum(int(row["major_page_fault_total"] or 0) for row in mode_rows)),
+        "major_page_faults_per_sec_max": str(max(int(row["major_page_faults_per_sec_max"] or 0) for row in mode_rows)),
+        "offcpu_time_events_total": str(sum(int(row["offcpu_time_events"] or 0) for row in mode_rows)),
     }
     for metric, _label in METRICS:
         values = [parse_float(row[metric]) for row in mode_rows]
@@ -342,6 +352,11 @@ fieldnames = [
     "trigger_count_total",
     "rollback_count_total",
     "action_error_count_total",
+    "cpu_migration_total",
+    "cpu_migrations_per_sec_max",
+    "major_page_fault_total",
+    "major_page_faults_per_sec_max",
+    "offcpu_time_events_total",
 ]
 
 with open(aggregate_path, "w", newline="", encoding="utf-8") as handle:
@@ -408,6 +423,8 @@ detail_headers = [
     "triggers",
     "rollbacks",
     "action errors",
+    "cpu mig total",
+    "maj fault total",
 ]
 detail_lines = [
     "| " + " | ".join(detail_headers) + " |",
@@ -428,6 +445,8 @@ for row in rows:
         row["trigger_count"],
         row["rollback_count"],
         row["action_error_count"],
+        row["cpu_migration_total"],
+        row["major_page_fault_total"],
     ]) + " |")
 
 agg_headers = [
@@ -440,6 +459,8 @@ agg_headers = [
     "lat P95 mean",
     "lat P99 mean",
     "jitter mean",
+    "cpu mig total",
+    "maj fault total",
     "TTFT P95 delta %",
     "TTFT P99 delta %",
     "lat P95 delta %",
@@ -461,6 +482,8 @@ for row in aggregate_rows:
         row["latency_p95_ms_mean"],
         row["latency_p99_ms_mean"],
         row["jitter_ms_mean"],
+        row["cpu_migration_total"],
+        row["major_page_fault_total"],
         row["ttft_p95_ms_delta_vs_baseline_pct"],
         row["ttft_p99_ms_delta_vs_baseline_pct"],
         row["latency_p95_ms_delta_vs_baseline_pct"],
@@ -532,6 +555,8 @@ content = [
     "## Interpretation",
     "",
     "- `dry_run` and `noop_observation` validate recognition, trigger, audit, and rollback paths but do not by themselves prove host-level performance benefit.",
+    "- `cpu_migration` and `major_page_fault` columns are procfs-backed explainability signals for the run shape; they do not replace the live guarded latency benefit rule.",
+    "- `offcpu_time` remains an eBPF/future enhancement and is not a blocking benefit gate in this report.",
     "- Host-level MVP benefit requires a real guarded actuator run to show a stable downward trend in tail latency, TTFT, or jitter.",
     "- If live `renice` is denied by host permissions, the report remains a closed-loop validation artifact, not a benefit proof.",
     "",

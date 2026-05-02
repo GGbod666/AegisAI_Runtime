@@ -154,6 +154,24 @@ pub trait ProbeEventReader {
 
     fn next_probe_event(&mut self) -> Result<Option<ProbeEvent>, SourceError>;
 
+    fn poll_probe_events(&mut self, max_events: usize) -> Result<Vec<ProbeEvent>, SourceError> {
+        if max_events == 0 {
+            return Err(SourceError::InvalidConfig(
+                "probe reader batch size must be greater than 0".to_string(),
+            ));
+        }
+
+        let mut events = Vec::with_capacity(max_events);
+        while events.len() < max_events {
+            match self.next_probe_event()? {
+                Some(event) => events.push(event),
+                None => break,
+            }
+        }
+
+        Ok(events)
+    }
+
     fn stop(&mut self) -> Result<ProbeReaderShutdown, SourceError>;
 }
 
@@ -218,6 +236,10 @@ impl ProcfsTargetSelectors {
     fn matches(&self, pid: u32, comm: &str, cmdline: &str) -> bool {
         if self.pid_allowlist.contains(&pid) {
             return true;
+        }
+
+        if !self.pid_allowlist.is_empty() && self.process_names.is_empty() {
+            return false;
         }
 
         if self.process_names.is_empty() {
@@ -800,6 +822,37 @@ where
         Ok(event)
     }
 
+    fn poll_probe_events(&mut self, max_events: usize) -> Result<Vec<ProbeEvent>, SourceError> {
+        if max_events == 0 {
+            return Err(SourceError::InvalidConfig(
+                "probe reader batch size must be greater than 0".to_string(),
+            ));
+        }
+        if !self.started {
+            return Err(SourceError::InvalidConfig(
+                "probe reader must be started before polling events".to_string(),
+            ));
+        }
+
+        if self.buffered_events.is_empty() {
+            let events = self
+                .driver
+                .poll_events(self.max_buffered_events, self.poll_timeout_ms)?;
+            self.buffered_events.extend(events);
+        }
+
+        let mut events = Vec::with_capacity(max_events.min(self.buffered_events.len()));
+        while events.len() < max_events {
+            let Some(event) = self.buffered_events.pop_front() else {
+                break;
+            };
+            self.emitted_events = self.emitted_events.saturating_add(1);
+            events.push(event);
+        }
+
+        Ok(events)
+    }
+
     fn stop(&mut self) -> Result<ProbeReaderShutdown, SourceError> {
         self.started = false;
         Ok(ProbeReaderShutdown {
@@ -1242,6 +1295,25 @@ impl EventSource for LinuxProbeSource {
         "linux-probe"
     }
 
+    fn poll_batch(&mut self, max_batch: usize) -> Result<Vec<SourceEvent>, SourceError> {
+        if max_batch == 0 {
+            return Err(SourceError::InvalidConfig(
+                "event source batch size must be greater than 0".to_string(),
+            ));
+        }
+
+        self.ensure_started()?;
+        let probe_events = self.reader.poll_probe_events(max_batch)?;
+        let mut events = Vec::with_capacity(probe_events.len());
+        for probe_event in probe_events {
+            if let Some(source_event) = adapt_probe_event(probe_event)? {
+                events.push(source_event);
+            }
+        }
+
+        Ok(events)
+    }
+
     fn next_event(&mut self) -> Result<Option<SourceEvent>, SourceError> {
         self.ensure_started()?;
 
@@ -1528,6 +1600,44 @@ mod tests {
         }
     }
 
+    struct ChunkedLinuxProbeDriver {
+        chunks: VecDeque<Vec<ebpf_probe::Event>>,
+    }
+
+    impl ChunkedLinuxProbeDriver {
+        fn new(chunks: Vec<Vec<ebpf_probe::Event>>) -> Self {
+            Self {
+                chunks: chunks.into(),
+            }
+        }
+    }
+
+    impl LinuxProbeDriver for ChunkedLinuxProbeDriver {
+        fn driver_name(&self) -> &str {
+            "chunked-probe-driver"
+        }
+
+        fn attach_probe(
+            &mut self,
+            _probe: &super::PlannedProbe,
+            _config: &ProbeReaderConfig,
+        ) -> ProbeAttachmentStatus {
+            ProbeAttachmentStatus::Attached
+        }
+
+        fn poll_events(
+            &mut self,
+            _max_events: usize,
+            _timeout_ms: u64,
+        ) -> Result<Vec<ebpf_probe::Event>, SourceError> {
+            Ok(self.chunks.pop_front().unwrap_or_default())
+        }
+
+        fn stop(&mut self) -> Result<String, SourceError> {
+            Ok("chunked driver stopped".to_string())
+        }
+    }
+
     struct FakeProcfsSignalSampler {
         samples: RefCell<VecDeque<Vec<ProcfsSchedstatSnapshot>>>,
     }
@@ -1809,6 +1919,42 @@ mod tests {
     }
 
     #[test]
+    fn linux_probe_source_batch_uses_one_driver_poll_at_a_time() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let first = ebpf_probe::Event::new(
+            2_000_000,
+            ProbeKind::Sched,
+            ebpf_probe::EventKind::RunQueueDelay,
+            EventTarget::new(700, 701, "ollama"),
+            EventMetric::duration_ns(1_800_000),
+        );
+        let second = ebpf_probe::Event::new(
+            2_100_000,
+            ProbeKind::Sched,
+            ebpf_probe::EventKind::RunQueueDelay,
+            EventTarget::new(700, 701, "ollama"),
+            EventMetric::duration_ns(1_900_000),
+        );
+        let reader = DriverBackedProbeEventReader::new(ChunkedLinuxProbeDriver::new(vec![
+            vec![first],
+            vec![second],
+        ]));
+        let mut source = LinuxProbeSource::with_reader(plan, reader);
+
+        let first_batch = source.poll_batch(2).expect("batch should poll once");
+        assert_eq!(first_batch.len(), 1);
+        assert_eq!(first_batch[0].value, 1_800);
+
+        let second_batch = source.poll_batch(2).expect("second batch should poll once");
+        assert_eq!(second_batch.len(), 1);
+        assert_eq!(second_batch[0].value, 1_900);
+    }
+
+    #[test]
     fn procfs_schedstat_driver_emits_run_queue_delay_events() {
         let plan = LinuxProbePlan::from_signals(
             [SignalKind::RunQueueDelay, SignalKind::OffCpuTime],
@@ -1971,6 +2117,15 @@ mod tests {
         assert!(selectors.matches(8, "python", "python launch_ollama_worker.py"));
         assert!(selectors.matches(42, "python", "python unrelated.py"));
         assert!(!selectors.matches(9, "python", "python unrelated.py"));
+    }
+
+    #[test]
+    fn procfs_target_selectors_with_only_pid_allowlist_do_not_match_everything() {
+        let selectors =
+            ProcfsTargetSelectors::new(Vec::<String>::new(), [42].into_iter().collect());
+
+        assert!(selectors.matches(42, "python", "python unrelated.py"));
+        assert!(!selectors.matches(7, "ollama", "ollama serve"));
     }
 
     #[test]

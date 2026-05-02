@@ -18,13 +18,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = CliConfig::parse(env::args().skip(1))?;
 
     let config = RuntimeOrchestratorConfig::load_from_repo_root(&cli.repo_root)?;
-    let runtime_config = config.runtime.clone();
+    let runtime_config = runtime_config_for_source(&cli, &config);
+    let config = config_for_actuator_scope(&cli, config);
     let mut orchestrator =
         RuntimeOrchestrator::with_actuator(config.clone(), build_actuator(&cli, &config)?)?;
     let runtime_loop = RuntimeLoop::new(RuntimeLoopConfig {
         batch_size: cli.batch_size,
         tick_interval_ms: cli.tick_interval_ms,
         drain_after_source_ms: cli.drain_after_source_ms,
+        max_events: cli.max_events,
     })?;
 
     let summary = match (cli.source.as_str(), cli.metadata.as_str()) {
@@ -82,6 +84,7 @@ struct CliConfig {
     probe_buffer_events: usize,
     probe_poll_timeout_ms: u64,
     batch_size: usize,
+    max_events: Option<u64>,
     tick_interval_ms: u64,
     drain_after_source_ms: u64,
     verification_log: Option<PathBuf>,
@@ -102,6 +105,7 @@ impl Default for CliConfig {
             probe_buffer_events: 4_096,
             probe_poll_timeout_ms: 100,
             batch_size: 32,
+            max_events: None,
             tick_interval_ms: 200,
             drain_after_source_ms: 5_000,
             verification_log: None,
@@ -182,6 +186,17 @@ impl CliConfig {
                         .parse()
                         .map_err(|_| "--batch-size expects an integer".to_string())?;
                 }
+                "--max-events" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| "--max-events expects a positive integer".to_string())?
+                        .parse::<u64>()
+                        .map_err(|_| "--max-events expects a positive integer".to_string())?;
+                    if value == 0 {
+                        return Err("--max-events expects a positive integer".to_string());
+                    }
+                    config.max_events = Some(value);
+                }
                 "--tick-ms" => {
                     config.tick_interval_ms = args
                         .next()
@@ -227,6 +242,7 @@ impl CliConfig {
             "  --probe-buffer-events <n>  Linux reader buffered-event hint (default: 4096)",
             "  --probe-poll-timeout-ms <n>  Linux reader poll timeout hint (default: 100)",
             "  --batch-size <n>     Max events per poll batch (default: 32)",
+            "  --max-events <n>     Stop after processing n events and print a summary",
             "  --tick-ms <n>        Periodic rollback tick interval in ms (default: 200)",
             "  --drain-ms <n>       Final drain window after source exhaustion in ms (default: 5000)",
             "  --verification-log <path>  Append daemon summary to a verification log",
@@ -251,6 +267,34 @@ fn build_mock_source(profile: &str) -> Result<MockEventSource, String> {
             "unsupported mock profile `{other}`; expected `demo` or `tool-call-lifecycle`"
         )),
     }
+}
+
+fn runtime_config_for_source(
+    cli: &CliConfig,
+    config: &RuntimeOrchestratorConfig,
+) -> runtime_orchestrator::RuntimeConfig {
+    let mut runtime = config.runtime.clone();
+    if cli.actuator_backend == "linux-command" && !cli.live_pid_allowlist.is_empty() {
+        runtime.selection_mode = "pid_allowlist".to_string();
+        runtime.process_names.clear();
+        runtime.pid_allowlist = cli.live_pid_allowlist.clone();
+    }
+    runtime
+}
+
+fn config_for_actuator_scope(
+    cli: &CliConfig,
+    mut config: RuntimeOrchestratorConfig,
+) -> RuntimeOrchestratorConfig {
+    if cli.actuator_backend == "linux-command" && !cli.enable_live_affinity {
+        if let Some(policy) = config
+            .scenarios
+            .get_mut(&runtime_orchestrator::ScenarioKind::InferenceTailGuard)
+        {
+            policy.actions.pin_strategy = None;
+        }
+    }
+    config
 }
 
 fn parse_pid_allowlist(raw: &str) -> Result<BTreeSet<u32>, String> {
@@ -308,6 +352,22 @@ fn append_summary_to_log(
     writeln!(file, "- Tick rollbacks: `{}`", summary.tick_rollbacks)?;
     writeln!(file, "- Metric records: `{}`", summary.metric_records)?;
     writeln!(file, "- Trace records: `{}`", summary.trace_records)?;
+    if !summary.signal_observations.is_empty() {
+        writeln!(file, "- Signal observations:")?;
+        for (signal, observation) in &summary.signal_observations {
+            writeln!(
+                file,
+                "  - `{}`: events={}, total={}, max={}",
+                signal, observation.event_count, observation.value_total, observation.value_max
+            )?;
+        }
+    }
+    if !summary.feature_window_maxima.is_empty() {
+        writeln!(file, "- Feature window maxima:")?;
+        for (metric, value) in &summary.feature_window_maxima {
+            writeln!(file, "  - `{metric}`: {value}")?;
+        }
+    }
     if !summary.audit_highlights.is_empty() {
         writeln!(file, "- Audit highlights:")?;
         for highlight in &summary.audit_highlights {
@@ -363,6 +423,21 @@ fn print_summary(summary: &aegisai_runtime_daemon::RuntimeRunSummary) {
     println!("tick_rollbacks: {}", summary.tick_rollbacks);
     println!("metric_records: {}", summary.metric_records);
     println!("trace_records: {}", summary.trace_records);
+    if !summary.signal_observations.is_empty() {
+        println!("signal_observations:");
+        for (signal, observation) in &summary.signal_observations {
+            println!(
+                "  {signal}: events={} total={} max={}",
+                observation.event_count, observation.value_total, observation.value_max
+            );
+        }
+    }
+    if !summary.feature_window_maxima.is_empty() {
+        println!("feature_window_maxima:");
+        for (metric, value) in &summary.feature_window_maxima {
+            println!("  {metric}: {value}");
+        }
+    }
     if !summary.audit_highlights.is_empty() {
         println!("audit_highlights:");
         for highlight in &summary.audit_highlights {
@@ -477,6 +552,11 @@ fn build_linux_command_actuator(
     } else {
         LiveLinuxCommandGuard::nice_only(allowed_pids.iter().copied(), true)
     };
+    let guard = if can_raise_nice_priority() {
+        guard
+    } else {
+        guard.without_priority_raise()
+    };
     let executor =
         aegisai_actuator::PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
             aegisai_actuator::ProcfsLinuxProcessStateProvider,
@@ -513,18 +593,36 @@ fn build_linux_command_dry_run_actuator() -> Result<Actuator, String> {
     Err("`linux-command-dry-run` actuator backend is only available on Linux".to_string())
 }
 
+#[cfg(target_os = "linux")]
+fn can_raise_nice_priority() -> bool {
+    let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
+        return false;
+    };
+    let Some(cap_eff) = status
+        .lines()
+        .find_map(|line| line.strip_prefix("CapEff:").map(str::trim))
+    else {
+        return false;
+    };
+    u64::from_str_radix(cap_eff, 16)
+        .map(|capabilities| capabilities & (1 << 23) != 0)
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use aegisai_runtime_daemon::{EventSource, RuntimeRunSummary, ToolCallLifecycleSummary};
+    use aegisai_runtime_daemon::{
+        EventSource, RuntimeRunSummary, SignalObservationSummary, ToolCallLifecycleSummary,
+    };
     use runtime_orchestrator::RuntimeOrchestratorConfig;
 
     use super::{
         append_summary_to_log, build_actuator, build_linux_command_dry_run_actuator,
-        build_mock_source, CliConfig,
+        build_mock_source, config_for_actuator_scope, runtime_config_for_source, CliConfig,
     };
 
     fn repo_root() -> PathBuf {
@@ -562,6 +660,98 @@ mod tests {
         assert!(!probe_config.require_all_probes);
         assert_eq!(probe_config.max_buffered_events, 8_192);
         assert_eq!(probe_config.poll_timeout_ms, 250);
+    }
+
+    #[test]
+    fn cli_supports_max_events_limit() {
+        let cli = CliConfig::parse(["--max-events", "512"].into_iter().map(str::to_string))
+            .expect("cli should parse");
+
+        assert_eq!(cli.max_events, Some(512));
+    }
+
+    #[test]
+    fn cli_rejects_zero_max_events() {
+        let error = CliConfig::parse(["--max-events", "0"].into_iter().map(str::to_string))
+            .expect_err("zero max events should fail");
+
+        assert!(error.contains("positive integer"));
+    }
+
+    #[test]
+    fn live_command_source_selection_uses_cli_pid_allowlist() {
+        let config = sample_config();
+        let cli = CliConfig::parse(
+            [
+                "--actuator-backend",
+                "linux-command",
+                "--confirm-live-actuator",
+                "--live-pid-allowlist",
+                "42,77",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        let runtime = runtime_config_for_source(&cli, &config);
+
+        assert_eq!(runtime.selection_mode, "pid_allowlist");
+        assert!(runtime.process_names.is_empty());
+        assert_eq!(runtime.pid_allowlist, [42, 77].into_iter().collect());
+    }
+
+    #[test]
+    fn live_command_defaults_to_nice_only_action_plan() {
+        let config = sample_config();
+        let cli = CliConfig::parse(
+            [
+                "--actuator-backend",
+                "linux-command",
+                "--confirm-live-actuator",
+                "--live-pid-allowlist",
+                "42",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        let scoped = config_for_actuator_scope(&cli, config);
+        let policy = scoped
+            .scenarios
+            .get(&runtime_orchestrator::ScenarioKind::InferenceTailGuard)
+            .expect("inference policy");
+
+        assert!(policy.actions.raise_nice.is_some());
+        assert!(policy.actions.pin_strategy.is_none());
+        assert_eq!(policy.actions.use_cpuset, Some(false));
+    }
+
+    #[test]
+    fn live_command_can_plan_affinity_after_explicit_flag() {
+        let config = sample_config();
+        let cli = CliConfig::parse(
+            [
+                "--actuator-backend",
+                "linux-command",
+                "--confirm-live-actuator",
+                "--enable-live-affinity",
+                "--live-pid-allowlist",
+                "42",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        let scoped = config_for_actuator_scope(&cli, config);
+        let policy = scoped
+            .scenarios
+            .get(&runtime_orchestrator::ScenarioKind::InferenceTailGuard)
+            .expect("inference policy");
+
+        assert!(policy.actions.pin_strategy.is_some());
     }
 
     #[test]
@@ -811,5 +1001,54 @@ mod tests {
         assert!(contents.contains("tc-001"));
         assert!(contents.contains("stages=executor:1,rerank:1,retrieval:2"));
         assert!(contents.contains("isolation_events=3"));
+    }
+
+    #[test]
+    fn verification_log_includes_observation_signal_summaries() {
+        let log_path = std::env::temp_dir().join(format!(
+            "aegisai-runtime-daemon-observation-{}-verification.md",
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&log_path);
+
+        let summary = RuntimeRunSummary {
+            source_name: "linux-probe".to_string(),
+            metadata_provider_name: "procfs".to_string(),
+            actuator_backend_name: "noop".to_string(),
+            signal_observations: BTreeMap::from([
+                (
+                    "cpu_migration".to_string(),
+                    SignalObservationSummary {
+                        event_count: 2,
+                        value_total: 5,
+                        value_max: 3,
+                    },
+                ),
+                (
+                    "major_page_fault".to_string(),
+                    SignalObservationSummary {
+                        event_count: 1,
+                        value_total: 2,
+                        value_max: 2,
+                    },
+                ),
+            ]),
+            feature_window_maxima: BTreeMap::from([
+                ("cpu_migrations_per_sec".to_string(), 10),
+                ("major_page_faults_per_sec".to_string(), 4),
+            ]),
+            ..RuntimeRunSummary::default()
+        };
+
+        append_summary_to_log(&log_path, &summary).expect("summary should append");
+        let contents = fs::read_to_string(&log_path).expect("log should be readable");
+        let _ = fs::remove_file(&log_path);
+
+        assert!(contents.contains("- Signal observations:"));
+        assert!(contents.contains("cpu_migration"));
+        assert!(contents.contains("events=2, total=5, max=3"));
+        assert!(contents.contains("- Feature window maxima:"));
+        assert!(contents.contains("cpu_migrations_per_sec"));
+        assert!(contents.contains("major_page_faults_per_sec"));
     }
 }
