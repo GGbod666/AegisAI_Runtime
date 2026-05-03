@@ -1370,7 +1370,7 @@ run_mode() {
   append "- Action audit error count: \`${action_error_count}\`"
   append "- CPU migration observations: \`events=${cpu_migration_events}, total=${cpu_migration_total}, max_rate_per_sec=${cpu_migrations_per_sec_max}\`"
   append "- Major page fault observations: \`events=${major_page_fault_events}, total=${major_page_fault_total}, max_rate_per_sec=${major_page_faults_per_sec_max}\`"
-  append "- Off-CPU observations: \`events=${offcpu_time_events}\` (eBPF/future enhancement; not required for this gate)"
+  append "- Off-CPU observations: \`events=${offcpu_time_events}\` (real eBPF helper signal when available; not required for this gate)"
   append "- Lease audit highlight count: \`${lease_audit_count}\`"
   append "- Rollback audit highlight count: \`${rollback_audit_count}\`"
   append "- Mode artifacts: \`${mode_dir}\`"
@@ -1401,7 +1401,7 @@ append "- Artifact directory: \`${ARTIFACT_DIR}\`"
 append "- Runtime: \`ollama\`"
 append "- Selected modes: \`${SELECTED_MODES[*]}\`"
 append "- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger \`inference_tail_guard\`, roll back, expose cpu_migration/major_page_fault observation totals, and have no action audit errors."
-append "- Off-CPU note: \`offcpu_time\` remains an eBPF/future enhancement and does not block benefit revalidation."
+append "- Off-CPU note: \`offcpu_time\` can be sourced from the real eBPF helper when available and does not block benefit revalidation."
 
 validate_config
 require_command python3

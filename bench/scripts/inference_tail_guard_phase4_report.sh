@@ -690,7 +690,7 @@ content = [
     "",
     "- `dry_run` and `noop_observation` validate recognition, trigger, audit, and rollback paths but do not by themselves prove host-level performance benefit.",
     "- `cpu_migration` and `major_page_fault` columns are procfs-backed explainability signals for the run shape; they do not replace the live guarded latency benefit rule.",
-    "- `offcpu_time` remains an eBPF/future enhancement and is not a blocking benefit gate in this report.",
+    "- `offcpu_time` can be sourced from the real eBPF helper when available, but it is not a blocking benefit gate in this report.",
     "- Host-level MVP benefit requires a real guarded actuator run to show a stable downward trend in tail latency, TTFT, or jitter.",
     "- If live `renice` is denied by host permissions, the report remains a closed-loop validation artifact, not a benefit proof.",
     "",
