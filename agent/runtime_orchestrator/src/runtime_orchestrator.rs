@@ -724,6 +724,45 @@ mod tests {
     }
 
     #[test]
+    fn process_event_expires_due_action_before_applying_new_action() {
+        let config = RuntimeOrchestratorConfig::load_from_repo_root(repo_root())
+            .expect("config should load");
+        let actuator = aa::Actuator::with_backend(aa::RecordingActuatorBackend::default());
+        let mut orchestrator =
+            RuntimeOrchestrator::with_actuator(config, actuator).expect("orchestrator should init");
+
+        let first = orchestrator.process_event(
+            Event::new(1_000, 606, "ollama", SignalKind::RunQueueDelay, 2_500)
+                .with_cmdline("ollama serve"),
+        );
+        assert_eq!(first.applied_actions.len(), 1);
+        assert!(first.rollbacks.is_empty());
+
+        let second = orchestrator.process_event(
+            Event::new(2_500, 606, "ollama", SignalKind::RunQueueDelay, 2_500)
+                .with_cmdline("ollama serve"),
+        );
+
+        assert_eq!(second.rollbacks.len(), 1);
+        assert_eq!(second.applied_actions.len(), 1);
+        assert_eq!(
+            second.rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.operation_index"),
+            Some(&"2".to_string())
+        );
+        assert_eq!(
+            second.applied_actions[0]
+                .audit_fields
+                .get("backend.apply.operation_index"),
+            Some(&"3".to_string())
+        );
+        assert_eq!(second.metric_record.rollback_count, 1);
+        assert_eq!(second.metric_record.action_count, 1);
+        assert_eq!(orchestrator.active_action_count(), 1);
+    }
+
+    #[test]
     fn records_action_traces_for_metrics_module() {
         let mut orchestrator =
             RuntimeOrchestrator::from_repo_root(repo_root()).expect("config should load");

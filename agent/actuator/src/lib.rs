@@ -34,7 +34,7 @@ mod tests {
         LinuxActuatorBackend, LinuxAffinityState, LinuxCommandRunner, LinuxCpusetState,
         LinuxNiceState, LinuxProcessStateProvider, LinuxSyscallApplier, LinuxSyscallOperation,
         LiveLinuxCommandGuard, NoopActuatorBackend, PinStrategy, PlannedOnlyLinuxSyscallExecutor,
-        ScenarioKind, UnavailableLinuxProcessStateProvider,
+        RecordingActuatorBackend, ScenarioKind, UnavailableLinuxProcessStateProvider,
     };
 
     fn sample_plan() -> ActionPlan {
@@ -110,6 +110,95 @@ mod tests {
         assert_eq!(actuator.active_count(), 1);
         assert!(actuator.expire(10_699).is_empty());
         assert_eq!(actuator.expire(10_700).len(), 1);
+    }
+
+    #[test]
+    fn reapplying_same_pid_and_scenario_rolls_back_only_refreshed_lease() {
+        let mut actuator = Actuator::with_backend(RecordingActuatorBackend::default());
+        actuator.apply(sample_plan(), 10_000, true);
+
+        let mut refreshed = sample_plan();
+        refreshed.duration_ms = 1_000;
+        refreshed.actions = vec![Action::WarmupExecutor];
+        actuator.apply(refreshed, 10_300, true);
+
+        assert!(actuator.expire(10_800).is_empty());
+
+        let rollbacks = actuator.expire(11_300);
+        assert_eq!(rollbacks.len(), 1);
+        assert_eq!(rollbacks[0].applied_at_ms, 10_300);
+        assert_eq!(rollbacks[0].actions, vec![Action::WarmupExecutor]);
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.operation_index"),
+            Some(&"3".to_string())
+        );
+    }
+
+    #[test]
+    fn expire_returns_due_actions_in_stable_deadline_order() {
+        let mut actuator = Actuator::default();
+
+        let mut late_low_pid = sample_plan();
+        late_low_pid.target_pid = 11;
+        late_low_pid.scenario = ScenarioKind::ToolCallBooster;
+        late_low_pid.duration_ms = 700;
+        actuator.apply(late_low_pid, 1_000, true);
+
+        let mut early_high_pid = sample_plan();
+        early_high_pid.target_pid = 99;
+        early_high_pid.scenario = ScenarioKind::InferenceTailGuard;
+        early_high_pid.duration_ms = 300;
+        actuator.apply(early_high_pid, 1_000, true);
+
+        let mut early_low_pid = sample_plan();
+        early_low_pid.target_pid = 7;
+        early_low_pid.scenario = ScenarioKind::ToolCallBooster;
+        early_low_pid.duration_ms = 300;
+        actuator.apply(early_low_pid, 1_000, true);
+
+        let mut early_same_pid_lower_scenario = sample_plan();
+        early_same_pid_lower_scenario.target_pid = 7;
+        early_same_pid_lower_scenario.scenario = ScenarioKind::InferenceTailGuard;
+        early_same_pid_lower_scenario.duration_ms = 300;
+        actuator.apply(early_same_pid_lower_scenario, 1_000, true);
+
+        assert!(actuator.expire(1_299).is_empty());
+
+        let rollbacks = actuator.expire(1_700);
+        let rollback_order = rollbacks
+            .iter()
+            .map(|action| {
+                (
+                    action.expires_at_ms,
+                    action.target_pid,
+                    action.scenario.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            rollback_order,
+            vec![
+                (1_300, 7, ScenarioKind::InferenceTailGuard),
+                (1_300, 7, ScenarioKind::ToolCallBooster),
+                (1_300, 99, ScenarioKind::InferenceTailGuard),
+                (1_700, 11, ScenarioKind::ToolCallBooster),
+            ]
+        );
+        assert_eq!(actuator.active_count(), 0);
+    }
+
+    #[test]
+    fn apply_uses_saturating_expiry_at_timestamp_boundary() {
+        let mut actuator = Actuator::default();
+        let applied = actuator.apply(sample_plan(), u64::MAX - 10, true);
+
+        assert_eq!(applied.expires_at_ms, u64::MAX);
+        assert_eq!(actuator.active_count(), 1);
+        assert!(actuator.expire(u64::MAX - 1).is_empty());
+        assert_eq!(actuator.expire(u64::MAX).len(), 1);
     }
 
     #[test]
