@@ -151,14 +151,48 @@ def live_effective_action_counts(mode):
     priority_limited = text.count("priority_raise_limited=true")
     effective_renice = 0
     renice_pattern = re.compile(
-        r"command=renice\s+-?\d+\s+-p\s+\d+;output=[^;\n]*old priority\s+(-?\d+),\s+new priority\s+(-?\d+)"
+        r"backend\.apply\.apply\.\d+\.detail=.*?command=renice\s+-?\d+\s+-p\s+\d+;output=[^;\n]*old priority\s+(-?\d+),\s+new priority\s+(-?\d+)"
     )
     for old_priority, new_priority in renice_pattern.findall(text):
         if old_priority != new_priority:
             effective_renice += 1
 
-    taskset_commands = len(re.findall(r"command=taskset\s+-pc\b", text))
-    return str(effective_renice + taskset_commands), str(priority_limited)
+    def parse_cpu_set(raw):
+        cpus = set()
+        for segment in raw.strip().split(","):
+            if not segment:
+                continue
+            if "-" in segment:
+                start, end = segment.split("-", 1)
+                try:
+                    start, end = int(start), int(end)
+                except ValueError:
+                    return None
+                if start > end:
+                    return None
+                cpus.update(range(start, end + 1))
+            else:
+                try:
+                    cpus.add(int(segment))
+                except ValueError:
+                    return None
+        return cpus if cpus else None
+
+    effective_taskset = 0
+    taskset_pattern = re.compile(
+        r"backend\.apply\.apply\.\d+\.detail=.*?command=taskset\s+-pc\b[^\n]*;output=pid\s+\d+'s current affinity list:\s*([^\n]+)\n"
+        r"pid\s+\d+'s new affinity list:\s*([^\n]+)"
+    )
+    for old_affinity, new_affinity in taskset_pattern.findall(text):
+        old_cpus = parse_cpu_set(old_affinity)
+        new_cpus = parse_cpu_set(new_affinity)
+        if old_cpus is not None and new_cpus is not None:
+            if old_cpus != new_cpus:
+                effective_taskset += 1
+        elif old_affinity.strip() != new_affinity.strip():
+            effective_taskset += 1
+
+    return str(effective_renice + effective_taskset), str(priority_limited)
 
 with open(summary_path, newline="", encoding="utf-8") as handle:
     reader = csv.DictReader(handle)

@@ -12041,3 +12041,1422 @@ taskset from util-linux 2.39.3
 ```
 
 - Overall result: `PASS`
+
+### 2026-05-03T04:20:25+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z`
+- Runtime: `ollama`
+- Selected modes: `live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, expose cpu_migration/major_page_fault observation totals, and have no action audit errors.
+- Off-CPU note: `offcpu_time` remains an eBPF/future enhancement and does not block benefit revalidation.
+
+#### 2R-0 fixed acceptance baseline
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Daemon max events: `512`
+- CPU topology artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/cpu_topology.txt`
+- Permission state artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/permission_state.txt`
+- Acceptance baseline artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/acceptance_baseline.env`
+- Acceptance baseline sha256: `ddf253023b4b8fd892c9affd61e6b9543f83460dc6554de491f91580b06b0ae1`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `1997`
+- Live actuator scope: `nice,affinity`
+- Live nice-only required: `false`
+- Live affinity enabled: `1`
+- Cpuset enabled: `false`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/run.env`
+- Mode contract artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/mode_contract.csv`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2
+    parameters          494.03M
+    context length      32768
+    embedding length    896
+    quantization        Q4_K_M
+
+  Capabilities
+    completion
+    tools
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+
+  License
+    Apache License
+    Version 2.0, January 2004
+    ...
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME    ID    SIZE    PROCESSOR    CONTEXT    UNTIL
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=7.922456
+time_total=7.922609
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-03T04:20:34.197680077Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":7920285743,"load_duration":3561181730,"prompt_eval_count":56,"prompt_eval_duration":3236687698,"eval_count":16,"eval_duration":1100204148}```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Live PID allowlist expanded with current children: `1997`
+- Acceptance gate: `live_guarded_nice_affinity`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `PASS`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `PASS`
+- Live cpuset-disabled contract: `PASS`
+- Actuator quality contract: `PASS`
+- Live permission preflight contract: `PASS`
+- Live command contract: `PASS`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `21`
+- Trigger count: `3`
+- Rollback count: `3`
+- Action audit error count: `0`
+- CPU migration observations: `events=10, total=38, max_rate_per_sec=110`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `13`
+- Rollback audit highlight count: `3`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/live_guarded`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command
+processed_events: 21
+applied_actions: 3
+inline_rollbacks: 0
+tick_rollbacks: 3
+metric_records: 24
+trace_records: 48
+signal_observations:
+  cpu_migration: events=10 total=38 max=10
+  run_queue_delay: events=11 total=334868 max=82515
+feature_window_maxima:
+  cpu_migrations_per_sec: 110
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 3
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/mode_counts.csv`
+- Mode contracts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/mode_contract.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_probe_20260503T042025Z/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | cpu mig total | cpu mig max/s | maj fault total | maj fault max/s | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| live_guarded | linux-command | 4/4 | 437.131 | 32789.450 | 32789.450 | 61943.796 | 61943.796 | 19272.756 | 3 | 3 | 38 | 110 | 0 | 0 | n/a |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now
+```
+
+- Overall result: `PASS`
+
+### 2026-05-03T04:35:02+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z`
+- Runtime: `ollama`
+- Selected modes: `live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, expose cpu_migration/major_page_fault observation totals, and have no action audit errors.
+- Off-CPU note: `offcpu_time` remains an eBPF/future enhancement and does not block benefit revalidation.
+
+#### 2R-0 fixed acceptance baseline
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Daemon max events: `512`
+- CPU topology artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/cpu_topology.txt`
+- Permission state artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/permission_state.txt`
+- Acceptance baseline artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/acceptance_baseline.env`
+- Acceptance baseline sha256: `838db42983caeb8d52255a63eeab41826a81b5045974ea1d8adb24631a1d5967`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `1997`
+- Live actuator scope: `nice,affinity`
+- Live nice-only required: `false`
+- Live affinity enabled: `1`
+- Cpuset enabled: `false`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/run.env`
+- Mode contract artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/mode_contract.csv`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2
+    parameters          494.03M
+    context length      32768
+    embedding length    896
+    quantization        Q4_K_M
+
+  Capabilities
+    completion
+    tools
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+
+  License
+    Apache License
+    Version 2.0, January 2004
+    ...
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME    ID    SIZE    PROCESSOR    CONTEXT    UNTIL
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=5.388838
+time_total=5.388954
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-03T04:35:07.764044031Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":5386785663,"load_duration":1123371803,"prompt_eval_count":56,"prompt_eval_duration":3157096616,"eval_count":16,"eval_duration":1089275815}```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Live PID allowlist expanded with current children: `1997`
+- Acceptance gate: `live_guarded_nice_affinity`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `PASS`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `PASS`
+- Live cpuset-disabled contract: `PASS`
+- Actuator quality contract: `PASS`
+- Live permission preflight contract: `PASS`
+- Live command contract: `PASS`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `18`
+- Trigger count: `1`
+- Rollback count: `1`
+- Action audit error count: `0`
+- CPU migration observations: `events=6, total=6, max_rate_per_sec=10`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `13`
+- Rollback audit highlight count: `3`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/live_guarded`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command
+processed_events: 18
+applied_actions: 1
+inline_rollbacks: 0
+tick_rollbacks: 1
+metric_records: 19
+trace_records: 38
+signal_observations:
+  cpu_migration: events=6 total=6 max=1
+  run_queue_delay: events=12 total=13407 max=7963
+feature_window_maxima:
+  cpu_migrations_per_sec: 10
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 1
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/mode_counts.csv`
+- Mode contracts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/mode_contract.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard/live_affinity_online_fix_20260503T043502Z/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | cpu mig total | cpu mig max/s | maj fault total | maj fault max/s | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| live_guarded | linux-command | 4/4 | 2486.999 | 34462.835 | 34462.835 | 62873.086 | 62873.086 | 17200.977 | 1 | 1 | 6 | 10 | 0 | 0 | n/a |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now
+```
+
+- Overall result: `PASS`
+
+### 2026-05-03T04:37:16+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/report_recheck_old_probe`
+- Report path: `/tmp/aegisai_report_recheck_old_probe.md`
+- Run ID: `report_recheck_old_probe`
+- Reuse existing artifacts: `1`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds and live_guarded records effective host-level actuator changes.
+
+#### Phase 4 reused round: CPU interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/report_recheck_old_probe/cpu/round_1`
+- Reused existing summary: `yes`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/report_recheck_old_probe/phase4_runs.csv`
+- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/report_recheck_old_probe/phase4_aggregate.csv`
+- Report: `/tmp/aegisai_report_recheck_old_probe.md`
+- Harness aggregate exit status: `0`
+- Benefit verdict: `FAIL`
+
+### 2026-05-03T04:37:34+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/report_recheck_fixed_probe`
+- Report path: `/tmp/aegisai_report_recheck_fixed_probe.md`
+- Run ID: `report_recheck_fixed_probe`
+- Reuse existing artifacts: `1`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds and live_guarded records effective host-level actuator changes.
+
+#### Phase 4 reused round: CPU interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/report_recheck_fixed_probe/cpu/round_1`
+- Reused existing summary: `yes`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/report_recheck_fixed_probe/phase4_runs.csv`
+- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/report_recheck_fixed_probe/phase4_aggregate.csv`
+- Report: `/tmp/aegisai_report_recheck_fixed_probe.md`
+- Harness aggregate exit status: `0`
+- Benefit verdict: `FAIL`
+
+### 2026-05-03T04:38:09+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z`
+- Report path: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Run ID: `live_affinity_online_fix_phase4_20260503T043809Z`
+- Reuse existing artifacts: `0`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds and live_guarded records effective host-level actuator changes.
+
+#### Phase 4 round: CPU interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1`
+- Modes: `baseline,noop_observation,dry_run,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `2`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-03T04:38:09+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1`
+- Runtime: `ollama`
+- Selected modes: `baseline noop_observation dry_run live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, expose cpu_migration/major_page_fault observation totals, and have no action audit errors.
+- Off-CPU note: `offcpu_time` remains an eBPF/future enhancement and does not block benefit revalidation.
+
+#### 2R-0 fixed acceptance baseline
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Daemon max events: `512`
+- CPU topology artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/cpu_topology.txt`
+- Permission state artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/permission_state.txt`
+- Acceptance baseline artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/acceptance_baseline.env`
+- Acceptance baseline sha256: `652d4331d91d9fe7d61c1813db6d7b333a06f358b0eb16103a41546e69d57605`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `1997`
+- Live actuator scope: `nice,affinity`
+- Live nice-only required: `false`
+- Live affinity enabled: `1`
+- Cpuset enabled: `false`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/run.env`
+- Mode contract artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/mode_contract.csv`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2
+    parameters          494.03M
+    context length      32768
+    embedding length    896
+    quantization        Q4_K_M
+
+  Capabilities
+    completion
+    tools
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+
+  License
+    Apache License
+    Version 2.0, January 2004
+    ...
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       3 minutes from now
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.723215
+time_total=1.723320
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-03T04:38:11.995123306Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1721140109,"load_duration":98838411,"prompt_eval_count":56,"prompt_eval_duration":71559942,"eval_count":16,"eval_duration":1534640390}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Acceptance gate: `control_latency`
+- Request contract: `PASS`
+- Recognition contract: `n/a`
+- Observation signal contract: `n/a`
+- Action audit contract: `n/a`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `n/a`
+- Live cpuset-disabled contract: `n/a`
+- Actuator quality contract: `n/a`
+- Live permission preflight contract: `n/a`
+- Live command contract: `n/a`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- CPU migration observations: `events=0, total=0, max_rate_per_sec=0`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `0`
+- Rollback audit highlight count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/baseline`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: noop observation
+
+- Backend: `noop`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Acceptance gate: `strategy_recognition_only`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `n/a`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `n/a`
+- Live cpuset-disabled contract: `n/a`
+- Actuator quality contract: `n/a`
+- Live permission preflight contract: `n/a`
+- Live command contract: `n/a`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `512`
+- Trigger count: `7`
+- Rollback count: `7`
+- Action audit error count: `0`
+- CPU migration observations: `events=21, total=38, max_rate_per_sec=46`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `8`
+- Rollback audit highlight count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/noop_observation`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: noop
+processed_events: 512
+applied_actions: 7
+inline_rollbacks: 1
+tick_rollbacks: 6
+metric_records: 518
+trace_records: 1038
+signal_observations:
+  cpu_migration: events=21 total=38 max=8
+  run_queue_delay: events=491 total=6016134 max=1304551
+feature_window_maxima:
+  cpu_migrations_per_sec: 46
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 7
+```
+
+#### Mode: dry-run guarded
+
+- Backend: `linux-command-dry-run`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Acceptance gate: `strategy_recognition_plus_dry_run_audit`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `PASS`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `n/a`
+- Live cpuset-disabled contract: `n/a`
+- Actuator quality contract: `n/a`
+- Live permission preflight contract: `n/a`
+- Live command contract: `n/a`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `512`
+- Trigger count: `3`
+- Rollback count: `3`
+- Action audit error count: `0`
+- CPU migration observations: `events=19, total=44, max_rate_per_sec=76`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `18`
+- Rollback audit highlight count: `6`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/dry_run`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command-dry-run
+processed_events: 512
+applied_actions: 3
+inline_rollbacks: 1
+tick_rollbacks: 2
+metric_records: 514
+trace_records: 1030
+signal_observations:
+  cpu_migration: events=19 total=44 max=10
+  run_queue_delay: events=493 total=4165742 max=893885
+feature_window_maxima:
+  cpu_migrations_per_sec: 76
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 3
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Live PID allowlist expanded with current children: `1997`
+- Acceptance gate: `live_guarded_nice_affinity`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `PASS`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `PASS`
+- Live cpuset-disabled contract: `PASS`
+- Actuator quality contract: `PASS`
+- Live permission preflight contract: `PASS`
+- Live command contract: `PASS`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `31`
+- Trigger count: `4`
+- Rollback count: `4`
+- Action audit error count: `0`
+- CPU migration observations: `events=11, total=21, max_rate_per_sec=53`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `13`
+- Rollback audit highlight count: `3`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/live_guarded`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command
+processed_events: 31
+applied_actions: 4
+inline_rollbacks: 0
+tick_rollbacks: 4
+metric_records: 35
+trace_records: 70
+signal_observations:
+  cpu_migration: events=11 total=21 max=4
+  run_queue_delay: events=20 total=254396 max=70696
+feature_window_maxima:
+  cpu_migrations_per_sec: 53
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 4
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/mode_counts.csv`
+- Mode contracts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/mode_contract.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | cpu mig total | cpu mig max/s | maj fault total | maj fault max/s | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 2627.196 | 40546.589 | 40546.589 | 62905.635 | 62905.635 | 17038.862 | 0 | 0 | 0 | 0 | 0 | 0 | 0.000 |
+| noop_observation | noop | 4/4 | 383.347 | 32963.896 | 32963.896 | 62305.455 | 62305.455 | 18111.777 | 7 | 7 | 38 | 46 | 0 | 0 | 0.954 |
+| dry_run | linux-command-dry-run | 4/4 | 437.235 | 26374.187 | 26374.187 | 55898.739 | 55898.739 | 17393.654 | 3 | 3 | 44 | 76 | 0 | 0 | 11.139 |
+| live_guarded | linux-command | 4/4 | 682.604 | 36575.216 | 36575.216 | 69688.999 | 69688.999 | 22389.770 | 4 | 4 | 21 | 53 | 0 | 0 | -10.783 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now
+```
+
+- Overall result: `PASS`
+- Round exit status: `0`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_1/harness.stderr`
+
+#### Phase 4 round: CPU interference / 2
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2`
+- Modes: `baseline,noop_observation,dry_run,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `2`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-03T04:46:16+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2`
+- Runtime: `ollama`
+- Selected modes: `baseline noop_observation dry_run live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, expose cpu_migration/major_page_fault observation totals, and have no action audit errors.
+- Off-CPU note: `offcpu_time` remains an eBPF/future enhancement and does not block benefit revalidation.
+
+#### 2R-0 fixed acceptance baseline
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Daemon max events: `512`
+- CPU topology artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/cpu_topology.txt`
+- Permission state artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/permission_state.txt`
+- Acceptance baseline artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/acceptance_baseline.env`
+- Acceptance baseline sha256: `9679e125cee93f3178d80dab0d6dd4a63209063173260598707bee084cb4139c`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `1997`
+- Live actuator scope: `nice,affinity`
+- Live nice-only required: `false`
+- Live affinity enabled: `1`
+- Cpuset enabled: `false`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/run.env`
+- Mode contract artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/mode_contract.csv`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2
+    parameters          494.03M
+    context length      32768
+    embedding length    896
+    quantization        Q4_K_M
+
+  Capabilities
+    completion
+    tools
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+
+  License
+    Apache License
+    Version 2.0, January 2004
+    ...
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.468083
+time_total=1.468449
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-03T04:46:18.008726907Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1465445844,"load_duration":93459510,"prompt_eval_count":56,"prompt_eval_duration":81985303,"eval_count":16,"eval_duration":1275434932}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Acceptance gate: `control_latency`
+- Request contract: `PASS`
+- Recognition contract: `n/a`
+- Observation signal contract: `n/a`
+- Action audit contract: `n/a`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `n/a`
+- Live cpuset-disabled contract: `n/a`
+- Actuator quality contract: `n/a`
+- Live permission preflight contract: `n/a`
+- Live command contract: `n/a`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- CPU migration observations: `events=0, total=0, max_rate_per_sec=0`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `0`
+- Rollback audit highlight count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/baseline`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: noop observation
+
+- Backend: `noop`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Acceptance gate: `strategy_recognition_only`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `n/a`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `n/a`
+- Live cpuset-disabled contract: `n/a`
+- Actuator quality contract: `n/a`
+- Live permission preflight contract: `n/a`
+- Live command contract: `n/a`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `512`
+- Trigger count: `7`
+- Rollback count: `7`
+- Action audit error count: `0`
+- CPU migration observations: `events=21, total=49, max_rate_per_sec=43`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `8`
+- Rollback audit highlight count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/noop_observation`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: noop
+processed_events: 512
+applied_actions: 7
+inline_rollbacks: 1
+tick_rollbacks: 6
+metric_records: 518
+trace_records: 1038
+signal_observations:
+  cpu_migration: events=21 total=49 max=9
+  run_queue_delay: events=491 total=7580367 max=1122477
+feature_window_maxima:
+  cpu_migrations_per_sec: 43
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 7
+```
+
+#### Mode: dry-run guarded
+
+- Backend: `linux-command-dry-run`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Acceptance gate: `strategy_recognition_plus_dry_run_audit`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `PASS`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `n/a`
+- Live cpuset-disabled contract: `n/a`
+- Actuator quality contract: `n/a`
+- Live permission preflight contract: `n/a`
+- Live command contract: `n/a`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `512`
+- Trigger count: `4`
+- Rollback count: `4`
+- Action audit error count: `0`
+- CPU migration observations: `events=18, total=51, max_rate_per_sec=70`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `18`
+- Rollback audit highlight count: `6`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/dry_run`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command-dry-run
+processed_events: 512
+applied_actions: 4
+inline_rollbacks: 2
+tick_rollbacks: 2
+metric_records: 514
+trace_records: 1032
+signal_observations:
+  cpu_migration: events=18 total=51 max=11
+  run_queue_delay: events=494 total=4344936 max=913218
+feature_window_maxima:
+  cpu_migrations_per_sec: 70
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 4
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Live PID allowlist expanded with current children: `1997`
+- Acceptance gate: `live_guarded_nice_affinity`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `PASS`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `PASS`
+- Live cpuset-disabled contract: `PASS`
+- Actuator quality contract: `PASS`
+- Live permission preflight contract: `PASS`
+- Live command contract: `PASS`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `22`
+- Trigger count: `3`
+- Rollback count: `3`
+- Action audit error count: `0`
+- CPU migration observations: `events=10, total=20, max_rate_per_sec=53`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `13`
+- Rollback audit highlight count: `3`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/live_guarded`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command
+processed_events: 22
+applied_actions: 3
+inline_rollbacks: 0
+tick_rollbacks: 3
+metric_records: 25
+trace_records: 50
+signal_observations:
+  cpu_migration: events=10 total=20 max=5
+  run_queue_delay: events=12 total=211694 max=46443
+feature_window_maxima:
+  cpu_migrations_per_sec: 53
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 3
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/mode_counts.csv`
+- Mode contracts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/mode_contract.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | cpu mig total | cpu mig max/s | maj fault total | maj fault max/s | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 2584.708 | 36691.510 | 36691.510 | 68119.801 | 68119.801 | 18998.677 | 0 | 0 | 0 | 0 | 0 | 0 | 0.000 |
+| noop_observation | noop | 4/4 | 505.890 | 31956.518 | 31956.518 | 63568.463 | 63568.463 | 19581.171 | 7 | 7 | 49 | 43 | 0 | 0 | 6.681 |
+| dry_run | linux-command-dry-run | 4/4 | 746.159 | 22312.608 | 22312.608 | 52927.078 | 52927.078 | 17198.661 | 4 | 4 | 51 | 70 | 0 | 0 | 22.303 |
+| live_guarded | linux-command | 4/4 | 691.334 | 32387.006 | 32387.006 | 56165.264 | 56165.264 | 17737.476 | 3 | 3 | 20 | 53 | 0 | 0 | 17.549 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now
+```
+
+- Overall result: `PASS`
+- Round exit status: `0`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_2/harness.stderr`
+
+#### Phase 4 round: CPU interference / 3
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3`
+- Modes: `baseline,noop_observation,dry_run,live_guarded`
+- Samples per mode: `4`
+- Concurrency: `2`
+- CPU workers: `2`
+- I/O sync workers: `0`
+- I/O disk workers: `0`
+
+### 2026-05-03T04:54:06+00:00 - Inference Tail Guard Ollama A/B harness
+
+- Scope: Phase 2 MVP reproducible A/B proof, replacing the old single-request smoke semantics.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3`
+- Runtime: `ollama`
+- Selected modes: `baseline noop_observation dry_run live_guarded`
+- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger `inference_tail_guard`, roll back, expose cpu_migration/major_page_fault observation totals, and have no action audit errors.
+- Off-CPU note: `offcpu_time` remains an eBPF/future enhancement and does not block benefit revalidation.
+
+#### 2R-0 fixed acceptance baseline
+
+- Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
+- Prompt: `请用两句中文说明 AegisAI 正在进行实时推理 A/B harness，并补一句当前目标是观察尾延迟。`
+- Ollama endpoint: `http://127.0.0.1:11434/api/generate`
+- Request shape: `stream=true`, `num_predict=16`, `temperature=0`, `seed=42`, `keep_alive=5m`
+- Samples per mode: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Stress lifecycle: `harness-controlled per mode`
+- Daemon poll timeout: `3000ms`
+- Daemon max events: `512`
+- CPU topology artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/cpu_topology.txt`
+- Permission state artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/permission_state.txt`
+- Acceptance baseline artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/acceptance_baseline.env`
+- Acceptance baseline sha256: `e2d8036c6e591d9bae2e8b2d044cd650dd9b06ba11e1c0c9a2518d552eeb8b86`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `1997`
+- Live actuator scope: `nice,affinity`
+- Live nice-only required: `false`
+- Live affinity enabled: `1`
+- Cpuset enabled: `false`
+- Run environment artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/run.env`
+- Mode contract artifact: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/mode_contract.csv`
+
+#### Selected model metadata
+
+- Requirement: required
+- Command: `ollama show qwen2.5:0.5b`
+- Exit status: `0`
+```text
+  Model
+    architecture        qwen2
+    parameters          494.03M
+    context length      32768
+    embedding length    896
+    quantization        Q4_K_M
+
+  Capabilities
+    completion
+    tools
+
+  System
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+
+  License
+    Apache License
+    Version 2.0, January 2004
+    ...
+
+```
+
+#### Ollama process inventory before harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now
+```
+
+#### Warmup inference request
+
+- Requirement: required
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model: `qwen2.5:0.5b`
+- Curl exit status: `0`
+- HTTP status: `200`
+- Curl timing:
+```text
+http_code=200
+time_starttransfer=1.272660
+time_total=1.272816
+```
+- Response body:
+```text
+{"model":"qwen2.5:0.5b","created_at":"2026-05-03T04:54:08.181474274Z","response":"AegisAI 在实时推理 A/B 捷径方面正不断优化","done":true,"done_reason":"length","context":[151644,8948,198,2610,525,1207,16948,11,3465,553,54364,14817,13,1446,525,264,10950,17847,13,151645,198,151644,872,198,14880,11622,114942,104811,66394,362,89967,15469,71928,96,18493,71817,105143,113272,362,16276,32408,90395,99622,104670,67949,100160,20412,104144,101143,112881,1773,151645,198,151644,77091,198,32,89967,15469,73562,105143,113272,362,16276,6567,235,115,66569,99522,36556,99607,103983],"total_duration":1270628114,"load_duration":92572026,"prompt_eval_count":56,"prompt_eval_duration":81706472,"eval_count":16,"eval_duration":1083227995}```
+
+#### Mode: baseline
+
+- Backend: `none`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Acceptance gate: `control_latency`
+- Request contract: `PASS`
+- Recognition contract: `n/a`
+- Observation signal contract: `n/a`
+- Action audit contract: `n/a`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `n/a`
+- Live cpuset-disabled contract: `n/a`
+- Actuator quality contract: `n/a`
+- Live permission preflight contract: `n/a`
+- Live command contract: `n/a`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `0`
+- Trigger count: `0`
+- Rollback count: `0`
+- Action audit error count: `0`
+- CPU migration observations: `events=0, total=0, max_rate_per_sec=0`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `0`
+- Rollback audit highlight count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/baseline`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+```
+
+#### Mode: noop observation
+
+- Backend: `noop`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Acceptance gate: `strategy_recognition_only`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `n/a`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `n/a`
+- Live cpuset-disabled contract: `n/a`
+- Actuator quality contract: `n/a`
+- Live permission preflight contract: `n/a`
+- Live command contract: `n/a`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `512`
+- Trigger count: `3`
+- Rollback count: `3`
+- Action audit error count: `0`
+- CPU migration observations: `events=16, total=38, max_rate_per_sec=66`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `8`
+- Rollback audit highlight count: `0`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/noop_observation`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: noop
+processed_events: 512
+applied_actions: 3
+inline_rollbacks: 1
+tick_rollbacks: 2
+metric_records: 514
+trace_records: 1030
+signal_observations:
+  cpu_migration: events=16 total=38 max=8
+  run_queue_delay: events=496 total=3928301 max=751959
+feature_window_maxima:
+  cpu_migrations_per_sec: 66
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 3
+```
+
+#### Mode: dry-run guarded
+
+- Backend: `linux-command-dry-run`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Acceptance gate: `strategy_recognition_plus_dry_run_audit`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `PASS`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `n/a`
+- Live cpuset-disabled contract: `n/a`
+- Actuator quality contract: `n/a`
+- Live permission preflight contract: `n/a`
+- Live command contract: `n/a`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `512`
+- Trigger count: `2`
+- Rollback count: `2`
+- Action audit error count: `0`
+- CPU migration observations: `events=17, total=29, max_rate_per_sec=60`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `18`
+- Rollback audit highlight count: `6`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/dry_run`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command-dry-run
+processed_events: 512
+applied_actions: 2
+inline_rollbacks: 1
+tick_rollbacks: 1
+metric_records: 513
+trace_records: 1028
+signal_observations:
+  cpu_migration: events=17 total=29 max=4
+  run_queue_delay: events=495 total=4056400 max=1104947
+feature_window_maxima:
+  cpu_migrations_per_sec: 60
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 2
+```
+
+#### Mode: live guarded
+
+- Backend: `linux-command`
+- Samples: `4`
+- Concurrency: `2`
+- Interference: `stress-ng --cpu 2`
+- Live PID allowlist expanded with current children: `1997`
+- Acceptance gate: `live_guarded_nice_affinity`
+- Request contract: `PASS`
+- Recognition contract: `PASS`
+- Observation signal contract: `PASS`
+- Action audit contract: `PASS`
+- Live nice-only contract: `n/a`
+- Live affinity contract: `PASS`
+- Live cpuset-disabled contract: `PASS`
+- Actuator quality contract: `PASS`
+- Live permission preflight contract: `PASS`
+- Live command contract: `PASS`
+- Request success: `4/4`
+- Daemon status: `0`
+- Stress status: `terminated:0`
+- Stress exhausted before mode finished: `0`
+- Daemon processed events: `68`
+- Trigger count: `4`
+- Rollback count: `4`
+- Action audit error count: `0`
+- CPU migration observations: `events=20, total=35, max_rate_per_sec=60`
+- Major page fault observations: `events=0, total=0, max_rate_per_sec=0`
+- Off-CPU observations: `events=0` (eBPF/future enhancement; not required for this gate)
+- Lease audit highlight count: `13`
+- Rollback audit highlight count: `3`
+- Mode artifacts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/live_guarded`
+- Mode result: `PASS`
+- Mode contract reason: `ok`
+
+Daemon summary excerpt:
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-command
+processed_events: 68
+applied_actions: 4
+inline_rollbacks: 0
+tick_rollbacks: 4
+metric_records: 72
+trace_records: 144
+signal_observations:
+  cpu_migration: events=20 total=35 max=4
+  run_queue_delay: events=48 total=271828 max=52268
+feature_window_maxima:
+  cpu_migrations_per_sec: 60
+  major_page_faults_per_sec: 0
+triggered_scenarios:
+  inference_tail_guard: 4
+```
+
+#### A/B metrics summary
+
+- TTFT column: p50 of `curl time_starttransfer` against streaming Ollama responses.
+- P95/P99 columns: end-to-end streaming request total latency.
+- Jitter column: sample standard deviation of total latency.
+- Raw samples: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/samples.csv`
+- Mode counts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/mode_counts.csv`
+- Mode contracts: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/mode_contract.csv`
+- Summary CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/summary.csv`
+
+| mode | backend | ok/total | TTFT p50 ms | TTFT p95 ms | TTFT p99 ms | lat P95 ms | lat P99 ms | jitter ms | triggers | rollbacks | cpu mig total | cpu mig max/s | maj fault total | maj fault max/s | P95 delta vs baseline % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | none | 4/4 | 2597.884 | 31855.894 | 31855.894 | 62720.093 | 62720.093 | 18019.775 | 0 | 0 | 0 | 0 | 0 | 0 | 0.000 |
+| noop_observation | noop | 4/4 | 1601.362 | 38412.819 | 38412.819 | 73661.980 | 73661.980 | 20997.227 | 3 | 3 | 38 | 66 | 0 | 0 | -17.446 |
+| dry_run | linux-command-dry-run | 4/4 | 1390.154 | 32765.360 | 32765.360 | 66103.262 | 66103.262 | 19889.680 | 2 | 2 | 29 | 60 | 0 | 0 | -5.394 |
+| live_guarded | linux-command | 4/4 | 2476.558 | 35887.829 | 35887.829 | 64098.622 | 64098.622 | 18450.112 | 4 | 4 | 35 | 60 | 0 | 0 | -2.198 |
+
+#### Ollama process inventory after harness
+
+- Requirement: informational
+- Command: `ollama ps`
+- Exit status: `0`
+```text
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL
+qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from now
+```
+
+- Overall result: `PASS`
+- Round exit status: `0`
+- Harness stdout: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/harness.stdout`
+- Harness stderr: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/cpu/round_3/harness.stderr`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_runs.csv`
+- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_aggregate.csv`
+- Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Harness aggregate exit status: `0`
+- Benefit verdict: `FAIL`

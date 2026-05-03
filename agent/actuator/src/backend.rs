@@ -795,6 +795,9 @@ impl LinuxProcessStateProvider for ProcfsLinuxProcessStateProvider {
     fn capture_affinity(&self, pid: u32) -> LinuxAffinityState {
         match std::fs::read_to_string(format!("/proc/{pid}/status")) {
             Ok(raw) => parse_status_cpu_list(&raw)
+                .map(|original_cpus| {
+                    constrain_to_online_cpus(original_cpus, read_online_cpu_list())
+                })
                 .map(|original_cpus| LinuxAffinityState {
                     captured: true,
                     original_cpus,
@@ -1710,6 +1713,42 @@ fn parse_status_cpu_list(raw: &str) -> Option<Vec<u32>> {
         .find_map(|line| line.strip_prefix("Cpus_allowed_list:"))
         .map(str::trim)?;
 
+    parse_cpu_list(cpu_list)
+}
+
+#[cfg(target_os = "linux")]
+fn read_online_cpu_list() -> Option<Vec<u32>> {
+    std::fs::read_to_string("/sys/devices/system/cpu/online")
+        .ok()
+        .and_then(|raw| parse_cpu_list(raw.trim()))
+}
+
+#[cfg(target_os = "linux")]
+fn constrain_to_online_cpus(mut cpus: Vec<u32>, online_cpus: Option<Vec<u32>>) -> Vec<u32> {
+    cpus.sort_unstable();
+    cpus.dedup();
+
+    let Some(mut online_cpus) = online_cpus else {
+        return cpus;
+    };
+    online_cpus.sort_unstable();
+    online_cpus.dedup();
+
+    let online_set = online_cpus.into_iter().collect::<BTreeSet<_>>();
+    let online_intersection = cpus
+        .iter()
+        .copied()
+        .filter(|cpu| online_set.contains(cpu))
+        .collect::<Vec<_>>();
+    if online_intersection.is_empty() {
+        cpus
+    } else {
+        online_intersection
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parse_cpu_list(cpu_list: &str) -> Option<Vec<u32>> {
     let mut cpus = Vec::new();
     for segment in cpu_list.split(',').filter(|segment| !segment.is_empty()) {
         if let Some((start, end)) = segment.split_once('-') {
@@ -1724,5 +1763,43 @@ fn parse_status_cpu_list(raw: &str) -> Option<Vec<u32>> {
         }
     }
 
-    Some(cpus)
+    if cpus.is_empty() {
+        None
+    } else {
+        Some(cpus)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parse_cpu_list_expands_ranges() {
+        assert_eq!(parse_cpu_list("0-2,4,6-7"), Some(vec![0, 1, 2, 4, 6, 7]));
+        assert_eq!(parse_cpu_list("3-1"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn constrain_to_online_cpus_prefers_effective_online_subset() {
+        assert_eq!(
+            constrain_to_online_cpus((0..=7).collect(), Some(vec![0, 1, 2, 3])),
+            vec![0, 1, 2, 3]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn constrain_to_online_cpus_falls_back_when_online_is_unavailable_or_disjoint() {
+        assert_eq!(
+            constrain_to_online_cpus(vec![0, 1, 2, 3], None),
+            vec![0, 1, 2, 3]
+        );
+        assert_eq!(
+            constrain_to_online_cpus(vec![4, 5], Some(vec![0, 1])),
+            vec![4, 5]
+        );
+    }
 }
