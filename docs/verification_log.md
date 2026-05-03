@@ -13460,3 +13460,99 @@ qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from
 - Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
 - Harness aggregate exit status: `0`
 - Benefit verdict: `FAIL`
+
+### 2026-05-03T06:22:05Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `codex_tcb_ab_smoke`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/codex_tcb_ab_smoke`
+- Tool call id base: `tc-real-001`
+- Rounds: `2`
+- Modes: `baseline,noop,dry_run`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=FAIL
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,2,2,489.239,489.239,489.239,0,0,,,0,0,0,BASELINE,BASELINE,baseline reference
+noop,noop,FAIL,2,1,490.812,490.812,489.239,1,0,0.412,0.412,9,5,0,FAIL,FAIL,mode contract failed
+dry_run,linux-command-dry-run,PASS,2,2,490.067,490.067,489.239,2,0,0.169,0.169,12,6,0,FAIL,FAIL,only 0/2 comparable rounds improved by >=5.0%
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,489.679,489.679,451.410,454.406,454.391,,0,0,0,0,4,none,0,round1.baseline,ok
+1,noop,noop,FAIL,tc-real-001-r1-noop,490.223,490.223,455.687,456.926,460.370,521.000,7,4,2,4,4,"background:2,rerank:2,retrieval:3",0,round1.noop,missing_executor_stage
+1,dry_run,linux-command-dry-run,PASS,tc-real-001-r1-dry_run,494.278,494.278,455.841,458.525,455.410,620.000,27,7,3,7,4,"background:10,executor:1,rerank:8,retrieval:8",0,round1.dry_run,ok
+2,baseline,none,PASS,tc-real-001-r2-baseline,488.799,488.799,458.009,457.994,454.449,,0,0,0,0,4,none,0,round2.baseline,ok
+2,noop,noop,PASS,tc-real-001-r2-noop,490.812,490.812,458.184,457.456,459.845,753.000,18,5,3,5,4,"background:5,executor:4,rerank:2,retrieval:7",0,round2.noop,ok
+2,dry_run,linux-command-dry-run,PASS,tc-real-001-r2-dry_run,485.856,485.856,453.912,453.853,453.990,500.000,32,5,3,5,4,"background:13,executor:3,rerank:3,retrieval:13",0,round2.dry_run,ok
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/codex_tcb_ab_smoke/tool_call_booster_benefit_report.md`
+
+### 2026-05-03T06:23:06Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `codex_tcb_ab_smoke_pass`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/codex_tcb_ab_smoke_pass`
+- Tool call id base: `tc-real-001`
+- Rounds: `2`
+- Modes: `baseline,noop,dry_run`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=PASS
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,2,2,1492.619,1492.619,1492.619,0,0,,,0,0,0,BASELINE,BASELINE,baseline reference
+noop,noop,PASS,2,2,1489.881,1489.881,1492.619,2,0,-0.180,-0.180,27,6,0,FAIL,FAIL,only 0/2 comparable rounds improved by >=5.0%
+dry_run,linux-command-dry-run,PASS,2,2,1491.665,1491.665,1492.619,2,0,-0.063,-0.063,34,6,0,FAIL,FAIL,only 0/2 comparable rounds improved by >=5.0%
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,1500.950,1500.950,1454.158,1451.747,1457.124,,0,0,0,0,4,none,0,round1.baseline,ok
+1,noop,noop,PASS,tc-real-001-r1-noop,1489.034,1489.034,1452.112,1455.352,1455.439,1263.000,54,18,3,18,4,"background:17,executor:7,rerank:11,retrieval:19",0,round1.noop,ok
+1,dry_run,linux-command-dry-run,PASS,tc-real-001-r1-dry_run,1497.636,1497.636,1466.875,1451.372,1451.379,1217.000,64,18,3,18,4,"background:19,executor:12,rerank:16,retrieval:17",0,round1.dry_run,ok
+2,baseline,none,PASS,tc-real-001-r2-baseline,1484.287,1484.287,1451.406,1451.321,1451.100,,0,0,0,0,4,none,0,round2.baseline,ok
+2,noop,noop,PASS,tc-real-001-r2-noop,1490.728,1490.728,1457.802,1457.612,1461.511,740.000,64,9,3,9,4,"background:14,executor:19,rerank:14,retrieval:17",0,round2.noop,ok
+2,dry_run,linux-command-dry-run,PASS,tc-real-001-r2-dry_run,1485.694,1485.694,1455.229,1455.426,1455.041,1275.000,60,16,3,16,4,"background:19,executor:12,rerank:17,retrieval:12",0,round2.dry_run,ok
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/codex_tcb_ab_smoke_pass/tool_call_booster_benefit_report.md`
+
+### 2026-05-03T06:26:02Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `codex_tcb_ab_final`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/codex_tcb_ab_final`
+- Tool call id base: `tc-real-001`
+- Rounds: `2`
+- Modes: `baseline,noop,dry_run`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=PASS
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,2,2,1485.691,1485.691,1485.691,0,0,,,0,0,0,BASELINE,BASELINE,baseline reference
+noop,noop,PASS,2,2,1491.325,1491.325,1485.691,2,0,0.380,0.380,26,7,0,FAIL,FAIL,only 0/2 comparable rounds improved by >=5.0%
+dry_run,linux-command-dry-run,PASS,2,2,1494.316,1494.316,1485.691,2,0,0.580,0.580,25,6,0,FAIL,FAIL,only 0/2 comparable rounds improved by >=5.0%
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,1483.065,1483.065,1452.743,1452.897,1452.444,,0,0,0,0,4,none,0,round1.baseline,ok
+1,noop,noop,PASS,tc-real-001-r1-noop,1493.708,1493.708,1454.083,1459.921,1460.450,944.000,51,12,3,12,4,"background:13,executor:8,rerank:19,retrieval:11",0,round1.noop,ok
+1,dry_run,linux-command-dry-run,PASS,tc-real-001-r1-dry_run,1491.316,1491.316,1454.105,1454.624,1451.743,797.000,64,10,3,10,4,"background:18,executor:10,rerank:18,retrieval:18",0,round1.dry_run,ok
+2,baseline,none,PASS,tc-real-001-r2-baseline,1488.317,1488.317,1456.298,1455.966,1456.147,,0,0,0,0,4,none,0,round2.baseline,ok
+2,noop,noop,PASS,tc-real-001-r2-noop,1488.942,1488.942,1459.094,1459.145,1458.891,1226.000,58,14,4,14,4,"background:19,executor:7,rerank:20,retrieval:12",0,round2.noop,ok
+2,dry_run,linux-command-dry-run,PASS,tc-real-001-r2-dry_run,1497.316,1497.316,1465.552,1463.209,1465.454,1079.000,64,15,3,15,4,"background:14,executor:14,rerank:16,retrieval:20",0,round2.dry_run,ok
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/codex_tcb_ab_final/tool_call_booster_benefit_report.md`

@@ -18,17 +18,34 @@ DAEMON_MAX_EVENTS="${AEGISAI_TCB_DAEMON_MAX_EVENTS:-64}"
 DAEMON_DRAIN_MS="${AEGISAI_TCB_DAEMON_DRAIN_MS:-1200}"
 DAEMON_TICK_MS="${AEGISAI_TCB_DAEMON_TICK_MS:-100}"
 ACTUATOR_BACKEND="${AEGISAI_TCB_ACTUATOR_BACKEND:-noop}"
+LIVE_CONFIRM="${AEGISAI_CONFIRM_LIVE_ACTUATOR:-0}"
+LIVE_PID_ALLOWLIST="${AEGISAI_LIVE_PID_ALLOWLIST:-}"
+LIVE_ENABLE_AFFINITY="${AEGISAI_ENABLE_LIVE_AFFINITY:-0}"
 RUN_DRY_RUN="${AEGISAI_TCB_RUN_DRY_RUN:-1}"
+ROUNDS="${AEGISAI_TCB_ROUNDS:-3}"
+if [[ -n "${AEGISAI_TCB_MODES:-}" ]]; then
+  MODES="${AEGISAI_TCB_MODES}"
+elif [[ "${RUN_DRY_RUN}" == "1" ]]; then
+  MODES="baseline,noop,dry_run"
+else
+  MODES="baseline,noop"
+fi
+MIN_BENEFIT_PCT="${AEGISAI_TCB_MIN_BENEFIT_PCT:-5}"
+REQUIRE_BENEFIT="${AEGISAI_TCB_REQUIRE_BENEFIT:-0}"
 
 mkdir -p "${ARTIFACT_DIR}" "$(dirname -- "${LOG_PATH}")"
 touch "${LOG_PATH}"
 
 CONFIG_ROOT="${ARTIFACT_DIR}/repo-config"
+DETAIL_CSV="${ARTIFACT_DIR}/tool_call_booster_detail.csv"
 SUMMARY_CSV="${ARTIFACT_DIR}/tool_call_booster_summary.csv"
+REPORT_MD="${ARTIFACT_DIR}/tool_call_booster_benefit_report.md"
 RUN_ENV="${ARTIFACT_DIR}/run.env"
 DAEMON_BIN="${REPO_ROOT}/target/debug/aegisai-runtime-daemon"
 BUILD_STDOUT="${ARTIFACT_DIR}/cargo-build.stdout"
 BUILD_STDERR="${ARTIFACT_DIR}/cargo-build.stderr"
+REPORT_STDOUT="${ARTIFACT_DIR}/report.stdout"
+REPORT_STDERR="${ARTIFACT_DIR}/report.stderr"
 
 executor_pid=""
 daemon_pid=""
@@ -39,14 +56,22 @@ usage() {
 Usage: bash bench/scripts/tool_call_booster_real_executor_harness.sh
 
 Runs a real local tool executor process tree and observes it with the runtime
-daemon linux/procfs source. The default actuator backend is noop; set
-AEGISAI_TCB_RUN_DRY_RUN=1 to also run a second linux-command-dry-run pass.
+daemon linux/procfs source. By default it runs repeated
+baseline/noop/dry_run A/B rounds and writes latency deltas plus a benefit
+verdict. Include live_guarded in AEGISAI_TCB_MODES only for an explicitly
+approved live actuator experiment.
 
 Common overrides:
+  AEGISAI_TCB_ROUNDS=3
+  AEGISAI_TCB_MODES=baseline,noop,dry_run
   AEGISAI_TCB_EXECUTOR_CPU_MS=1800
   AEGISAI_TCB_WORKER_CPU_MS=2600
   AEGISAI_TCB_WORKER_IO_KB=256
   AEGISAI_TCB_ACTUATOR_BACKEND=noop
+  AEGISAI_TCB_MIN_BENEFIT_PCT=5
+  AEGISAI_TCB_REQUIRE_BENEFIT=0
+  AEGISAI_CONFIRM_LIVE_ACTUATOR=1
+  AEGISAI_LIVE_PID_ALLOWLIST=1234
   AEGISAI_TCB_ARTIFACT_DIR=/path/to/results
 USAGE
 }
@@ -107,6 +132,60 @@ validate_uint_env() {
   if ! is_uint "${value}"; then
     fail "${name} must be an unsigned integer"
   fi
+}
+
+validate_number_env() {
+  local name="$1"
+  local value="$2"
+  if ! [[ "${value}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    fail "${name} must be a non-negative number"
+  fi
+}
+
+is_pid_allowlist() {
+  [[ "${1:-}" =~ ^[0-9]+(,[0-9]+)*$ ]]
+}
+
+mode_backend() {
+  local mode="$1"
+  case "${mode}" in
+    baseline)
+      printf 'none\n'
+      ;;
+    noop|noop_observation)
+      printf '%s\n' "${ACTUATOR_BACKEND}"
+      ;;
+    dry_run)
+      printf 'linux-command-dry-run\n'
+      ;;
+    guarded|live_guarded|linux_command|linux-command)
+      printf 'linux-command\n'
+      ;;
+    *)
+      printf 'unknown Tool Call Booster mode: %s\n' "${mode}" >&2
+      return 1
+      ;;
+  esac
+}
+
+report_arg() {
+  if [[ "${REQUIRE_BENEFIT}" == "1" ]]; then
+    printf '%s\n' "--require-benefit"
+  fi
+}
+
+has_live_mode() {
+  local raw_mode mode
+  IFS=',' read -r -a modes <<<"${MODES}"
+  for raw_mode in "${modes[@]}"; do
+    mode="$(printf '%s' "${raw_mode}" | xargs)"
+    case "${mode}" in
+      guarded|live_guarded|linux_command|linux-command)
+        return 0
+        ;;
+    esac
+  done
+  return 1
 }
 
 copy_config() {
@@ -199,7 +278,14 @@ write_run_env() {
     printf 'daemon_poll_timeout_ms=%s\n' "${DAEMON_POLL_TIMEOUT_MS}"
     printf 'daemon_max_events=%s\n' "${DAEMON_MAX_EVENTS}"
     printf 'actuator_backend=%s\n' "${ACTUATOR_BACKEND}"
+    printf 'live_confirm=%s\n' "${LIVE_CONFIRM}"
+    printf 'live_pid_allowlist=%s\n' "${LIVE_PID_ALLOWLIST}"
+    printf 'live_enable_affinity=%s\n' "${LIVE_ENABLE_AFFINITY}"
     printf 'run_dry_run=%s\n' "${RUN_DRY_RUN}"
+    printf 'rounds=%s\n' "${ROUNDS}"
+    printf 'modes=%s\n' "${MODES}"
+    printf 'min_benefit_pct=%s\n' "${MIN_BENEFIT_PCT}"
+    printf 'require_benefit=%s\n' "${REQUIRE_BENEFIT}"
   } >"${RUN_ENV}"
 }
 
@@ -224,6 +310,14 @@ run_daemon() {
   local backend="$1"
   local stdout="$2"
   local stderr="$3"
+  local -a live_args=()
+
+  if [[ "${backend}" == "linux-command" ]]; then
+    live_args=(--confirm-live-actuator --live-pid-allowlist "${LIVE_PID_ALLOWLIST}")
+    if [[ "${LIVE_ENABLE_AFFINITY}" == "1" ]]; then
+      live_args+=(--enable-live-affinity)
+    fi
+  fi
 
   "${DAEMON_BIN}" \
     --repo-root "${CONFIG_ROOT}" \
@@ -236,6 +330,7 @@ run_daemon() {
     --max-events "${DAEMON_MAX_EVENTS}" \
     --tick-ms "${DAEMON_TICK_MS}" \
     --drain-ms "${DAEMON_DRAIN_MS}" \
+    "${live_args[@]}" \
     >"${stdout}" 2>"${stderr}" &
   daemon_pid="$!"
 }
@@ -266,85 +361,50 @@ wait_for_daemon() {
   fi
 }
 
-field_value() {
-  local file="$1"
-  local key="$2"
-  awk -F': ' -v key="${key}" '$1 == key { print $2; exit }' "${file}"
-}
-
-lifecycle_line() {
-  local file="$1"
-  local tool_call_id="$2"
-  grep -F "  ${tool_call_id}:" "${file}" | head -n 1
-}
-
-tool_call_trigger_count() {
-  local file="$1"
-  awk '/^[[:space:]]+tool_call_booster: / { print $2; exit }' "${file}"
-}
-
 count_executor_roles() {
   grep -h '"role":' "${ARTIFACT_DIR}"/executor.*.stdout 2>/dev/null | wc -l | tr -d '[:space:]'
 }
 
-summarize_pass() {
-  local mode="$1"
-  local stdout="$2"
-  local tool_call_id="$3"
-  local executor_stdout="$4"
-  local processed applied inline_rollbacks tick_rollbacks total_rollbacks triggered lifecycle stages role_count pass
-  processed="$(field_value "${stdout}" "processed_events")"
-  applied="$(field_value "${stdout}" "applied_actions")"
-  inline_rollbacks="$(field_value "${stdout}" "inline_rollbacks")"
-  tick_rollbacks="$(field_value "${stdout}" "tick_rollbacks")"
-  if is_uint "${inline_rollbacks}" && is_uint "${tick_rollbacks}"; then
-    total_rollbacks=$((inline_rollbacks + tick_rollbacks))
-  else
-    total_rollbacks=0
+run_round_mode() {
+  local round="$1"
+  local mode="$2"
+  local backend="$3"
+  local prefix="round${round}.${mode}"
+  local tool_call_id="${BASE_TOOL_CALL_ID}-r${round}-${mode}"
+  local executor_stdout="${ARTIFACT_DIR}/executor.${prefix}.stdout"
+  local executor_stderr="${ARTIFACT_DIR}/executor.${prefix}.stderr"
+  local daemon_stdout="${ARTIFACT_DIR}/daemon.${prefix}.stdout"
+  local daemon_stderr="${ARTIFACT_DIR}/daemon.${prefix}.stderr"
+
+  start_executor "${tool_call_id}" "${executor_stdout}" "${executor_stderr}"
+  if [[ "${mode}" != "baseline" ]]; then
+    sleep "${DAEMON_START_DELAY}"
+    run_daemon "${backend}" "${daemon_stdout}" "${daemon_stderr}"
   fi
-  triggered="$(tool_call_trigger_count "${stdout}")"
-  lifecycle="$(lifecycle_line "${stdout}" "${tool_call_id}")"
-  stages="$(printf '%s\n' "${lifecycle}" | sed -n 's/.*stages=\([^ ]*\) boosted_actions.*/\1/p')"
-  role_count="$(grep -c '"role":' "${executor_stdout}" 2>/dev/null || true)"
-  pass="FAIL"
-
-  if is_uint "${processed}" && [[ "${processed}" -gt 0 ]] \
-    && is_uint "${applied}" && [[ "${applied}" -gt 0 ]] \
-    && is_uint "${triggered}" && [[ "${triggered}" -gt 0 ]] \
-    && [[ "${total_rollbacks}" -gt 0 ]] \
-    && is_uint "${role_count}" && [[ "${role_count}" -ge 4 ]] \
-    && [[ -n "${lifecycle}" ]] \
-    && [[ "${stages}" == *"executor:"* ]] \
-    && [[ "${stages}" == *"retrieval:"* ]] \
-    && [[ "${stages}" == *"rerank:"* ]]; then
-    pass="PASS"
-  fi
-
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,"%s"\n' \
-    "${mode}" "${pass}" "${tool_call_id}" "${processed:-0}" "${applied:-0}" \
-    "${total_rollbacks:-0}" "${triggered:-0}" "${role_count:-0}" "${stages:-none}" \
-    >>"${SUMMARY_CSV}"
-
-  if [[ "${pass}" != "PASS" ]]; then
-    fail "${mode} did not observe a triggered real tool-call lifecycle"
+  wait_for_executor
+  if [[ "${mode}" != "baseline" ]]; then
+    wait_for_daemon
   fi
 }
 
-run_pass() {
-  local mode="$1"
-  local backend="$2"
-  local tool_call_id="${BASE_TOOL_CALL_ID}-${mode}"
-  local executor_stdout="${ARTIFACT_DIR}/executor.${mode}.stdout"
-  local executor_stderr="${ARTIFACT_DIR}/executor.${mode}.stderr"
-  local daemon_stdout="${ARTIFACT_DIR}/daemon.${mode}.stdout"
-  local daemon_stderr="${ARTIFACT_DIR}/daemon.${mode}.stderr"
-
-  start_executor "${tool_call_id}" "${executor_stdout}" "${executor_stderr}"
-  sleep "${DAEMON_START_DELAY}"
-  run_daemon "${backend}" "${daemon_stdout}" "${daemon_stderr}"
-  wait_for_executor
-  wait_for_daemon
-  summarize_pass "${mode}" "${daemon_stdout}" "${tool_call_id}" "${executor_stdout}"
+generate_report() {
+  local require_arg
+  require_arg="$(report_arg)"
+  python3 "${REPO_ROOT}/bench/tool_call_booster/summarize_ab.py" \
+    --artifact-dir "${ARTIFACT_DIR}" \
+    --run-id "${RUN_ID}" \
+    --modes "${MODES}" \
+    --rounds "${ROUNDS}" \
+    --min-benefit-pct "${MIN_BENEFIT_PCT}" \
+    --detail-csv "${DETAIL_CSV}" \
+    --summary-csv "${SUMMARY_CSV}" \
+    --report-md "${REPORT_MD}" \
+    ${require_arg} \
+    >"${REPORT_STDOUT}" 2>"${REPORT_STDERR}"
+  local status=$?
+  if [[ "${status}" -ne 0 ]]; then
+    fail "Tool Call Booster A/B report exited with status ${status}"
+  fi
 }
 
 require_command cargo
@@ -354,6 +414,16 @@ validate_uint_env AEGISAI_TCB_WORKER_CPU_MS "${WORKER_CPU_MS}"
 validate_uint_env AEGISAI_TCB_WORKER_IO_KB "${WORKER_IO_KB}"
 validate_uint_env AEGISAI_TCB_WORKER_START_DELAY_MS "${WORKER_START_DELAY_MS}"
 validate_uint_env AEGISAI_TCB_DAEMON_MAX_EVENTS "${DAEMON_MAX_EVENTS}"
+validate_uint_env AEGISAI_TCB_ROUNDS "${ROUNDS}"
+validate_number_env AEGISAI_TCB_MIN_BENEFIT_PCT "${MIN_BENEFIT_PCT}"
+if has_live_mode; then
+  if [[ "${LIVE_CONFIRM}" != "1" ]]; then
+    fail "live_guarded requires AEGISAI_CONFIRM_LIVE_ACTUATOR=1"
+  fi
+  if ! is_pid_allowlist "${LIVE_PID_ALLOWLIST}"; then
+    fail "live_guarded requires AEGISAI_LIVE_PID_ALLOWLIST with one or more positive PIDs"
+  fi
+fi
 
 if [[ "${overall_status}" -ne 0 ]]; then
   exit "${overall_status}"
@@ -361,7 +431,6 @@ fi
 
 copy_config
 write_run_env
-printf 'mode,contract,tool_call_id,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages\n' >"${SUMMARY_CSV}"
 build_daemon
 if [[ "${overall_status}" -ne 0 ]]; then
   append
@@ -374,27 +443,45 @@ if [[ "${overall_status}" -ne 0 ]]; then
   exit "${overall_status}"
 fi
 
-run_pass "noop" "${ACTUATOR_BACKEND}"
-if [[ "${RUN_DRY_RUN}" == "1" ]]; then
-  run_pass "dry_run" "linux-command-dry-run"
-fi
+IFS=',' read -r -a SELECTED_MODES <<<"${MODES}"
+for round in $(seq 1 "${ROUNDS}"); do
+  for raw_mode in "${SELECTED_MODES[@]}"; do
+    mode="$(printf '%s' "${raw_mode}" | xargs)"
+    if [[ -z "${mode}" ]]; then
+      continue
+    fi
+    if ! backend="$(mode_backend "${mode}" 2>&1)"; then
+      fail "${backend}"
+      continue
+    fi
+    run_round_mode "${round}" "${mode}" "${backend}"
+  done
+done
+
+generate_report
 
 append
-append "### $(date -u +%Y-%m-%dT%H:%M:%SZ) - Tool Call Booster real executor harness"
+append "### $(date -u +%Y-%m-%dT%H:%M:%SZ) - Tool Call Booster repeated A/B benefit harness"
 append
 append "- Run ID: \`${RUN_ID}\`"
 append "- Artifact dir: \`${ARTIFACT_DIR}\`"
 append "- Tool call id base: \`${BASE_TOOL_CALL_ID}\`"
+append "- Rounds: \`${ROUNDS}\`"
+append "- Modes: \`${MODES}\`"
 append "- Executor roles observed: \`$(count_executor_roles)\`"
-append "- Summary:"
+append "- Report verdict:"
+append_block "${REPORT_STDOUT}"
+append "- Aggregate summary:"
 append_block "${SUMMARY_CSV}"
-append "- Executor stdout files: \`executor.noop.stdout\`, \`executor.dry_run.stdout\`"
+append "- Detail:"
+append_block "${DETAIL_CSV}"
+append "- Report: \`${REPORT_MD}\`"
 
 if [[ "${overall_status}" -eq 0 ]]; then
-  printf 'Tool Call Booster real executor harness PASS\n'
+  printf 'Tool Call Booster repeated A/B benefit harness PASS\n'
   printf 'Artifacts: %s\n' "${ARTIFACT_DIR}"
 else
-  printf 'Tool Call Booster real executor harness FAIL\n' >&2
+  printf 'Tool Call Booster repeated A/B benefit harness FAIL\n' >&2
 fi
 
 exit "${overall_status}"

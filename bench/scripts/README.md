@@ -11,7 +11,7 @@
 - 该 harness 同时会写出 2R-0 验收基线：`acceptance_baseline.env`、`cpu_topology.txt`、`permission_state.txt` 和 `mode_contract.csv`，用于锁定模型/prompt/并发/干扰/样本数/CPU 拓扑/权限状态，并把 `noop_observation`、`dry_run`、`live_guarded` nice-only 分档验收。
 - `inference_tail_guard_phase2r2_actuator_quality.sh`：阶段 2R-2 actuator 质量收敛入口。它先跑至少 3 轮 `live_guarded` nice-only，要求无 action audit error、记录 lease、记录 rollback、cpuset 禁用；通过后才跑一轮 affinity。
 - `inference_tail_guard_phase4_report.sh`：阶段 4 多轮收益报告入口。它会循环跑 CPU 干扰和可选 CPU+I/O 扰动矩阵，汇总每轮 `summary.csv`，输出 `docs/mvp_benefit_report.md` 和 `.cache/aegisai/inference_tail_guard_phase4/<run_id>/` 下的对照 CSV。设置 `AEGISAI_PHASE4_REUSE_ARTIFACTS=1` 可复用已有 run 的 artifacts 重新生成报告，不重跑 Ollama 或压力负载。
-- `tool_call_booster_real_executor_harness.sh`：阶段 2R-5 Tool Call Booster 入口。它启动真实本地 tool executor / retrieval / rerank / background 进程树，再用 runtime daemon `linux` + `procfs` source 验证 `tool_call_lifecycles`、`tool_call_booster` 触发和 noop/dry-run 可回滚链路。
+- `tool_call_booster_real_executor_harness.sh`：阶段 2R-5 Tool Call Booster 入口。它重复启动真实本地 tool executor / retrieval / rerank / background 进程树，跑 `baseline,noop,dry_run` 对照，再用 runtime daemon `linux` + `procfs` source 验证 `tool_call_lifecycles`、`tool_call_booster` 触发、可回滚链路和 latency delta benefit verdict。
 
 ## Tool Call Booster real executor harness
 
@@ -22,10 +22,15 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 ```
 
 默认会跑 `noop` 和 `linux-command-dry-run` 两档，artifact 写入
-`.cache/aegisai/tool_call_booster/<run_id>/`。`PASS` 表示 daemon 从真实进程树
-中捕获同一 `tool_call_id` 的 executor / retrieval / rerank lifecycle，
-并且 `tool_call_booster` 至少触发一次可回滚 action。该阶段仍不声明
-background isolation 或 explain/tune 已正式固化。
+`.cache/aegisai/tool_call_booster/<run_id>/`。现在默认会先跑 `baseline`，
+再重复 `noop` 和 `linux-command-dry-run`，写出
+`tool_call_booster_detail.csv`、`tool_call_booster_summary.csv` 和
+`tool_call_booster_benefit_report.md`。harness `PASS` 表示每个选中档位完成
+可比较样本采集；报告中的 `benefit_verdict` 才是收益是否证明的明确结论。
+`noop` / `dry_run` 只证明识别、触发、审计和 rollback 闭环，不单独证明真实
+host-level latency benefit。显式加入 `live_guarded` 时必须设置
+`AEGISAI_CONFIRM_LIVE_ACTUATOR=1` 和 `AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>`。
+该阶段仍不声明 background isolation 或 explain/tune 已正式固化。
 
 ## 真实 Ollama A/B harness 前置条件
 

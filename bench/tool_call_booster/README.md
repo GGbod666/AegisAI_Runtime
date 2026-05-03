@@ -8,10 +8,11 @@
 - 固定 retrieval / rerank worker 样本
 - 记录 end-to-end tool call latency 和子链路耗时
 
-## Phase 5 real executor harness
+## Phase 5 repeated A/B benefit harness
 
 Phase 2R 通过后，Tool Call Booster 小阶段改为真实本地 tool executor
-进程树，不再只依赖 mock lifecycle 回放：
+进程树，不再只依赖 mock lifecycle 回放。当前 harness 会重复运行
+baseline / noop / dry_run 对照轮次，并生成收益判定报告：
 
 ```bash
 bash bench/scripts/tool_call_booster_real_executor_harness.sh
@@ -19,21 +20,31 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 
 该 harness 会启动 `real_tool_executor.py`，创建真实的
 tool-executor / retrieval-worker / rerank-worker / background-worker 进程树，
-再用 runtime daemon 的 `linux` + `procfs` source 观察同一个
-`tool_call_id`。默认先跑 `noop`，并追加一轮 `linux-command-dry-run`，输出
-`tool_call_booster_summary.csv`、daemon stdout/stderr、executor stdout/stderr 到
-`.cache/aegisai/tool_call_booster/<run_id>/`。
+再用 runtime daemon 的 `linux` + `procfs` source 观察同一个 `tool_call_id`。
+默认跑 3 轮 `baseline,noop,dry_run`，输出
+`tool_call_booster_detail.csv`、`tool_call_booster_summary.csv`、
+`tool_call_booster_benefit_report.md`、daemon stdout/stderr、executor
+stdout/stderr 到 `.cache/aegisai/tool_call_booster/<run_id>/`。
 
 当前验收口径：
 
+- baseline 记录未观测 executor 的端到端 latency，作为同轮对照
 - executor stdout 至少出现 4 个真实角色
-- daemon summary 捕获 `tool_call_lifecycles`
+- noop / dry_run / guarded 档 daemon summary 捕获 `tool_call_lifecycles`
 - lifecycle stages 覆盖 executor / retrieval / rerank
 - `tool_call_booster` 至少触发一次 action，并完成可回滚链路
+- summary 报告每档 latency delta、trigger count、rollback count 和明确
+  `benefit_verdict`
+
+默认 `noop` 与 `dry_run` 只证明识别、触发、审计和 rollback 闭环；它们不会
+单独被判定为主机级收益证明。只有显式加入 guarded/live 档，并在至少三分之二
+可比较轮次中相对 baseline 改善达到 `AEGISAI_TCB_MIN_BENEFIT_PCT`，报告才会给
+出 benefit `PASS`。
 
 常用缩短 smoke：
 
 ```bash
+AEGISAI_TCB_ROUNDS=2 \
 AEGISAI_TCB_EXECUTOR_CPU_MS=900 \
 AEGISAI_TCB_WORKER_CPU_MS=1400 \
 AEGISAI_TCB_WORKER_IO_KB=64 \
@@ -41,6 +52,17 @@ AEGISAI_TCB_DAEMON_MAX_EVENTS=40 \
   bash bench/scripts/tool_call_booster_real_executor_harness.sh
 ```
 
-说明：本阶段只把 mock lifecycle 升级为真实 tool executor harness，并固化
-真实进程生命周期识别与 noop/dry-run 执行审计。background isolation 和
-explain/tune 的正式固化仍留在下一小阶段。
+常用覆盖：
+
+```bash
+AEGISAI_TCB_ROUNDS=3 \
+AEGISAI_TCB_MODES=baseline,noop,dry_run \
+AEGISAI_TCB_MIN_BENEFIT_PCT=5 \
+  bash bench/scripts/tool_call_booster_real_executor_harness.sh
+```
+
+需要把 benefit verdict 作为 shell hard gate 时，设置
+`AEGISAI_TCB_REQUIRE_BENEFIT=1`。这通常只适合显式受控的 guarded/live 实验窗口。
+`live_guarded` 还必须设置 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1` 和
+`AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>`；默认不启用 live affinity，只有设置
+`AEGISAI_ENABLE_LIVE_AFFINITY=1` 才会允许 `taskset`。
