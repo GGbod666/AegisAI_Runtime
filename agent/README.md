@@ -12,6 +12,8 @@ It is responsible for turning observed signals into:
 ## Submodules
 
 - `collector`: aggregate low-level events into stable feature windows
+- `ebpf_helper`: narrow privileged helper for real Linux eBPF off-CPU and I/O
+  latency event streaming
 - `classifier`: map processes and threads to AI-runtime semantics
 - `policy_engine`: evaluate scenario rules and resolve action conflicts
 - `actuator`: apply bounded actions and manage rollback leases
@@ -28,3 +30,5 @@ It is responsible for turning observed signals into:
 - scenario-specific logic lives under `scenarios/`
 - configuration is preferred over hard-coded branching
 - every action must be bounded and revertible
+- the main runtime daemon is rootless; privileged kernel/eBPF work belongs in
+  narrow helpers, not the whole control loop

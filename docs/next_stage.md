@@ -57,19 +57,21 @@ Exit checks:
 
 ### 2. Real eBPF Signal Coverage
 
-Beads issue: `AegisAI_Runtime-4nv`
+Beads issue: `AegisAI_Runtime-dym`, then `AegisAI_Runtime-jtt`
 
 Goal:
 
 - keep the existing source abstraction
-- wire real eBPF-backed `offcpu_time` and `io_latency` events behind it
+- keep the main runtime daemon rootless
+- wire real eBPF-backed `offcpu_time` and `io_latency` through the narrow
+  privileged `aegisai-ebpf-helper`
 - preserve procfs fallback for `run_queue_delay`, `cpu_migration`, and
   `major_page_fault` while the probe path matures
 
 Exit checks:
 
 - Linux source emits normalized off-CPU and I/O latency `SourceEvent` records
-  from controlled workloads
+  from controlled workloads through the helper
 - verification summaries identify attached probes, event counts, and shutdown
   state
 - targeted source tests plus workspace verification pass

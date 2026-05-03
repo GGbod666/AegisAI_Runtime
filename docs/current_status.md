@@ -53,16 +53,18 @@ Completed or standing:
 
 Partially complete:
 
-- eBPF crate has probe descriptors, filters, registry, and event validation; the
-  Linux runtime now combines procfs-backed sched/fault signals with
-  bpftrace-backed `offcpu_time` and `io_latency` ingestion.
+- eBPF crate has probe descriptors, filters, registry, and event validation.
+  Linux runtime source now keeps the main daemon rootless, combines procfs-backed
+  sched/fault signals with `aegisai-ebpf-helper` for real `offcpu_time` and
+  `io_latency`, and falls back cleanly when the helper is unavailable.
 - Live Linux command backend is guarded and auditable, but current benefit artifacts show no effective live actuator changes in the most recent Phase 4 report.
 - Tool Call Booster has lifecycle detection and trigger proof, but not a repeated baseline-vs-guarded benefit report.
 - Explain/tune can build reports from metrics, but online tuning remains outside the current scope.
 
 Not complete:
 
-- Root live controlled-workload validation for off-CPU and I/O eBPF observations.
+- Privileged-helper controlled-workload validation for off-CPU and I/O eBPF
+  observations.
 - Proven host-level MVP benefit from effective live guarded actions.
 - Production daemon packaging/service management.
 - Dashboard, GPU coordination, adaptive policy learning, or background isolation.
@@ -70,7 +72,8 @@ Not complete:
 ## Active TODO Index
 
 - `AegisAI_Runtime-s6f` — Prove effective live Inference Tail Guard actuator benefit.
-- `AegisAI_Runtime-jtt` — Validate real off-CPU and I/O eBPF signals as root.
+- `AegisAI_Runtime-dym` — Split eBPF off-CPU/I/O ingestion into privileged helper.
+- `AegisAI_Runtime-jtt` — Validate real off-CPU and I/O eBPF signals through the helper.
 - `AegisAI_Runtime-bx1` — Turn Tool Call Booster harness into repeated A/B benefit proof.
 - `AegisAI_Runtime-azv` — Harden audit coverage for actuator and runtime hot paths.
 
@@ -87,7 +90,7 @@ The next major stage is not more scaffolding. It is evidence hardening:
 
 1. Run a controlled Linux live experiment where `live_guarded` produces at least one effective host-level actuator change.
 2. Keep the Phase 4 benefit gate strict: no effective live action means no MVP benefit claim.
-3. Validate root bpftrace off-CPU and I/O observations with controlled workloads.
+3. Validate helper-backed off-CPU and I/O observations with controlled workloads.
 4. Promote Tool Call Booster from trigger/harness proof to repeated A/B benefit proof.
 5. Add targeted tests around the high-risk hot paths identified by the code graph: actuator rollback reports, Linux command apply/rollback failures, procfs sampling edge cases, runtime source behavior, and benefit report interpretation.
 

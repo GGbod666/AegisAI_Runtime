@@ -14,7 +14,8 @@ It is responsible for:
 Current host strategy:
 
 - Windows: use `MockEventSource` and `StaticMetadataProvider` for development, integration, and control-loop verification
-- Linux: switch to `ProcfsMetadataProvider`, then wire the real probe-backed source during the validation phase
+- Linux: keep `runtime_daemon` rootless with `ProcfsMetadataProvider`; use
+  `aegisai-ebpf-helper` as the narrow privileged source for real eBPF signals
 
 Current source modes:
 
@@ -28,8 +29,9 @@ Current Linux source behavior:
 - samples `/proc/<pid>/schedstat`, `/proc/<pid>/sched`, and `/proc/<pid>/stat`
   for target runtimes to produce minimal `run_queue_delay`, `cpu_migration`,
   and `major_page_fault` events
-- streams real eBPF-backed `offcpu_time` and `io_latency` events through
-  `bpftrace`, normalized into the existing `SourceEvent` model
+- streams real eBPF-backed `offcpu_time` and `io_latency` events through the
+  privileged `aegisai-ebpf-helper`, normalized into the existing `SourceEvent`
+  model
 - prints signal observation summaries and feature-window maxima so
   `cpu_migration` and `major_page_fault` can be interpreted in real-machine
   experiments
@@ -42,7 +44,7 @@ Current Linux source behavior:
 - records reader startup and shutdown state so Linux integration can validate attach/drain behavior
 - records whether a driver is expected to stream events or is an explicit no-event preflight/audit path
 - can be run with `--allow-partial-probes` to keep procfs-backed signals flowing
-  when the host cannot attach `bpftrace` eBPF probes
+  when the helper is not installed or cannot attach eBPF probes
 - preflight may attach successfully and still return no events by design because it does not load eBPF programs or read ring buffers
 
 Current Linux reader CLI knobs:
@@ -54,13 +56,23 @@ Current Linux reader CLI knobs:
 
 Linux eBPF requirements:
 
-- `bpftrace` must be installed and runnable as root on the validation host
-- set `AEGISAI_BPFTRACE=/path/to/bpftrace` if it is not available as `bpftrace`
-  in `PATH`
+- `aegisai-runtime-daemon` should run as a normal user
+- `aegisai-ebpf-helper` must be installed with the narrow privileges required to
+  attach eBPF probes
+- set `AEGISAI_EBPF_HELPER=/path/to/aegisai-ebpf-helper` if the helper is not in
+  `PATH`
+- the helper uses `bpftrace`; set `AEGISAI_BPFTRACE=/path/to/bpftrace` if needed
 - current bpftrace probes attach `sched:sched_switch`,
   `block:block_rq_issue`, and `block:block_rq_complete`; hosts with different
   block tracepoint fields should use `--allow-partial-probes` until the script is
   adjusted for that kernel
+
+Privilege rule:
+
+- do not run the whole runtime daemon as root for normal product use
+- put root/capability only on the helper or its service unit
+- the daemon only passes selectors and fixed signal flags to the helper, never an
+  arbitrary eBPF or bpftrace program
 
 Current actuator backend modes:
 

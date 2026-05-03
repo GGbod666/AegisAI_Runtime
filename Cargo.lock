@@ -21,6 +21,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aegisai-ebpf-helper"
+version = "0.1.0"
+dependencies = [
+ "aegisai-runtime-daemon",
+]
+
+[[package]]
 name = "aegisai-explain-tune"
 version = "0.1.0"
 dependencies = [

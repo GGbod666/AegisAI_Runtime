@@ -140,8 +140,9 @@ See `docs/current_status.md` for the current state and beads issue IDs.
 
 1. 先完成 `AegisAI_Runtime-s6f`：有效 live actuator 的 Inference Tail Guard
    收益证明。
-2. 并行或随后完成 `AegisAI_Runtime-4nv`：off-CPU / I/O latency 的真实 eBPF
-   信号补齐。
+2. 并行或随后完成 `AegisAI_Runtime-dym` / `AegisAI_Runtime-jtt`：以
+   rootless main + privileged helper 路线补齐并验证 off-CPU / I/O latency 的
+   真实 eBPF 信号。
 3. 再推进 `AegisAI_Runtime-bx1`：Tool Call Booster repeated A/B benefit proof。
 4. 穿插完成 `AegisAI_Runtime-azv`：actuator 和 runtime 热路径测试加固。
 5. 最后再考虑 AI-aware isolation、explain/tune 自动化和高级扩展。

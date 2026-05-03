@@ -578,11 +578,11 @@ pub struct RealLinuxProbeDriver<P, S> {
     attached_bpftrace: bool,
 }
 
-impl RealLinuxProbeDriver<SystemBpfTracePipe, SystemProcfsSchedstatSampler> {
+impl RealLinuxProbeDriver<SystemEbpfHelperPipe, SystemProcfsSchedstatSampler> {
     pub fn from_runtime(runtime: &RuntimeConfig) -> Self {
         Self::new(
             ProcfsSchedstatProbeDriver::from_runtime(runtime),
-            BpfTraceProbeDriver::from_runtime(runtime),
+            BpfTraceProbeDriver::with_helper_from_runtime(runtime),
         )
     }
 }
@@ -677,7 +677,12 @@ pub trait BpfTracePipe {
 
     fn check_available(&self) -> Result<(), String>;
 
-    fn start(&mut self, program: &str) -> Result<(), SourceError>;
+    fn start(
+        &mut self,
+        selectors: &ProcfsTargetSelectors,
+        include_offcpu: bool,
+        include_io: bool,
+    ) -> Result<(), SourceError>;
 
     fn read_lines(&mut self, max_lines: usize, timeout_ms: u64)
         -> Result<Vec<String>, SourceError>;
@@ -698,6 +703,15 @@ impl BpfTraceProbeDriver<SystemBpfTracePipe> {
         Self::new(
             ProcfsTargetSelectors::from_runtime(runtime),
             SystemBpfTracePipe::default(),
+        )
+    }
+}
+
+impl BpfTraceProbeDriver<SystemEbpfHelperPipe> {
+    pub fn with_helper_from_runtime(runtime: &RuntimeConfig) -> Self {
+        Self::new(
+            ProcfsTargetSelectors::from_runtime(runtime),
+            SystemEbpfHelperPipe::default(),
         )
     }
 }
@@ -805,8 +819,8 @@ where
             return Ok(());
         }
 
-        let program = bpftrace_program(&self.selectors, self.attached_offcpu, self.attached_io);
-        self.pipe.start(&program)?;
+        self.pipe
+            .start(&self.selectors, self.attached_offcpu, self.attached_io)?;
         self.started = true;
         Ok(())
     }
@@ -822,6 +836,133 @@ where
     }
 }
 
+pub struct SystemEbpfHelperPipe {
+    command: String,
+    child: Option<Child>,
+    receiver: Option<Receiver<String>>,
+    reader_threads: Vec<JoinHandle<()>>,
+}
+
+impl Default for SystemEbpfHelperPipe {
+    fn default() -> Self {
+        Self::new(
+            env::var("AEGISAI_EBPF_HELPER").unwrap_or_else(|_| "aegisai-ebpf-helper".to_string()),
+        )
+    }
+}
+
+impl SystemEbpfHelperPipe {
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            child: None,
+            receiver: None,
+            reader_threads: Vec::new(),
+        }
+    }
+}
+
+impl BpfTracePipe for SystemEbpfHelperPipe {
+    fn pipe_name(&self) -> &str {
+        "aegisai-ebpf-helper-client"
+    }
+
+    fn check_available(&self) -> Result<(), String> {
+        if !command_exists(&self.command) {
+            return Err(format!(
+                "`{}` is not available in PATH; install the privileged aegisai eBPF helper or set AEGISAI_EBPF_HELPER",
+                self.command
+            ));
+        }
+
+        let status = Command::new(&self.command)
+            .arg("--check")
+            .status()
+            .map_err(|error| {
+                format!(
+                    "failed to run `{}` --check for privileged eBPF helper readiness: {error}",
+                    self.command
+                )
+            })?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "privileged eBPF helper `{}` is not ready: {status}; install/run it with the narrow eBPF privileges required for offcpu/io probes",
+                self.command
+            ))
+        }
+    }
+
+    fn start(
+        &mut self,
+        selectors: &ProcfsTargetSelectors,
+        include_offcpu: bool,
+        include_io: bool,
+    ) -> Result<(), SourceError> {
+        if self.child.is_some() {
+            return Ok(());
+        }
+
+        let mut child = Command::new(&self.command)
+            .args(ebpf_helper_args(selectors, include_offcpu, include_io))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| {
+                SourceError::Unsupported(format!(
+                    "failed to start privileged eBPF helper `{}`: {error}",
+                    self.command
+                ))
+            })?;
+
+        let stdout = child.stdout.take().ok_or_else(|| {
+            SourceError::Unsupported("failed to capture eBPF helper stdout".to_string())
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            SourceError::Unsupported("failed to capture eBPF helper stderr".to_string())
+        })?;
+        let (sender, receiver) = mpsc::channel();
+        self.reader_threads
+            .push(spawn_pipe_reader(stdout, sender.clone()));
+        self.reader_threads.push(spawn_pipe_reader(stderr, sender));
+        self.receiver = Some(receiver);
+        self.child = Some(child);
+        Ok(())
+    }
+
+    fn read_lines(
+        &mut self,
+        max_lines: usize,
+        timeout_ms: u64,
+    ) -> Result<Vec<String>, SourceError> {
+        read_child_lines(
+            "privileged eBPF helper",
+            self.child.as_mut(),
+            self.receiver.as_ref(),
+            max_lines,
+            timeout_ms,
+        )
+    }
+
+    fn stop(&mut self) -> Result<String, SourceError> {
+        stop_child(
+            "privileged eBPF helper",
+            self.child.take(),
+            &mut self.receiver,
+            &mut self.reader_threads,
+        )
+    }
+}
+
+impl Drop for SystemEbpfHelperPipe {
+    fn drop(&mut self) {
+        let _ = self.stop();
+    }
+}
+
 pub struct SystemBpfTracePipe {
     command: String,
     child: Option<Child>,
@@ -831,8 +972,14 @@ pub struct SystemBpfTracePipe {
 
 impl Default for SystemBpfTracePipe {
     fn default() -> Self {
+        Self::new(env::var("AEGISAI_BPFTRACE").unwrap_or_else(|_| "bpftrace".to_string()))
+    }
+}
+
+impl SystemBpfTracePipe {
+    pub fn new(command: impl Into<String>) -> Self {
         Self {
-            command: env::var("AEGISAI_BPFTRACE").unwrap_or_else(|_| "bpftrace".to_string()),
+            command: command.into(),
             child: None,
             receiver: None,
             reader_threads: Vec::new(),
@@ -857,11 +1004,17 @@ impl BpfTracePipe for SystemBpfTracePipe {
         Ok(())
     }
 
-    fn start(&mut self, program: &str) -> Result<(), SourceError> {
+    fn start(
+        &mut self,
+        selectors: &ProcfsTargetSelectors,
+        include_offcpu: bool,
+        include_io: bool,
+    ) -> Result<(), SourceError> {
         if self.child.is_some() {
             return Ok(());
         }
 
+        let program = bpftrace_program(selectors, include_offcpu, include_io);
         let mut child = Command::new(&self.command)
             .arg("-q")
             .arg("-e")
@@ -897,70 +1050,22 @@ impl BpfTracePipe for SystemBpfTracePipe {
         max_lines: usize,
         timeout_ms: u64,
     ) -> Result<Vec<String>, SourceError> {
-        if max_lines == 0 {
-            return Ok(Vec::new());
-        }
-
-        if let Some(child) = self.child.as_mut() {
-            if let Some(status) = child.try_wait().map_err(|error| {
-                SourceError::Unsupported(format!("failed to check bpftrace status: {error}"))
-            })? {
-                return Err(SourceError::Unsupported(format!(
-                    "bpftrace exited before probe events were available: {status}"
-                )));
-            }
-        }
-
-        let Some(receiver) = self.receiver.as_ref() else {
-            return Err(SourceError::InvalidConfig(
-                "bpftrace pipe must be started before reading events".to_string(),
-            ));
-        };
-
-        let mut lines = Vec::new();
-        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
-        while lines.len() < max_lines {
-            if timeout_ms == 0 || !lines.is_empty() {
-                match receiver.try_recv() {
-                    Ok(line) => lines.push(line),
-                    Err(mpsc::TryRecvError::Empty) => break,
-                    Err(mpsc::TryRecvError::Disconnected) => break,
-                }
-            } else {
-                let now = std::time::Instant::now();
-                if now >= deadline {
-                    break;
-                }
-                match receiver.recv_timeout(deadline.saturating_duration_since(now)) {
-                    Ok(line) => lines.push(line),
-                    Err(mpsc::RecvTimeoutError::Timeout) => break,
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                }
-            }
-        }
-
-        Ok(lines)
+        read_child_lines(
+            "bpftrace",
+            self.child.as_mut(),
+            self.receiver.as_ref(),
+            max_lines,
+            timeout_ms,
+        )
     }
 
     fn stop(&mut self) -> Result<String, SourceError> {
-        let mut stop_reason = "bpftrace eBPF driver stopped without a running child".to_string();
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            match child.wait() {
-                Ok(status) => {
-                    stop_reason = format!("bpftrace eBPF driver stopped with status {status}");
-                }
-                Err(error) => {
-                    stop_reason = format!("bpftrace eBPF driver stop wait failed: {error}");
-                }
-            }
-        }
-
-        self.receiver = None;
-        for thread in self.reader_threads.drain(..) {
-            let _ = thread.join();
-        }
-        Ok(stop_reason)
+        stop_child(
+            "bpftrace eBPF driver",
+            self.child.take(),
+            &mut self.receiver,
+            &mut self.reader_threads,
+        )
     }
 }
 
@@ -1012,8 +1117,13 @@ impl BpfTracePipe for FakeBpfTracePipe {
         self.available.clone()
     }
 
-    fn start(&mut self, program: &str) -> Result<(), SourceError> {
-        self.started_program = Some(program.to_string());
+    fn start(
+        &mut self,
+        selectors: &ProcfsTargetSelectors,
+        include_offcpu: bool,
+        include_io: bool,
+    ) -> Result<(), SourceError> {
+        self.started_program = Some(bpftrace_program(selectors, include_offcpu, include_io));
         Ok(())
     }
 
@@ -1045,6 +1155,84 @@ where
             }
         }
     })
+}
+
+fn read_child_lines(
+    process_name: &str,
+    child: Option<&mut Child>,
+    receiver: Option<&Receiver<String>>,
+    max_lines: usize,
+    timeout_ms: u64,
+) -> Result<Vec<String>, SourceError> {
+    if max_lines == 0 {
+        return Ok(Vec::new());
+    }
+
+    if let Some(child) = child {
+        if let Some(status) = child.try_wait().map_err(|error| {
+            SourceError::Unsupported(format!("failed to check {process_name} status: {error}"))
+        })? {
+            return Err(SourceError::Unsupported(format!(
+                "{process_name} exited before probe events were available: {status}"
+            )));
+        }
+    }
+
+    let Some(receiver) = receiver else {
+        return Err(SourceError::InvalidConfig(format!(
+            "{process_name} pipe must be started before reading events"
+        )));
+    };
+
+    let mut lines = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
+    while lines.len() < max_lines {
+        if timeout_ms == 0 || !lines.is_empty() {
+            match receiver.try_recv() {
+                Ok(line) => lines.push(line),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => break,
+            }
+        } else {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                break;
+            }
+            match receiver.recv_timeout(deadline.saturating_duration_since(now)) {
+                Ok(line) => lines.push(line),
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+    }
+
+    Ok(lines)
+}
+
+fn stop_child(
+    process_name: &str,
+    child: Option<Child>,
+    receiver: &mut Option<Receiver<String>>,
+    reader_threads: &mut Vec<JoinHandle<()>>,
+) -> Result<String, SourceError> {
+    let mut stop_reason = format!("{process_name} stopped without a running child");
+    if let Some(mut child) = child {
+        let _ = child.kill();
+        match child.wait() {
+            Ok(status) => {
+                stop_reason = format!("{process_name} stopped with status {status}");
+            }
+            Err(error) => {
+                stop_reason = format!("{process_name} stop wait failed: {error}");
+            }
+        }
+    }
+
+    *receiver = None;
+    for thread in reader_threads.drain(..) {
+        let _ = thread.join();
+    }
+    Ok(stop_reason)
 }
 
 fn parse_bpftrace_probe_line(raw: &str) -> Result<Option<ProbeEvent>, SourceError> {
@@ -1107,6 +1295,33 @@ fn parse_bpftrace_u32(fields: &BTreeMap<&str, &str>, name: &str) -> Result<u32, 
     required_bpftrace_field(fields, name)?
         .parse::<u32>()
         .map_err(|_| SourceError::InvalidConfig(format!("invalid bpftrace `{name}` value")))
+}
+
+pub fn ebpf_helper_args(
+    selectors: &ProcfsTargetSelectors,
+    include_offcpu: bool,
+    include_io: bool,
+) -> Vec<String> {
+    let mut args = vec!["stream".to_string()];
+
+    if include_offcpu {
+        args.push("--offcpu".to_string());
+    }
+    if include_io {
+        args.push("--io".to_string());
+    }
+
+    for pid in &selectors.pid_allowlist {
+        args.push("--pid".to_string());
+        args.push(pid.to_string());
+    }
+
+    for process_name in &selectors.process_names {
+        args.push("--process-name".to_string());
+        args.push(process_name.clone());
+    }
+
+    args
 }
 
 fn bpftrace_program(
@@ -2947,6 +3162,26 @@ mod tests {
         assert!(program.contains("pid == 42"));
         assert!(program.contains("args->prev_pid == 42"));
         assert!(program.contains("comm == \"ollama\""));
+    }
+
+    #[test]
+    fn ebpf_helper_args_are_limited_to_selectors_and_signal_flags() {
+        let selectors = ProcfsTargetSelectors::new(["ollama"], [42].into_iter().collect());
+        let args = super::ebpf_helper_args(&selectors, true, true);
+
+        assert_eq!(
+            args,
+            vec![
+                "stream".to_string(),
+                "--offcpu".to_string(),
+                "--io".to_string(),
+                "--pid".to_string(),
+                "42".to_string(),
+                "--process-name".to_string(),
+                "ollama".to_string(),
+            ]
+        );
+        assert!(!args.iter().any(|arg| arg.contains("tracepoint:")));
     }
 
     #[test]

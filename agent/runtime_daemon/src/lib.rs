@@ -18,6 +18,7 @@ pub use source::{
     PreflightLinuxProbeDriver, ProbeAttachment, ProbeAttachmentStatus, ProbeEventReader,
     ProbeReaderConfig, ProbeReaderShutdown, ProbeReaderStartup, ProcfsSchedstatProbeDriver,
     ProcfsSchedstatSampler, ProcfsSchedstatSnapshot, ProcfsTargetSelectors, RealLinuxProbeDriver,
-    SourceError, SourceEvent, StaticProbeEventReader, SystemBpfTracePipe, SystemLinuxProbeHost,
-    SystemProcfsSchedstatSampler, UnavailableLinuxProbeDriver, UnsupportedProbeEventReader,
+    SourceError, SourceEvent, StaticProbeEventReader, SystemBpfTracePipe, SystemEbpfHelperPipe,
+    SystemLinuxProbeHost, SystemProcfsSchedstatSampler, UnavailableLinuxProbeDriver,
+    UnsupportedProbeEventReader,
 };

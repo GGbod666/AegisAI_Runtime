@@ -64,7 +64,9 @@ MVP 要证明两件事：
 
 本阶段只打通最小闭环：
 
-1. procfs fallback 先输出 `run_queue_delay`、`cpu_migration`、`major_page_fault` 可解释指标；`offcpu_time` 后续由 eBPF 补齐
+1. procfs fallback 输出 `run_queue_delay`、`cpu_migration`、`major_page_fault`
+   可解释指标；`offcpu_time` / `io_latency` 由窄权限
+   `aegisai-ebpf-helper` 补齐，主 daemon 不以 root 运行
 2. collector 聚合窗口内指标
 3. classifier 用规则识别 AI inference 目标
 4. `inference_tail_guard` 根据阈值决定是否 boost
@@ -122,7 +124,8 @@ MVP 要证明两件事：
 剩余收益 DoD：
 
 - `AegisAI_Runtime-s6f` 关闭：有效 live Inference Tail Guard actuator benefit 被证明
-- `AegisAI_Runtime-4nv` 关闭：真实 eBPF off-CPU / I/O latency 信号进入 runtime loop
+- `AegisAI_Runtime-dym` / `AegisAI_Runtime-jtt` 关闭：真实 eBPF off-CPU /
+  I/O latency 信号通过 privileged helper 进入 rootless runtime loop 并完成受控验证
 - `AegisAI_Runtime-bx1` 关闭：Tool Call Booster 有 repeated A/B benefit proof
 
 ## 8. 建议先锁的技术选择

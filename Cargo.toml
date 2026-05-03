@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "agent/actuator",
+    "agent/ebpf_helper",
     "agent/git_control",
     "agent/runtime_orchestrator",
     "agent/runtime_daemon",

@@ -34,7 +34,7 @@
 
 职责：
 
-- 用 eBPF 低开销采集关键系统干扰信号
+- 用窄权限 eBPF helper 低开销采集关键系统干扰信号
 - 输出统一事件流
 - 尽量限制在目标进程 / cgroup 范围内
 
@@ -119,22 +119,25 @@
 ```mermaid
 flowchart TD
     A["Kernel Events"] --> B["eBPF Probes"]
-    B --> C["Collector"]
-    C --> D["AI Workload Awareness"]
-    D --> E["Scenario Policy"]
-    E --> F["Actuator"]
-    F --> G["Metrics Recorder"]
-    G --> H["Explain / Tune"]
+    B --> C["Privileged eBPF Helper"]
+    C --> D["Rootless Runtime Daemon"]
+    D --> E["Collector"]
+    E --> F["AI Workload Awareness"]
+    F --> G["Scenario Policy"]
+    G --> H["Actuator"]
+    H --> I["Metrics Recorder"]
+    I --> J["Explain / Tune"]
 ```
 
 闭环如下：
 
-1. eBPF probes 捕捉关键系统事件
-2. collector 聚合窗口内特征
-3. classifier 输出 workload label
-4. 场景策略消费 label 和 feature
-5. actuator 执行带回退边界的动作
-6. metrics 评估收益与副作用
+1. privileged helper 以固定 probe 集合捕捉关键系统事件
+2. rootless runtime daemon 消费 helper 输出的标准事件流
+3. collector 聚合窗口内特征
+4. classifier 输出 workload label
+5. 场景策略消费 label 和 feature
+6. actuator 执行带回退边界的动作
+7. metrics 评估收益与副作用
 
 ## 7. 仓库映射
 
@@ -145,6 +148,9 @@ flowchart TD
 ### `agent/`
 
 控制闭环与核心逻辑入口。
+
+`agent/ebpf_helper` 是唯一允许拥有 root 或 eBPF capability 的观测侧辅助组件。
+主 daemon 不应以 root 运行，也不应向 helper 传入任意 eBPF/bpftrace 程序。
 
 ### `scenarios/`
 
@@ -165,5 +171,11 @@ flowchart TD
 - Linux kernel 5.15+
 - cgroup v2
 - 支持 eBPF 的运行环境
+
+默认部署边界：
+
+- `aegisai-runtime-daemon`：普通用户运行
+- `aegisai-ebpf-helper`：管理员安装/授权，最小化 root 或 eBPF capability
+- 无 helper 或权限不足时：保持 rootless 控制面，降级到 procfs/PSI 等普通权限观测
 
 Windows 或 macOS 适合做文档整理和控制面准备，但 probe 验证和 benchmark 需要在 Linux 主机或 Linux VM 中完成。

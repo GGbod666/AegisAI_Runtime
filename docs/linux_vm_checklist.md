@@ -44,12 +44,15 @@ Confirm:
 
 ## 3. eBPF And Capability Checks
 
-The current runtime is still probe-reader skeleton code, but the VM should be prepared now:
+The main runtime daemon should remain rootless. Prepare the VM for the narrow
+privileged helper instead:
 
 ```bash
 sysctl kernel.unprivileged_bpf_disabled || true
 bpftool version || true
 which bpftool || true
+which aegisai-ebpf-helper || true
+aegisai-ebpf-helper --check || true
 which bpftrace || true
 which clang || true
 which llc || true
@@ -117,7 +120,7 @@ Confirm:
 
 ## 6. Linux Source Skeleton Check
 
-Before real probe wiring, validate the current Linux source path and probe planning:
+Validate the rootless Linux source path and probe planning:
 
 ```bash
 cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata procfs --actuator-backend linux-skeleton
@@ -125,9 +128,10 @@ cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata p
 
 Expected current result:
 
-- the process either attaches the real `bpftrace` off-CPU / I/O probes as root,
-  exits with a clear probe failure, or continues with procfs-backed signals if
-  partial probes are allowed
+- the main daemon runs as a normal user
+- it either connects to `aegisai-ebpf-helper` for real off-CPU / I/O probes,
+  exits with a clear helper/probe failure, or continues with procfs-backed
+  signals if partial probes are allowed
 - the output reflects planned probes and runtime-only signals
 - preflight should validate tracefs, tracepoint availability, and kprobe symbol visibility
 
@@ -152,10 +156,11 @@ Focus on:
 
 When the Linux VM is ready, implement and validate in this order:
 
-1. real `LinuxProbeDriver` attach / poll / stop lifecycle
-2. real `LinuxSyscallApplier` plus Linux state capture / restore
-3. `runtime_daemon --source linux --metadata procfs --actuator-backend linux-skeleton`
-4. first `Inference Tail Guard` live demo
+1. `aegisai-ebpf-helper` privileged install / readiness check
+2. rootless daemon -> helper attach / poll / stop lifecycle
+3. real `LinuxSyscallApplier` plus Linux state capture / restore
+4. `runtime_daemon --source linux --metadata procfs --actuator-backend linux-skeleton`
+5. first `Inference Tail Guard` live demo
 
 ## 9. Benchmark Entry Conditions
 

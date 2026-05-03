@@ -23,3 +23,5 @@
 - 目标进程 / cgroup 范围内观测
 - 输出统一事件结构
 - 控制观测开销
+- 主控制面保持普通权限运行
+- root 或 eBPF capability 只允许落在 `aegisai-ebpf-helper` 这类窄权限组件上
