@@ -11167,3 +11167,99 @@ noop,PASS,tc-real-001-noop,64,15,3,15,4,"background:16,executor:20,rerank:12,ret
 dry_run,PASS,tc-real-001-dry_run,64,20,3,20,4,"background:17,executor:16,rerank:14,retrieval:17"
 ```
 - Executor stdout files: `executor.noop.stdout`, `executor.dry_run.stdout`
+
+### 2026-05-03T03:40:42+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z`
+- Report path: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Run ID: `phase2r4_short16_20260502T070201Z`
+- Reuse existing artifacts: `1`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds and live_guarded records effective host-level actuator changes.
+
+#### Phase 4 reused round: CPU interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu/round_1`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU interference / 2
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu/round_2`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU interference / 3
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu/round_3`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU + optional I/O interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu_io/round_1`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU + optional I/O interference / 2
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu_io/round_2`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU + optional I/O interference / 3
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu_io/round_3`
+- Reused existing summary: `yes`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/phase4_runs.csv`
+- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/phase4_aggregate.csv`
+- Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Harness aggregate exit status: `0`
+- Benefit verdict: `FAIL`
+
+### 2026-05-03T03:42:43+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z`
+- Report path: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Run ID: `phase2r4_short16_20260502T070201Z`
+- Reuse existing artifacts: `1`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds and live_guarded records effective host-level actuator changes.
+
+#### Phase 4 reused round: CPU interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu/round_1`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU interference / 2
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu/round_2`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU interference / 3
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu/round_3`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU + optional I/O interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu_io/round_1`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU + optional I/O interference / 2
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu_io/round_2`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU + optional I/O interference / 3
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/cpu_io/round_3`
+- Reused existing summary: `yes`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/phase4_runs.csv`
+- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/phase2r4_short16_20260502T070201Z/phase4_aggregate.csv`
+- Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Harness aggregate exit status: `0`
+- Benefit verdict: `FAIL`

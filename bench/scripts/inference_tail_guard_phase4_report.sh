@@ -20,6 +20,7 @@ IO_WORKERS="${AEGISAI_PHASE4_IO:-1}"
 HDD_WORKERS="${AEGISAI_PHASE4_HDD:-1}"
 HDD_BYTES="${AEGISAI_PHASE4_HDD_BYTES:-128M}"
 MODE_COOLDOWN="${AEGISAI_PHASE4_COOLDOWN:-2}"
+REUSE_ARTIFACTS="${AEGISAI_PHASE4_REUSE_ARTIFACTS:-0}"
 
 DETAIL_CSV="${ARTIFACT_DIR}/phase4_runs.csv"
 AGGREGATE_CSV="${ARTIFACT_DIR}/phase4_aggregate.csv"
@@ -86,6 +87,114 @@ scenario_hdd() {
   esac
 }
 
+append_round_detail() {
+  local scenario="$1"
+  local label="$2"
+  local round="$3"
+  local run_status="$4"
+  local run_dir="$5"
+
+  if [[ ! -s "${run_dir}/summary.csv" ]]; then
+    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+      "${scenario}" "${label}" "${round}" "${run_status}" "missing" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "0" "0" "${run_dir}" \
+      >>"${DETAIL_CSV}"
+    return 0
+  fi
+
+  python3 - "${scenario}" "${label}" "${round}" "${run_status}" "${run_dir}" "${run_dir}/summary.csv" "${run_dir}/mode_counts.csv" >>"${DETAIL_CSV}" <<'PY'
+import csv
+import os
+import re
+import sys
+
+scenario, label, round_id, harness_status, run_dir, summary_path, counts_path = sys.argv[1:8]
+
+counts = {}
+try:
+    with open(counts_path, newline="", encoding="utf-8") as handle:
+        counts = {row["mode"]: row for row in csv.DictReader(handle)}
+except FileNotFoundError:
+    counts = {}
+
+def mode_status(mode, row):
+    count = counts.get(mode, {})
+    try:
+        samples_ok = int(row["samples_ok"])
+        samples_total = int(row["samples_total"])
+        trigger_count = int(row["trigger_count"])
+        rollback_count = int(row["rollback_count"])
+        action_errors = int(count.get("action_error_count", "0") or 0)
+        daemon_status = int(count.get("daemon_status", "0") or 0)
+        stress_exhausted = int(count.get("stress_exhausted", "0") or 0)
+    except ValueError:
+        return "1"
+
+    if samples_ok != samples_total or stress_exhausted != 0:
+        return "1"
+    if mode == "baseline":
+        return "0"
+    if daemon_status != 0 or trigger_count <= 0 or rollback_count <= 0 or action_errors != 0:
+        return "1"
+    return "0"
+
+def live_effective_action_counts(mode):
+    if mode != "live_guarded":
+        return "0", "0"
+
+    daemon_path = os.path.join(run_dir, mode, "daemon.log")
+    try:
+        with open(daemon_path, encoding="utf-8") as handle:
+            text = handle.read()
+    except FileNotFoundError:
+        return "0", "0"
+
+    priority_limited = text.count("priority_raise_limited=true")
+    effective_renice = 0
+    renice_pattern = re.compile(
+        r"command=renice\s+-?\d+\s+-p\s+\d+;output=[^;\n]*old priority\s+(-?\d+),\s+new priority\s+(-?\d+)"
+    )
+    for old_priority, new_priority in renice_pattern.findall(text):
+        if old_priority != new_priority:
+            effective_renice += 1
+
+    taskset_commands = len(re.findall(r"command=taskset\s+-pc\b", text))
+    return str(effective_renice + taskset_commands), str(priority_limited)
+
+with open(summary_path, newline="", encoding="utf-8") as handle:
+    reader = csv.DictReader(handle)
+    for row in reader:
+        status = mode_status(row["mode"], row)
+        count = counts.get(row["mode"], {})
+        live_effective_actions, live_priority_limited = live_effective_action_counts(row["mode"])
+        print(",".join([
+            scenario,
+            label,
+            round_id,
+            status,
+            row["mode"],
+            row["backend"],
+            row["samples_ok"],
+            row["samples_total"],
+            row["ttft_p95_ms"],
+            row["ttft_p99_ms"],
+            row["latency_p95_ms"],
+            row["latency_p99_ms"],
+            row["jitter_ms"],
+            row["trigger_count"],
+            row["rollback_count"],
+            count.get("action_error_count", "0"),
+            row.get("cpu_migration_total", count.get("cpu_migration_total", "0")),
+            row.get("cpu_migrations_per_sec_max", count.get("cpu_migrations_per_sec_max", "0")),
+            row.get("major_page_fault_total", count.get("major_page_fault_total", "0")),
+            row.get("major_page_faults_per_sec_max", count.get("major_page_faults_per_sec_max", "0")),
+            row.get("offcpu_time_events", count.get("offcpu_time_events", "0")),
+            live_effective_actions,
+            live_priority_limited,
+            run_dir,
+        ]))
+PY
+}
+
 run_one_round() {
   local scenario="$1"
   local round="$2"
@@ -129,79 +238,30 @@ run_one_round() {
   append_log "- Harness stdout: \`${run_dir}/harness.stdout\`"
   append_log "- Harness stderr: \`${run_dir}/harness.stderr\`"
 
+  append_round_detail "${scenario}" "${label}" "${round}" "${run_status}" "${run_dir}"
+  sleep "${MODE_COOLDOWN}"
+  return "${run_status}"
+}
+
+collect_one_round() {
+  local scenario="$1"
+  local round="$2"
+  local label run_dir run_status
+
+  label="$(scenario_label "${scenario}")"
+  run_dir="${ARTIFACT_DIR}/${scenario}/round_${round}"
+  run_status=0
   if [[ ! -s "${run_dir}/summary.csv" ]]; then
-    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-      "${scenario}" "${label}" "${round}" "${run_status}" "missing" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "${run_dir}" \
-      >>"${DETAIL_CSV}"
-    return "${run_status}"
+    run_status=1
   fi
 
-  python3 - "${scenario}" "${label}" "${round}" "${run_status}" "${run_dir}" "${run_dir}/summary.csv" "${run_dir}/mode_counts.csv" >>"${DETAIL_CSV}" <<'PY'
-import csv
-import sys
+  append_log ""
+  append_log "#### Phase 4 reused round: ${label} / ${round}"
+  append_log ""
+  append_log "- Artifact directory: \`${run_dir}\`"
+  append_log "- Reused existing summary: \`$(if [[ "${run_status}" -eq 0 ]]; then printf 'yes'; else printf 'missing'; fi)\`"
 
-scenario, label, round_id, harness_status, run_dir, summary_path, counts_path = sys.argv[1:8]
-
-counts = {}
-try:
-    with open(counts_path, newline="", encoding="utf-8") as handle:
-        counts = {row["mode"]: row for row in csv.DictReader(handle)}
-except FileNotFoundError:
-    counts = {}
-
-def mode_status(mode, row):
-    count = counts.get(mode, {})
-    try:
-        samples_ok = int(row["samples_ok"])
-        samples_total = int(row["samples_total"])
-        trigger_count = int(row["trigger_count"])
-        rollback_count = int(row["rollback_count"])
-        action_errors = int(count.get("action_error_count", "0") or 0)
-        daemon_status = int(count.get("daemon_status", "0") or 0)
-        stress_exhausted = int(count.get("stress_exhausted", "0") or 0)
-    except ValueError:
-        return "1"
-
-    if samples_ok != samples_total or stress_exhausted != 0:
-        return "1"
-    if mode == "baseline":
-        return "0"
-    if daemon_status != 0 or trigger_count <= 0 or rollback_count <= 0 or action_errors != 0:
-        return "1"
-    return "0"
-
-with open(summary_path, newline="", encoding="utf-8") as handle:
-    reader = csv.DictReader(handle)
-    for row in reader:
-        status = mode_status(row["mode"], row)
-        count = counts.get(row["mode"], {})
-        print(",".join([
-            scenario,
-            label,
-            round_id,
-            status,
-            row["mode"],
-            row["backend"],
-            row["samples_ok"],
-            row["samples_total"],
-            row["ttft_p95_ms"],
-            row["ttft_p99_ms"],
-            row["latency_p95_ms"],
-            row["latency_p99_ms"],
-            row["jitter_ms"],
-            row["trigger_count"],
-            row["rollback_count"],
-            count.get("action_error_count", "0"),
-            row.get("cpu_migration_total", count.get("cpu_migration_total", "0")),
-            row.get("cpu_migrations_per_sec_max", count.get("cpu_migrations_per_sec_max", "0")),
-            row.get("major_page_fault_total", count.get("major_page_fault_total", "0")),
-            row.get("major_page_faults_per_sec_max", count.get("major_page_faults_per_sec_max", "0")),
-            row.get("offcpu_time_events", count.get("offcpu_time_events", "0")),
-            run_dir,
-        ]))
-PY
-
-  sleep "${MODE_COOLDOWN}"
+  append_round_detail "${scenario}" "${label}" "${round}" "${run_status}" "${run_dir}"
   return "${run_status}"
 }
 
@@ -217,6 +277,10 @@ if ! is_positive_uint "${CONCURRENCY}"; then
   printf 'AEGISAI_AB_CONCURRENCY must be a positive integer.\n' >&2
   exit 1
 fi
+if [[ "${REUSE_ARTIFACTS}" != "0" && "${REUSE_ARTIFACTS}" != "1" ]]; then
+  printf 'AEGISAI_PHASE4_REUSE_ARTIFACTS must be 0 or 1.\n' >&2
+  exit 1
+fi
 
 timestamp="$(date -Iseconds)"
 
@@ -228,14 +292,19 @@ append_log "- Working directory: \`${REPO_ROOT}\`"
 append_log "- Artifact directory: \`${ARTIFACT_DIR}\`"
 append_log "- Report path: \`${REPORT_MD}\`"
 append_log "- Run ID: \`${RUN_ID}\`"
-append_log "- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds."
+append_log "- Reuse existing artifacts: \`${REUSE_ARTIFACTS}\`"
+append_log "- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds and live_guarded records effective host-level actuator changes."
 
-printf 'scenario,scenario_label,round,run_status,mode,backend,samples_ok,samples_total,ttft_p95_ms,ttft_p99_ms,latency_p95_ms,latency_p99_ms,jitter_ms,trigger_count,rollback_count,action_error_count,cpu_migration_total,cpu_migrations_per_sec_max,major_page_fault_total,major_page_faults_per_sec_max,offcpu_time_events,artifact_dir\n' >"${DETAIL_CSV}"
+printf 'scenario,scenario_label,round,run_status,mode,backend,samples_ok,samples_total,ttft_p95_ms,ttft_p99_ms,latency_p95_ms,latency_p99_ms,jitter_ms,trigger_count,rollback_count,action_error_count,cpu_migration_total,cpu_migrations_per_sec_max,major_page_fault_total,major_page_faults_per_sec_max,offcpu_time_events,live_effective_action_count,live_priority_limited_count,artifact_dir\n' >"${DETAIL_CSV}"
 
 overall_status=0
 for scenario in ${SCENARIOS//,/ }; do
   for ((round = 1; round <= ROUNDS; round += 1)); do
-    if ! run_one_round "${scenario}" "${round}"; then
+    if [[ "${REUSE_ARTIFACTS}" == "1" ]]; then
+      if ! collect_one_round "${scenario}" "${round}"; then
+        overall_status=1
+      fi
+    elif ! run_one_round "${scenario}" "${round}"; then
       overall_status=1
     fi
   done
@@ -307,6 +376,8 @@ for (scenario, mode), mode_rows in sorted(by_key.items()):
         "major_page_fault_total": str(sum(int(row["major_page_fault_total"] or 0) for row in mode_rows)),
         "major_page_faults_per_sec_max": str(max(int(row["major_page_faults_per_sec_max"] or 0) for row in mode_rows)),
         "offcpu_time_events_total": str(sum(int(row["offcpu_time_events"] or 0) for row in mode_rows)),
+        "live_effective_action_count_total": str(sum(int(row["live_effective_action_count"] or 0) for row in mode_rows)),
+        "live_priority_limited_count_total": str(sum(int(row["live_priority_limited_count"] or 0) for row in mode_rows)),
     }
     for metric, _label in METRICS:
         values = [parse_float(row[metric]) for row in mode_rows]
@@ -357,6 +428,8 @@ fieldnames = [
     "major_page_fault_total",
     "major_page_faults_per_sec_max",
     "offcpu_time_events_total",
+    "live_effective_action_count_total",
+    "live_priority_limited_count_total",
 ]
 
 with open(aggregate_path, "w", newline="", encoding="utf-8") as handle:
@@ -402,9 +475,24 @@ for scenario in sorted(scenario_labels):
                 if mode == "live_guarded":
                     live_stable_improvements.append((scenario_labels[scenario], mode, label, wins, comparisons, mean_delta))
 
-if live_stable_improvements:
+live_effective_action_count = sum(
+    int(row["live_effective_action_count"] or 0)
+    for row in rows
+    if row["mode"] == "live_guarded" and row["run_status"] == "0"
+)
+live_priority_limited_count = sum(
+    int(row["live_priority_limited_count"] or 0)
+    for row in rows
+    if row["mode"] == "live_guarded" and row["run_status"] == "0"
+)
+live_host_effective = live_effective_action_count > 0
+
+if live_stable_improvements and live_host_effective:
     mvp_result = "PASS"
-    verdict = "MVP benefit observed: live_guarded shows a stable improvement trend vs baseline."
+    verdict = "MVP benefit observed: live_guarded shows a stable improvement trend with effective host-level actuator changes."
+elif live_stable_improvements:
+    mvp_result = "FAIL"
+    verdict = "MVP benefit not proven: live_guarded trend was observed, but live actuator changes were priority-limited or no-op."
 else:
     mvp_result = "FAIL"
     verdict = "MVP benefit not proven: no live guarded mode met the stable improvement threshold."
@@ -425,6 +513,8 @@ detail_headers = [
     "action errors",
     "cpu mig total",
     "maj fault total",
+    "live effective actions",
+    "live priority-limited",
 ]
 detail_lines = [
     "| " + " | ".join(detail_headers) + " |",
@@ -447,6 +537,8 @@ for row in rows:
         row["action_error_count"],
         row["cpu_migration_total"],
         row["major_page_fault_total"],
+        row["live_effective_action_count"],
+        row["live_priority_limited_count"],
     ]) + " |")
 
 agg_headers = [
@@ -466,6 +558,8 @@ agg_headers = [
     "lat P95 delta %",
     "lat P99 delta %",
     "jitter delta %",
+    "live effective actions",
+    "live priority-limited",
 ]
 agg_lines = [
     "| " + " | ".join(agg_headers) + " |",
@@ -489,6 +583,8 @@ for row in aggregate_rows:
         row["latency_p95_ms_delta_vs_baseline_pct"],
         row["latency_p99_ms_delta_vs_baseline_pct"],
         row["jitter_ms_delta_vs_baseline_pct"],
+        row["live_effective_action_count_total"],
+        row["live_priority_limited_count_total"],
     ]) + " |")
 
 stable_lines = []
@@ -499,6 +595,8 @@ else:
     stable_lines.append("- No metric crossed the stable trend rule: at least two thirds of comparable rounds improved and mean improvement was at least 5%.")
 if stable_improvements and not live_stable_improvements:
     stable_lines.append("- Apparent improvements were limited to observation or dry-run modes, so they are treated as non-proof for MVP benefit.")
+if live_stable_improvements and not live_host_effective:
+    stable_lines.append("- Live guarded trend is treated as non-proof because no effective live actuator changes were observed.")
 
 failure_lines = []
 for row in rows:
@@ -518,6 +616,8 @@ for row in rows:
     failure_lines.append(f'- {row["scenario_label"]} round {row["round"]}: {", ".join(reasons)}.')
 if not failure_lines:
     failure_lines.append("- No live guarded mode contract failures were recorded.")
+if not live_host_effective:
+    failure_lines.append(f"- Live guarded recorded no effective host-level actuator changes; priority-limited no-op nice applications: {live_priority_limited_count}.")
 
 content = [
     "# MVP Benefit Report",

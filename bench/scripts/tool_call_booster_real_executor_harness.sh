@@ -361,7 +361,7 @@ fi
 
 copy_config
 write_run_env
-printf 'mode,contract,tool_call_id,processed_events,applied_actions,tick_rollbacks,tool_call_booster_triggers,executor_roles,stages\n' >"${SUMMARY_CSV}"
+printf 'mode,contract,tool_call_id,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages\n' >"${SUMMARY_CSV}"
 build_daemon
 if [[ "${overall_status}" -ne 0 ]]; then
   append

@@ -10,7 +10,7 @@
 - `inference_tail_guard_ollama_smoke.sh`：运行正式 `ollama` A/B harness。默认安全三档是 `baseline`、`noop_observation`、`dry_run`；每档固定同一模型、prompt、并发和 CPU 干扰强度，输出 TTFT、P95/P99、jitter、trigger count、rollback count、`cpu_migration` 与 `major_page_fault` 观测统计，并把原始样本和汇总追加到 `docs/verification_log.md`。
 - 该 harness 同时会写出 2R-0 验收基线：`acceptance_baseline.env`、`cpu_topology.txt`、`permission_state.txt` 和 `mode_contract.csv`，用于锁定模型/prompt/并发/干扰/样本数/CPU 拓扑/权限状态，并把 `noop_observation`、`dry_run`、`live_guarded` nice-only 分档验收。
 - `inference_tail_guard_phase2r2_actuator_quality.sh`：阶段 2R-2 actuator 质量收敛入口。它先跑至少 3 轮 `live_guarded` nice-only，要求无 action audit error、记录 lease、记录 rollback、cpuset 禁用；通过后才跑一轮 affinity。
-- `inference_tail_guard_phase4_report.sh`：阶段 4 多轮收益报告入口。它会循环跑 CPU 干扰和可选 CPU+I/O 扰动矩阵，汇总每轮 `summary.csv`，输出 `docs/mvp_benefit_report.md` 和 `.cache/aegisai/inference_tail_guard_phase4/<run_id>/` 下的对照 CSV。
+- `inference_tail_guard_phase4_report.sh`：阶段 4 多轮收益报告入口。它会循环跑 CPU 干扰和可选 CPU+I/O 扰动矩阵，汇总每轮 `summary.csv`，输出 `docs/mvp_benefit_report.md` 和 `.cache/aegisai/inference_tail_guard_phase4/<run_id>/` 下的对照 CSV。设置 `AEGISAI_PHASE4_REUSE_ARTIFACTS=1` 可复用已有 run 的 artifacts 重新生成报告，不重跑 Ollama 或压力负载。
 - `tool_call_booster_real_executor_harness.sh`：阶段 2R-5 Tool Call Booster 入口。它启动真实本地 tool executor / retrieval / rerank / background 进程树，再用 runtime daemon `linux` + `procfs` source 验证 `tool_call_lifecycles`、`tool_call_booster` 触发和 noop/dry-run 可回滚链路。
 
 ## Tool Call Booster real executor harness
@@ -111,7 +111,7 @@ AEGISAI_PHASE4_SCENARIOS=cpu,cpu_io \
   bash bench/scripts/inference_tail_guard_phase4_report.sh
 ```
 
-阶段 4 判定更严格：只有当 `live_guarded` 档在至少三分之二可比较轮次里改善，且平均改善不低于 5%，并且指标属于 TTFT P95/P99、latency P95/P99 或 jitter，报告才会给出 `PASS`。`noop_observation` 和 `dry_run` 能证明闭环触发与回滚，但不会单独证明真实主机收益；若 live `renice` 被权限拒绝，需要在报告中标为收益未证明。
+阶段 4 判定更严格：只有当 `live_guarded` 档在至少三分之二可比较轮次里改善，平均改善不低于 5%，指标属于 TTFT P95/P99、latency P95/P99 或 jitter，并且 live daemon 审计显示至少一次有效主机级 actuator 变化时，报告才会给出 `PASS`。`noop_observation` 和 `dry_run` 能证明闭环触发与回滚，但不会单独证明真实主机收益；若 live `renice` 被权限限制为 no-op，报告必须标为收益未证明。
 
 结果文件：
 
@@ -137,6 +137,7 @@ AEGISAI_PHASE4_SCENARIOS=cpu,cpu_io \
 - 2R-0 中 `noop_observation` 只看策略识别和 rollback 生命周期，`dry_run` 额外看 action audit，`live_guarded` 只看 nice-only 真实执行/回滚；这些结论以 `mode_contract.csv` 分开记录。
 - 2R-2 中 `live_guarded` 额外检查 `actuator_quality_contract`：apply audit 要暴露原始状态与 `lease.*` 字段，rollback audit 要暴露恢复结果，cpuset 必须继续禁用。affinity 只有在 nice-only 连续 3 轮干净后才启用。
 - `live_guarded` 会实际执行并回滚系统命令，运行前要确认主机权限、PID allowlist 和实验窗口；2R-0 保持 `AEGISAI_ENABLE_LIVE_AFFINITY=0`，cpuset 继续禁用。
+- Phase 4 的 `live_effective_action_count` 来自 live daemon 审计：`renice` 的 old/new priority 真的变化，或 affinity 模式下记录了 `taskset -pc` 命令，才计为有效 actuator 变化。
 - 常见失败原因是 `ollama` 不在 PATH、`ollama serve` 未启动、`AEGISAI_OLLAMA_API_URL` 不可达，或者目标模型尚未在本机准备好。
 
 推荐顺序：
