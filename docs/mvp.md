@@ -1,5 +1,22 @@
 ﻿# MVP 说明
 
+_Updated: 2026-05-03_
+
+## 当前审查结论
+
+当前仓库已经具备最小可运行 AI-aware 控制闭环，并通过 workspace 验证。
+但 MVP 收益尚未被证明：最新 `docs/mvp_benefit_report.md` 记录了
+`live_guarded` 趋势信号，同时也记录了 live actuator change 为无效或 no-op，
+因此报告正确给出 `FAIL`。
+
+后续 MVP 判断必须继续保持这条硬规则：
+
+- `noop_observation` 和 `dry_run` 只能证明识别、触发、审计和 rollback 闭环。
+- 只有 effective live host-level actuator change 加重复 A/B 收益趋势，才能证明
+  MVP 性能收益。
+
+当前状态和待办索引见 `docs/current_status.md`。
+
 ## 1. MVP 重新定义
 
 当前 MVP 不再只是“做一个尾延迟插件”，而是“建立最小可运行的 AI-aware 优化闭环”。
@@ -77,7 +94,7 @@ MVP 要证明两件事：
 
 ## 6. 成功标准
 
-至少看到以下趋势中的多数成立：
+收益型 MVP 至少要在 repeated A/B 中看到以下趋势中的多数成立：
 
 - P99 latency 下降 20% 到 40%
 - TTFT 更稳定
@@ -86,15 +103,27 @@ MVP 要证明两件事：
 
 平均吞吐不是第一指标。只要尾延迟和稳定性显著提升，MVP 就成立。
 
+同时必须满足：
+
+- `live_guarded` 发生至少一次 effective host-level actuator change
+- apply/rollback 没有 action audit error
+- benefit report 明确区分 baseline、noop、dry-run 和 live guarded 证据
+
 ## 7. DoD
 
-满足以下条件即可认为当前骨架进入可开发状态：
+基础闭环 DoD 已经基本满足：
 
 - AI workload awareness 有独立目录与配置入口
 - inference tail guard 有独立策略与 benchmark 入口
 - 模块边界清晰
 - benchmark 方案明确
 - 配置入口明确
+
+剩余收益 DoD：
+
+- `AegisAI_Runtime-s6f` 关闭：有效 live Inference Tail Guard actuator benefit 被证明
+- `AegisAI_Runtime-4nv` 关闭：真实 eBPF off-CPU / I/O latency 信号进入 runtime loop
+- `AegisAI_Runtime-bx1` 关闭：Tool Call Booster 有 repeated A/B benefit proof
 
 ## 8. 建议先锁的技术选择
 

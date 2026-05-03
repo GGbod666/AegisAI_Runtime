@@ -1,170 +1,160 @@
 # Handoff
 
+_Updated: 2026-05-03_
+
 ## Current State
 
-As of `2026-04-30`, the project is no longer at the pre-Ollama gate.
+The repository is in an evidence-hardening phase.
 
-The current Linux-side baseline is:
+The runnable control-loop mainline is wired:
 
-- the shared runtime mainline is wired:
-  `collector -> classifier -> policy_engine -> actuator -> metrics`
-- `runtime_daemon` runs with:
-  - `mock` source for deterministic local validation
-  - `linux` source backed by the procfs schedstat driver for real `run_queue_delay` observation
-  - `procfs` metadata enrichment for process name, cmdline, cgroup, and parent fields
-- `inference_tail_guard` has been observed on a real `ollama` request using the local `qwen2.5:0.5b` model, and the latest `noop` smoke passed with live runtime events plus real triggers
-- the bench layer now has:
-  - pre-Ollama readiness gate
-  - first real `ollama` smoke harness
-  - append-only verification logging in `docs/verification_log.md`
-- a safe command-path preview mode now exists:
-  `linux-command-dry-run`, and the latest dry-run smoke passed while keeping rollback limited to the actions actually enabled by policy
+`collector -> classifier -> policy_engine -> actuator -> metrics`
 
-## What Is Verified
+Current runtime capabilities:
 
-### 1. Preflight gate
+- `runtime_daemon` runs with deterministic `mock` source validation.
+- Linux preflight uses procfs-backed source behavior for `run_queue_delay`,
+  `cpu_migration`, and `major_page_fault`.
+- Metadata enrichment supports procfs and demo/static providers.
+- Actuator modes include `noop`, `linux-skeleton`,
+  `linux-command-dry-run`, and guarded `linux-command`.
+- `linux-command` remains gated by explicit confirmation plus PID allowlist.
+- `inference_tail_guard` and `tool_call_booster` both have working trigger
+  paths; only Inference Tail Guard currently has a Phase 4 benefit report.
 
-The project already has a safe pre-Ollama gate:
+Use `docs/current_status.md` as the compact source for current status, active
+TODO issue IDs, and next-stage direction.
 
-```bash
-bash bench/scripts/inference_tail_guard_preflight.sh
-```
+## Latest Audit Verification
 
-This confirms:
-
-- procfs / cgroup / cpuset visibility
-- mock/noop daemon path health
-- optional tool inventory for `ollama`, `llama.cpp`, `stress-ng`, and `taskset`
-
-### 2. Real runtime observation
-
-The current real-runtime smoke entrypoint is:
-
-```bash
-bash bench/scripts/inference_tail_guard_ollama_smoke.sh
-```
-
-Default behavior:
-
-- target runtime: `ollama`
-- default model: `qwen2.5:0.5b`
-- optional interference: `stress-ng --cpu 2 --timeout 12s`
-- observation backend: `noop`
-
-Most recent strong signal:
-
-- verification log entry:
-  `2026-04-30T13:48:03+00:00 - Inference Tail Guard Ollama smoke`
-- result:
-  - `processed_events: 9`
-  - `inference_tail_guard: 5`
-  - `Overall result: PASS`
-
-This proves:
-
-- a real `ollama` request can be observed through the Linux procfs source
-- the classifier/runtime selection matches the real target process
-- the policy can trigger on a real model request under controlled CPU pressure
-
-### 3. Safe command-path preview
-
-The daemon now supports:
-
-- `noop`
-- `linux-skeleton`
-- `linux-command`
-- `linux-command-dry-run`
-
-`linux-command-dry-run` is the next safe checkpoint because it:
-
-- captures real process state from `/proc`
-- computes the same bounded actions as the real command backend
-- records dry-run `renice` / `taskset` audit details
-- does **not** apply those commands to the live process
-
-Latest dry-run checkpoint:
-
-- verification log entry:
-  `2026-04-30T14:14:20+00:00 - Inference Tail Guard Ollama smoke`
-- result:
-  - `actuator_backend: linux-command-dry-run`
-  - `processed_events: 24`
-  - `inference_tail_guard: 7`
-  - dry-run audit highlights were emitted for both apply and rollback paths
-  - latest rollback audit remained limited to `nice,affinity`
-  - cpuset rollback noise is no longer emitted when policy keeps `use_cpuset = false`
-  - `Overall result: PASS`
-
-Targeted follow-up verification after the cpuset cleanup fix:
-
-- `cargo test -p aegisai-actuator`: `PASS`
-- `cargo test -p aegisai-runtime-daemon`: `PASS`
-
-### 4. Workspace regression check
-
-Post-change workspace verification has also been re-run through:
+The 2026-05-03 audit passed:
 
 ```bash
 bash bench/scripts/verify_workspace.sh
 ```
 
-Most recent result:
+This ran:
 
-- `cargo test --workspace`: `PASS`
-- `cargo fmt --all -- --check`: `PASS`
-- `cargo clippy --all-targets --all-features -- -D warnings`: `PASS`
-- mock daemon smoke: `PASS`
-- Linux source preflight smoke: `PASS`
+- `cargo check --workspace`
+- `cargo test --workspace`
+- `cargo fmt --all -- --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- mock daemon smoke
+- Linux source preflight smoke
 
-## Current Route
-
-The recommended continuation path is:
-
-1. keep `qwen2.5:0.5b` as the default first model
-2. re-run the real smoke with `noop` when validating runtime visibility only
-3. run the same smoke with `linux-command-dry-run`
-4. inspect audit highlights in `docs/verification_log.md`, especially that rollback remains limited to the actions actually enabled by policy and that `use_cpuset = false` ends with `backend.rollback.rollback.restored=nice,affinity` without a `cpuset restore requires` line
-5. only then decide whether the environment is ready for a real `linux-command` A/B run
-
-## Recommended Commands
-
-### Reconfirm current observation path
+Additional checks passed:
 
 ```bash
-bash bench/scripts/inference_tail_guard_ollama_smoke.sh
+for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done
+bash bench/scripts/toolchain_preflight.sh
+bash bench/scripts/inference_tail_guard_preflight.sh
 ```
 
-### Preview planned command actions safely
+The latest workspace verification entry in `docs/verification_log.md` ends with
+`Overall result: PASS`.
+
+## Current Evidence
+
+Strong evidence:
+
+- Rust workspace compiles, tests, formats, and passes clippy with warnings
+  denied.
+- The mock daemon smoke triggers both `inference_tail_guard` and
+  `tool_call_booster` and completes rollback lifecycle accounting.
+- Linux source preflight exits cleanly with `--allow-partial-probes`.
+- Toolchain preflight confirms the required local development/eBPF tools are
+  present on this host.
+
+Bounded evidence:
+
+- Procfs fallback covers current safe Linux preflight signals, but real eBPF
+  off-CPU and I/O latency ingestion is still pending.
+- `linux-command-dry-run` proves command planning and rollback audit shape
+  without changing host state.
+- The latest Phase 4 report shows live guarded trends but deliberately reports
+  `FAIL` because no effective live host-level actuator changes were recorded.
+
+Not proven:
+
+- Host-level MVP performance benefit from effective live guarded actions.
+- Repeated Tool Call Booster baseline-vs-guarded benefit.
+- Production service packaging or unattended daemon deployment.
+
+## Active Follow-Up Issues
+
+- `AegisAI_Runtime-s6f` — Prove effective live Inference Tail Guard actuator
+  benefit.
+- `AegisAI_Runtime-4nv` — Complete real eBPF signal coverage for off-CPU and
+  I/O latency.
+- `AegisAI_Runtime-bx1` — Turn Tool Call Booster harness into repeated A/B
+  benefit proof.
+- `AegisAI_Runtime-azv` — Harden audit coverage for actuator and runtime hot
+  paths.
+
+Use:
+
+```bash
+bd ready
+bd show <issue-id>
+```
+
+## Recommended Next Route
+
+1. Keep `qwen2.5:0.5b` as the default first model for comparable Ollama runs.
+2. Reconfirm safe state with `verify_workspace.sh` and the two preflight scripts.
+3. Run controlled live guarded experiments only when a PID allowlist,
+   permissions, and experiment window are explicit.
+4. Regenerate `docs/mvp_benefit_report.md` only from real artifacts and keep the
+   strict effective-action gate.
+5. Wire missing eBPF-backed off-CPU/I/O signals behind the existing source
+   abstraction.
+6. Promote Tool Call Booster from lifecycle trigger proof to repeated benefit
+   proof.
+
+## Safe Commands
+
+Reconfirm workspace:
+
+```bash
+bash bench/scripts/verify_workspace.sh
+```
+
+Reconfirm host readiness:
+
+```bash
+bash bench/scripts/toolchain_preflight.sh
+bash bench/scripts/inference_tail_guard_preflight.sh
+```
+
+Preview planned command actions safely:
 
 ```bash
 AEGISAI_DAEMON_BACKEND=linux-command-dry-run \
   bash bench/scripts/inference_tail_guard_ollama_smoke.sh
 ```
 
-### Re-run workspace checks
+## Live Experiment Guardrail
+
+Run live guarded mode only with explicit approval of the experiment window:
 
 ```bash
-bash bench/scripts/verify_workspace.sh
+AEGISAI_AB_MODES=baseline,noop_observation,dry_run,live_guarded \
+AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
+AEGISAI_LIVE_PID_ALLOWLIST=<pid,...> \
+  bash bench/scripts/inference_tail_guard_phase4_report.sh
 ```
 
-## Known Constraints
-
-- `linux-command` may attempt real `renice` and `taskset` changes against the observed target PID
-- those changes may require privileges depending on the host policy and target process ownership
-- `linux-command-dry-run` is safe for logging and route validation, but it is not an A/B performance result by itself
-- current smoke validation is strongest for `run_queue_delay`; the other planned Linux signals still need broader real-runtime coverage
+`linux-command` may call real `renice` and, if enabled, `taskset` against the
+target PID. Keep `cpuset` disabled until the nice/affinity path is repeatedly
+clean.
 
 ## Resume Prompt
 
-If a future session needs a direct restart prompt, use this:
+If a future session needs a direct restart prompt:
 
-> Continue from the current post-Ollama-smoke state in `/home/gg/AegisAI_Runtime`. Treat `docs/handoff.md` and the latest `Inference Tail Guard Ollama smoke` entries in `docs/verification_log.md` as the source of truth. Keep `qwen2.5:0.5b` as the default first model, preserve append-only logging, and prefer `linux-command-dry-run` before any real `linux-command` experiment.
-
-## Source Of Truth
-
-When resuming, read these first:
-
-- `docs/handoff.md`
-- `docs/verification_log.md`
-- `bench/scripts/inference_tail_guard_ollama_smoke.sh`
-- `bench/inference_tail_guard/README.md`
+> Continue from the 2026-05-03 evidence-hardening state in
+> `/home/gg/AegisAI_Runtime`. Read `docs/current_status.md`,
+> `docs/handoff.md`, `docs/next_stage.md`, and the latest entries in
+> `docs/verification_log.md`. Preserve the strict Phase 4 benefit gate: no
+> effective live actuator action means no MVP benefit claim. Use beads for task
+> tracking and start from the active issues listed in `docs/current_status.md`.

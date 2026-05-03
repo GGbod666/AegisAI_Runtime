@@ -1,166 +1,163 @@
-﻿# 下一阶段执行计划
+# Next Stage Plan
 
-## 1. 当前结论
+_Updated: 2026-05-03_
 
-当前仓库已经完成统一主干收敛，且通过了以下工程级验收：
+## Current Conclusion
 
-- `cargo check`
-- `cargo test`
-- `cargo clippy --all-targets --all-features -- -D warnings`
-- `cargo fmt --all -- --check`
+The repository is past the original "make the runtime loop runnable" stage.
+The current workspace has a verified control-loop mainline:
 
-这意味着基础模块边界、共享契约和单元测试护栏已经站稳。下一阶段不应该继续堆骨架，而应该把设计路线推进到“真实可运行闭环”。
+`collector -> classifier -> policy_engine -> actuator -> metrics`
 
-## 2. 下一阶段的目标
+The latest audit passed:
 
-下一阶段的唯一主目标是：
+- `bash bench/scripts/verify_workspace.sh`
+- `bash bench/scripts/toolchain_preflight.sh`
+- `bash bench/scripts/inference_tail_guard_preflight.sh`
+- shell syntax checks for every script in `bench/scripts/*.sh`
 
-把当前的统一模块主干推进成一个可以在 Linux 环境中跑起来的最小闭环 Demo，先完成：
+The correct next phase is therefore not additional scaffolding. It is evidence
+hardening: prove that the guarded Linux actuator can create effective host-level
+changes and that those changes produce repeatable latency benefit.
 
-`AI Workload Awareness -> Inference Tail Guard`
+For a compact status and TODO index, see `docs/current_status.md`.
 
-而不是同时展开所有场景。
+## Next Major Stage: Evidence-Hardened MVP
 
-## 3. 本阶段范围
+Primary objective:
 
-### 必做范围
+Prove or falsify the MVP benefit claim under controlled Linux conditions.
 
-1. 增加运行入口
-   - 新增一个真正的 runtime daemon / runner crate
-   - 负责加载配置、初始化 orchestrator、接收事件流、驱动 tick/rollback
+The current `docs/mvp_benefit_report.md` intentionally reports `FAIL`: live
+guarded trends were visible, but the latest run recorded no effective host-level
+actuator changes. That is the right gate. The project should not claim a runtime
+performance win until the live actuator is effective and the repeated A/B report
+passes the strict rule.
 
-2. 定义运行时接入边界
-   - 增加统一的 event source / runtime source 抽象
-   - 让 orchestrator 可以同时接 mock source 和真实 Linux source
+## Required Work
 
-3. 打通最小事件链路
-   - `ebpf_probe -> collector -> classifier -> policy_engine -> actuator -> metrics`
-   - 先只接 MVP 需要的信号：`run_queue_delay`、`off_cpu`、`major_page_fault`
+### 1. Effective Live Inference Tail Guard
 
-4. 增加 runtime metadata enrichment
-   - 为事件补全 `pid/tid/process_name/cmdline/cgroup/parent`
-   - 为 classifier 提供稳定输入，而不是只靠事件瞬时字段
+Beads issue: `AegisAI_Runtime-s6f`
 
-5. 增加 actuator backend 分层
-   - `noop/mock backend` 用于本地测试
-   - `linux backend` 用于真实 `nice/affinity` 控制
+Goal:
 
-6. 建立最小 Demo 与实验入口
-   - 固定一个目标 runtime，优先 `ollama` 或 `llama.cpp`
-   - 固定一套 CPU 干扰场景
-   - 跑出 baseline 与 boost 对照数据
+- run `live_guarded` in a controlled Linux window where `renice` or affinity can
+  actually change the target process state
+- keep PID allowlist and explicit confirmation mandatory
+- regenerate the Phase 4 report with the strict effective-action gate
 
-### 明确不做
+Exit checks:
 
-- 不在这一阶段做完整 `tool_call_booster` 实机闭环
-- 不引入 GPU 协同
-- 不做复杂 tracing 平台
-- 不做在线自动调参
-- 不做 dashboard
+- at least one live guarded run records effective host-level actuator changes
+- Phase 4 report compares baseline, noop observation, dry-run, and live guarded
+  modes across repeated rounds
+- report verdict is `PASS` only if the strict trend and effective-action rules
+  are both satisfied
 
-## 4. 模块级任务拆分
+### 2. Real eBPF Signal Coverage
 
-### A. `runtime_entry`
+Beads issue: `AegisAI_Runtime-4nv`
 
-职责：
+Goal:
 
-- 解析配置
-- 初始化 logger / runtime context
-- 创建 orchestrator
-- 接收 source 事件并投递
-- 周期性调用 rollback/tick
+- keep the existing source abstraction
+- wire real eBPF-backed `offcpu_time` and `io_latency` events behind it
+- preserve procfs fallback for `run_queue_delay`, `cpu_migration`, and
+  `major_page_fault` while the probe path matures
 
-建议产物：
+Exit checks:
 
-- `agent/runtime_daemon/`
-- `src/main.rs`
-- `src/source.rs`
-- `src/runtime_loop.rs`
+- Linux source emits normalized off-CPU and I/O latency `SourceEvent` records
+  from controlled workloads
+- verification summaries identify attached probes, event counts, and shutdown
+  state
+- targeted source tests plus workspace verification pass
 
-### B. `source_adapter`
+### 3. Tool Call Booster Benefit Proof
 
-职责：
+Beads issue: `AegisAI_Runtime-bx1`
 
-- 定义 `EventSource` trait
-- 提供 `MockEventSource`
-- 提供 `LinuxProbeSource` 骨架
+Goal:
 
-建议接口：
+- promote the current real executor lifecycle harness from trigger proof to
+  repeated A/B benefit proof
+- compare baseline, noop observation, dry-run, and any guarded mode with
+  comparable latency metrics
 
-- `next_event()`
-- `poll_batch()`
-- `snapshot_process(pid)`
+Exit checks:
 
-### C. `metadata_enricher`
+- repeated tool-call benchmark records executor, retrieval, rerank, and
+  background samples
+- report includes latency deltas, trigger counts, rollback counts, and an
+  explicit PASS/FAIL verdict
+- dry-run and noop are treated as closed-loop evidence, not host benefit proof
 
-职责：
+### 4. Hot-Path Test Hardening
 
-- 从 `/proc` 或运行时快照补全 classifier 需要的信息
-- 缓存短周期 metadata，避免每个事件都全量读取
+Beads issue: `AegisAI_Runtime-azv`
 
-最小字段：
+Goal:
 
-- `process_name`
-- `cmdline`
-- `parent_pid`
-- `parent_process_name`
-- `cgroup`
-- `tags`
+- add narrow tests around the riskiest high-degree paths identified by the code
+  graph
+- avoid broad refactors while the runtime evidence gates are still moving
 
-### D. `linux_actuator_backend`
+Priority areas:
 
-职责：
+- actuator rollback reports and missing capture state
+- Linux command apply/rollback failures
+- procfs sampling edge cases
+- runtime source startup/poll/shutdown behavior
+- benefit report interpretation when live actions are no-op
 
-- 将 `ActionPlan` 映射到真实 Linux 动作
-- 优先支持：
-  - `nice`
-  - `sched_setaffinity`
-- 保持 bounded、可回退、可审计
+Exit checks:
 
-### E. `demo_benchmark`
+- targeted tests cover the listed areas
+- `cargo test --workspace` and clippy pass
 
-职责：
+## Explicit Non-Goals For This Stage
 
-- 固定最小 demo 路径
-- 生成 baseline / boosted 对照
-- 沉淀实验结果到 metrics
+- dashboard work
+- GPU coordination
+- online adaptive policy learning
+- production service packaging
+- cpuset/background throttling beyond guarded experiments
+- broad module decomposition not tied to a failing test or active evidence gate
 
-## 5. 推荐推进顺序
+## Recommended Command Sequence
 
-1. 先做 `runtime_daemon` 和 `MockEventSource`
-2. 用 mock source 跑通主干闭环
-3. 接入 metadata enrichment
-4. 接入 Linux actuator backend
-5. 接入最小 `ebpf_probe` source
-6. 固定 `ollama` 或 `llama.cpp` 的 demo
-7. 跑首轮 `inference_tail_guard` benchmark
+Safe reconfirmation:
 
-## 6. 阶段退出条件
+```bash
+bash bench/scripts/verify_workspace.sh
+bash bench/scripts/toolchain_preflight.sh
+bash bench/scripts/inference_tail_guard_preflight.sh
+```
 
-满足以下条件后，下一阶段算完成：
+Effective live benefit proof, only inside an approved experiment window:
 
-- 可以通过单一命令启动 runtime 进程
-- runtime 能持续消费事件流而不是只跑单元测试
-- classifier 能识别目标 AI runtime
-- `inference_tail_guard` 能在 Linux demo 中真实触发
-- actuator 能执行并回退最小动作
-- metrics 能输出 baseline 与 boost 对照结果
+```bash
+AEGISAI_AB_MODES=baseline,noop_observation,dry_run,live_guarded \
+AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
+AEGISAI_LIVE_PID_ALLOWLIST=<pid,...> \
+  bash bench/scripts/inference_tail_guard_phase4_report.sh
+```
 
-## 7. 下一阶段之后再做什么
+Tool Call Booster trigger/harness reconfirmation:
 
-本阶段完成后，再进入：
+```bash
+bash bench/scripts/tool_call_booster_real_executor_harness.sh
+```
 
-1. `tool_call_booster` 的真实运行链路
-2. benchmark 自动化脚本
-3. explain/tune 报告固化
-4. AI-aware isolation 扩展
+## Stage Exit
 
-## 8. 主脑判断
+This stage is complete only when the project can say one of the following with
+evidence:
 
-当前最关键的不是继续加模块，而是把“统一主干”变成“真实可运行系统”。
+- MVP benefit proven: effective live guarded actions were observed and repeated
+  tail-latency metrics passed the strict Phase 4 gate.
+- MVP benefit not proven yet: the runtime closed loop works, but the live action
+  or benefit trend still fails, with artifacts explaining why.
 
-所以，下一阶段应该严格围绕：
-
-`runtime entry + source adapter + metadata enrichment + linux actuator backend + demo benchmark`
-
-来推进。
+Either outcome is acceptable if the report is honest and reproducible.

@@ -1,5 +1,20 @@
 ﻿# Roadmap
 
+_Updated: 2026-05-03_
+
+## Current Position
+
+The project has moved beyond the original framework and runnable-daemon setup
+work. The active phase is evidence hardening:
+
+- prove effective live `inference_tail_guard` benefit under the strict Phase 4
+  gate
+- complete real eBPF-backed off-CPU and I/O latency ingestion
+- turn `tool_call_booster` from trigger proof into repeated A/B benefit proof
+- harden tests around the actuator/runtime hot paths
+
+See `docs/current_status.md` for the current state and beads issue IDs.
+
 ## Phase 0：Framework Reset
 
 目标：
@@ -48,7 +63,14 @@
 退出条件：
 
 - 有 / 无 boost 对照实验可复现
-- P95/P99 或 TTFT 有明确改善趋势
+- live guarded 动作确实改变了主机层目标状态
+- P95/P99、TTFT 或 jitter 在重复轮次中满足严格收益门槛
+
+当前状态：
+
+- 控制闭环、dry-run 审计和 Phase 4 报告路径已经具备。
+- 最新 `docs/mvp_benefit_report.md` 正确给出 `FAIL`：有趋势信号，但没有
+  effective live actuator change，因此不能声明 MVP 收益成立。
 
 ## Phase 3：Tool Calling Booster
 
@@ -65,6 +87,11 @@
 退出条件：
 
 - 工具调用链存在稳定、可观察的优化收益
+
+当前状态：
+
+- 已有 policy path 和真实 executor lifecycle harness。
+- 下一步需要 repeated A/B benefit proof，而不是只证明识别和触发。
 
 ## Phase 4：AI-aware Isolation
 
@@ -111,8 +138,10 @@
 
 ## 推荐推进顺序
 
-1. 先把 awareness foundation 跑通
-2. 再进入 inference tail guard MVP
-3. 固定 benchmark 与实验记录方式
-4. 再进入 tool call 场景
-5. 最后补 explain / tune 和高级扩展
+1. 先完成 `AegisAI_Runtime-s6f`：有效 live actuator 的 Inference Tail Guard
+   收益证明。
+2. 并行或随后完成 `AegisAI_Runtime-4nv`：off-CPU / I/O latency 的真实 eBPF
+   信号补齐。
+3. 再推进 `AegisAI_Runtime-bx1`：Tool Call Booster repeated A/B benefit proof。
+4. 穿插完成 `AegisAI_Runtime-azv`：actuator 和 runtime 热路径测试加固。
+5. 最后再考虑 AI-aware isolation、explain/tune 自动化和高级扩展。
