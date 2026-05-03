@@ -1,430 +1,784 @@
-﻿# AegisAI Runtime
-
-基于 eBPF + Rust 的 AI 推理与 Tool Calling 系统级性能优化框架。
-
-## 1. 复查结论
-
-对照 `project.md` 复查后，原骨架的大方向是对的，但还没有完全落到方案真正的设计路线里。
-
-原骨架已经做对的部分：
-
-- 立住了 Observe -> Classify -> Policy -> Actuate -> Evaluate 的闭环
-- 明确了项目不是监控平台，而是动态优化引擎
-- 收住了第一轮范围，没有一上来把所有高级能力都揉进去
-
-原骨架仍然存在的偏差：
-
-- 更像一个“通用 runtime 平台模板”，三条核心问题还不是一级组织逻辑
-- `ai_runtime_classifier` 被放成插件，但“系统感知 AI 任务进程”本质上是基础能力，不应只是附属模块
-- benchmark、配置和场景说明没有完全按三条主线拆开
-
-所以这次不是推翻原方案，而是把原方案真正压实成更适合后续实现的骨架。
-
-## 2. 项目定义
-
-### 一句话定义
-
-把 AI workload 当作系统层的一等公民，通过 eBPF 低开销观测、Rust 控制闭环和场景化策略，让 AI 推理与工具调用在真实系统环境中跑得更快、更稳、更低干扰。
-
-### 这个项目不是什么
-
-- 不是另一个通用监控平台
-- 不是替代 Linux scheduler
-- 不是把 AI 放进微秒级实时调度路径
-- 不是第一版就去做 RAG、多智能体、GPU 协同和 dashboard 全家桶
-
-### 这个项目真正要解决什么
-
-- AI 推理线程被抢占，导致 TTFT、P95/P99 延迟和 jitter 恶化
-- Tool call 链条中存在冷启动、调度抖动和子链路不稳定
-- 系统对 AI 任务感知不足，无法把 AI workload 和 background job 区分对待
-
-## 3. 三条主线
-
-这一版骨架把项目明确收敛为三条主线，它们不是平行散点，而是有依赖关系的。
-
-### 主线 A：AI Workload Awareness
-
-目标：让系统知道“谁是 AI workload、它处于什么阶段、它是否属于交互敏感链路”。
-
-第一轮只做规则识别：
-
-- 进程名
-- 命令行特征
-- cgroup/tag
-- PID allowlist
-- 父子进程关系
-
-这是基础层。没有这层，后面的尾延迟保护和工具链优化都会退化成硬编码特判。
-
-### 主线 B：Inference Tail Guard
-
-目标：在 AI 推理关键路径上，针对 run queue delay、off-CPU、迁核、page fault 等干扰信号触发短时、可回退的 boost，降低 TTFT、P95/P99 和 jitter。
-
-这是 MVP 主战场，因为它最容易做出可对比、可量化的系统收益。
-
-### 主线 C：Tool Call Booster
-
-目标：识别工具调用生命周期，在 tool executor、retrieval、rerank、sandbox worker 等子链路上做轻量保护，降低 end-to-end tool call latency。
-
-第一轮不追求复杂 tracing，而是先把“生命周期识别 + 短时 boost + 自动退出”做出来。
-
-## 4. 设计总路线
-
-从问题视角看是三条主线，从实现视角看采用“双轴骨架”。
-
-### 轴一：核心闭环能力轴
-
-- `ebpf/`：低开销观测
-- `agent/collector`：事件聚合与窗口统计
-- `agent/classifier`：AI workload 识别与阶段标签
-- `agent/policy_engine`：规则匹配、动作选择、冲突处理
-- `agent/actuator`：系统动作施加与回退
-- `agent/metrics`：收益与副作用记录
-- `agent/explain_tune`：离线解释、实验报告和调参建议
-
-### 轴二：问题场景轴
-
-- `scenarios/ai_workload_awareness`
-- `scenarios/inference_tail_guard`
-- `scenarios/tool_call_booster`
-
-场景轴定义“解决什么问题”，能力轴定义“靠什么组件把问题闭环解决”。
-
-## 5. 总体架构
-
-```mermaid
-flowchart LR
-    A["Kernel Events"] --> B["Privileged eBPF Helper"]
-    B --> C["Rootless Runtime Daemon"]
-    C --> D["Collector"]
-    D --> E["AI Workload Awareness"]
-    E --> F["Policy Engine"]
-    F --> G["Scenario Decision"]
-    G --> H["Actuator"]
-    H --> I["Metrics & Safety Feedback"]
-    I --> J["Explain / Tune (Offline)"]
-```
-
-核心数据流：
-
-`kernel event -> privileged helper event stream -> rootless control loop -> event aggregation -> workload label -> scenario policy -> bounded action -> effect measurement`
-
-## 5.1 权限与产品封装路线
-
-AegisAI Runtime 的可移植应用形态必须遵守一条边界：
-
-**主应用默认以普通用户运行；只有窄权限 helper 可以拥有 root 或 eBPF capability。**
-
-这不是临时权宜，而是项目的长期产品路线：
-
-- `aegisai-runtime-daemon` 保持 rootless，负责配置、识别、策略、报告和安全编排
-- `aegisai-ebpf-helper` 是受控 privileged 组件，只负责 attach 固定 eBPF probe 并输出标准事件流
-- 主应用不能向 helper 传任意 bpftrace/eBPF 程序，只能传目标 PID、进程名和启用的固定信号
-- 没有 helper 或权限不足时，Linux source 必须能降级到 procfs/PSI 等普通权限信号，而不是要求用户用 root 跑主程序
-- 真实 `offcpu_time` / `io_latency` 归入增强模式；普通模式仍能完成识别、策略演练、dry-run 审计和报告
-
-因此，面向最终用户的权限模型是：
-
-```text
-aegisai-runtime-daemon   普通用户，常规入口
-aegisai-ebpf-helper      管理员安装/授权的窄权限系统组件
-```
-
-## 6. 模块职责划分
-
-### `ebpf/`
-
-职责：低开销采集关键系统事件，统一上报到用户态。
-
-第一轮只保留高价值 probe：
-
-- `ebpf_probe`
-- `sched_probe`
-- `offcpu_probe`
-- `fault_probe`
-- `io_probe`
-
-### `agent/collector`
-
-职责：聚合 eBPF 事件，形成时间窗口内的高价值特征。
-
-建议负责：
-
-- 窗口统计
-- 去噪与采样
-- thread/process/cgroup 维度归并
-- 对 policy 暴露统一 feature view
-
-### `agent/classifier`
-
-职责：把 process / thread / cgroup 映射为 AI runtime 语义标签。
-
-建议标签：
-
-- `AI_INFERENCE`
-- `TOOL_CALL`
-- `RETRIEVAL_STAGE`
-- `RERANK_STAGE`
-- `BACKGROUND_JOB`
-- `INTERACTIVE_LATENCY_SENSITIVE`
-
-这层现在被提升为基础能力，不再当成普通插件看待。
-
-### `agent/policy_engine`
-
-职责：把“指标 + 标签 + 安全约束”转换成实际动作决策。
-
-必须包含：
-
-- 触发条件
-- 冷却窗口
-- 动作强度等级
-- 多策略冲突处理
-- 最大干预时长
-- 安全限制
-
-### `agent/actuator`
-
-职责：执行系统动作，并保证动作有限时、可回退、可审计。
-
-第一轮保守动作：
-
-- CPU affinity
-- nice / priority 调整
-- cpuset 预留接口
-- background throttle 预留接口
-- service/cache warmup 预留接口
-
-### `agent/metrics`
-
-职责：记录收益和副作用，而不是只记录“有没有触发过”。
-
-第一轮重点指标：
-
-- TTFT
-- P95/P99 latency
-- jitter / variance
-- boost hit rate
-- rollback count
-
-### `scenarios/ai_workload_awareness`
-
-职责：沉淀 AI 任务识别规则、阶段标签和 runtime 适配方案。
-
-### `scenarios/inference_tail_guard`
-
-职责：把尾延迟治理做成可独立推进、可独立验证的场景包。
-
-### `scenarios/tool_call_booster`
-
-职责：把工具链优化做成独立场景包。
-
-## 7. 现在采用的最优骨架
+# AegisAI Runtime
+
+AegisAI Runtime 是一个用 Rust 编写的 AI-aware Linux 控制闭环。它把 AI 推理进程和
+Tool Calling 子链路当成系统层的一等 workload：观测调度和 I/O 干扰信号，识别当前
+进程属于哪类 AI 工作负载，按场景策略生成有边界的系统动作，执行或演练动作，在租约
+到期后回滚，并用指标与 trace 记录这次干预是否真的有收益。
+
+当前仓库已经不只是脚手架。它包含可运行的 mock 主路径、Linux procfs/eBPF-helper
+观测路径、受保护的 actuator 后端、两个已接入策略的场景、指标与解释模块，以及
+benchmark/report 脚本。它也刻意没有宣称已经获得生产级性能收益：最新
+`docs/mvp_benefit_report.md` 的结论仍是 `FAIL`，因为 live guarded 动作虽然已经能
+产生有效主机状态变化，但还没有达到稳定的尾延迟收益门槛。
+
+## 问题导向
+
+项目围绕三类具体问题组织，而不是先做一个泛化平台再寻找使用场景。
+
+### AI Workload Awareness
+
+Linux 内核看到的是进程、线程、cgroup 和调度事件；它不知道某个 `python` 是
+retrieval worker，某个 `ollama` 是交互式推理链路，某个 `stress-ng` 是背景干扰源。
+AegisAI 通过规则化的 process name、cmdline、cgroup、tag marker、父子进程关系和 PID
+allowlist，把这些系统实体映射成 `AI_INFERENCE`、`TOOL_CALL`、
+`INTERACTIVE_LATENCY_SENSITIVE`、`BACKGROUND_JOB` 等标签。
+
+这不是附属功能，而是后续 Tail Guard 和 Tool Call Booster 能避免硬编码特判的基础层。
+
+### Inference Tail Guard
+
+推理体验常常被 TTFT、P95/P99 和 jitter 支配。仓库当前把
+`run_queue_delay`、`offcpu_time`、`cpu_migration`、`major_page_fault` 和可选
+`io_latency` 作为尾延迟风险信号；当交互式推理进程在窗口内触发阈值时，策略会生成
+短时、可回退的优先级或 CPU 亲和性动作。
+
+这是 MVP 的主战场，因为它最容易被 A/B 实验验证，也最容易被错误地夸大。因此报告门
+槛很严格：noop 和 dry-run 只能证明识别、触发、审计和回滚闭环，不能证明主机级收益。
+
+### Tool Call Booster
+
+工具调用链路中有 executor startup、retrieval、rerank 和 background interference 等
+阶段。仓库当前用标签和 `tool_call_id` 审计字段识别生命周期，并按 executor、
+retrieval、rerank 阶段缩放动作时长和审计字段。当前已有重复 A/B harness/report，但
+live guarded 主机级收益仍需单独验证。
+
+## 设计理念
+
+- 问题先行：核心模块服务三个明确问题，而不是追求一个通用监控平台。
+- rootless 控制面：`aegisai-runtime-daemon` 默认作为普通用户进程运行。
+- 窄权限边界：需要 eBPF/root 能力的部分收敛到 `aegisai-ebpf-helper`，daemon 只传
+  selector 和固定信号开关，不发送任意 bpftrace 程序。
+- 有边界的动作：所有 live 动作都必须有安全夹取、审计字段、租约和回滚路径。
+- 策略可解释：每次触发都携带 scenario、breach、matched rule、stage、isolation mode
+  等可审计字段。
+- 证据诚实：有效主机动作和稳定 A/B 改善缺一不可；观察模式、dry-run 和偶发改善都不
+  被当作 MVP 收益证明。
+- 可在非 Linux 开发：mock source、noop backend 和 dry-run backend 让控制面可以在普
+  通开发环境验证；真正的 probe 和 live actuator 仍以 Linux 为准。
+
+明确非目标：
+
+- 不是通用 dashboard 或监控平台。
+- 不是 Linux scheduler 替代品。
+- 不是把在线 AI 决策放进微秒级热路径。
+- 当前没有 GPU 调度、生产服务安装器、在线自适应策略学习或完整后台隔离系统。
+
+## 当前状态
+
+已实现并在本地验证过的能力：
+
+- Rust workspace 与共享 runtime contracts。
+- `aegisai-runtime-daemon` CLI，支持 `mock` 和 `linux` source。
+- Linux source 组合 procfs 派生的 `run_queue_delay`、`cpu_migration`、
+  `major_page_fault`，以及 helper-backed 的 `offcpu_time`、`io_latency`。
+- `aegisai-ebpf-helper` 作为窄权限 bpftrace/eBPF helper。
+- 规则化 classifier 和 awareness defaults。
+- collector 窗口聚合，并把 source event 投影为 policy feature window。
+- policy engine 支持 cooldown、安全夹取、scenario 优先级和 action-slot 冲突消解。
+- actuator backend：`noop`、`linux-skeleton`、`linux-command-dry-run`、
+  guarded `linux-command`。
+- metrics 和 explain/tune crate，用于 trace、scenario stats、实验报告、触发解释和调参
+  建议。
+- Inference Tail Guard 与 Tool Call Booster 的 benchmark/report 脚本。
+
+仍未完成的缺口见本文末尾的“已知问题和差距”，并以 `bd` issue 为准。
+
+## 目录结构
 
 ```text
 .
-├── agent/                          # 用户态控制闭环
-│   ├── actuator/
-│   ├── classifier/
-│   ├── collector/
-│   ├── ebpf_helper/
-│   ├── explain_tune/
-│   ├── metrics/
-│   └── policy_engine/
-├── bench/                          # 场景化 benchmark 与干扰实验
-│   ├── ai_workload_awareness/
-│   ├── inference_tail_guard/
-│   ├── interference/
-│   ├── scripts/
-│   └── tool_call_booster/
-├── configs/                        # runtime / classifier / safety / scenario configs
-│   ├── classifier/
-│   ├── runtime/
-│   ├── safety/
-│   └── scenarios/
-├── docs/                           # 辅助文档
-├── ebpf/                           # 内核侧观测能力
-│   ├── ebpf_probe/
-│   ├── fault_probe/
-│   ├── io_probe/
-│   ├── offcpu_probe/
-│   └── sched_probe/
-├── scenarios/                      # 三条主线的场景包
-│   ├── ai_workload_awareness/
-│   ├── inference_tail_guard/
-│   └── tool_call_booster/
-├── project.md                      # 原始方案来源
-└── README.md                       # 当前总设计入口
+├── agent/
+│   ├── runtime_contracts/      # 共享 Event/Signal/FeatureWindow/Profile/Policy/Action 类型
+│   ├── runtime_daemon/         # 可运行 CLI、EventSource、MetadataProvider、RuntimeLoop
+│   ├── runtime_orchestrator/   # collector -> classifier -> policy -> actuator -> metrics 组合点
+│   ├── collector/              # 低层事件窗口聚合、recent event retention、feature projection
+│   ├── classifier/             # 进程规则、标签、workload/stage/latency sensitivity 推断
+│   ├── policy_engine/          # 场景策略评估、cooldown、action 冲突消解
+│   ├── actuator/               # 动作租约、apply/rollback 后端、Linux command guard
+│   ├── metrics/                # MetricRecord、MetricTrace、ScenarioStats、趋势计算
+│   ├── explain_tune/           # 离线实验报告、触发解释、调参建议
+│   ├── ebpf_helper/            # 窄权限 helper binary，负责固定 eBPF/bpftrace attachment
+│   └── git_control/            # 独立 git 状态/checkpoint helper，不在 runtime 热路径中
+├── ebpf/
+│   ├── ebpf_probe/             # probe contract、descriptor、event、filter、registry
+│   ├── sched_probe/            # 调度 probe 设计说明 stub
+│   ├── offcpu_probe/           # off-CPU probe 设计说明 stub
+│   ├── fault_probe/            # page fault probe 设计说明 stub
+│   └── io_probe/               # I/O probe 设计说明 stub
+├── scenarios/
+│   ├── ai_workload_awareness/  # awareness 问题说明和配置入口
+│   ├── inference_tail_guard/   # 推理尾延迟策略实现
+│   └── tool_call_booster/      # tool-call 生命周期策略实现
+├── configs/
+│   ├── runtime/                # runtime 目标、选择方式、focus signals、tracked metrics
+│   ├── classifier/             # process/cmdline/cgroup/tag/parent 规则
+│   ├── scenarios/              # scenario 阈值和动作配置
+│   └── safety/                 # 全局安全上限
+├── bench/
+│   ├── scripts/                # workspace 验证和实验编排脚本
+│   ├── inference_tail_guard/   # Tail Guard benchmark 文档和 artifact 约定
+│   ├── tool_call_booster/      # real executor harness、A/B summarizer、单测
+│   ├── ai_workload_awareness/  # awareness 验证说明
+│   └── interference/           # CPU/I/O/background 干扰定义
+├── docs/                       # 架构、状态、MVP、roadmap、实验和 verification log
+├── plugins/                    # 插件占位说明
+├── project.md                  # 早期项目方向说明
+└── specification.md            # 规格草案
 ```
 
-## 8. MVP 与分阶段规划
+注意：`ebpf/sched_probe`、`ebpf/offcpu_probe`、`ebpf/fault_probe`、`ebpf/io_probe` 当前
+主要是设计说明 stub；可编译的 probe contract 在 `ebpf/ebpf_probe`，实际 off-CPU/I/O
+事件流当前通过 `aegisai-ebpf-helper` 的 bpftrace 路径进入 daemon。
 
-> 2026-05-03 状态：当前仓库已经进入 evidence-hardening 阶段。可运行控制闭环、
-> mock/Linux preflight、dry-run 审计和 Phase 4 报告路径已经具备；最新 MVP
-> benefit report 仍正确标记为 `FAIL`，因为尚未观测到 effective live
-> actuator change。当前状态和待办索引见 `docs/current_status.md`，下一阶段计划见
-> `docs/next_stage.md`。
+## Crate 依赖关系
 
-### Phase 0：Framework Reset
+以 `Cargo.toml` 为准，当前 workspace 成员是：
 
-目标：
+```text
+agent/actuator
+agent/ebpf_helper
+agent/git_control
+agent/runtime_orchestrator
+agent/runtime_daemon
+agent/runtime_contracts
+agent/collector
+agent/classifier
+agent/explain_tune
+agent/metrics
+agent/policy_engine
+ebpf/ebpf_probe
+```
 
-- 固定项目定义
-- 固定双轴骨架
-- 固定安全边界和配置层次
+实际依赖边如下，箭头表示“左侧 crate 依赖右侧 crate”：
 
-### Phase 1：Awareness Foundation
+```text
+agent/collector
+  -> ebpf_probe
 
-目标：
+agent/runtime_contracts
+  -> agent/classifier
 
-- 把 AI workload awareness 做成全局基础能力
+agent/policy_engine
+  -> agent/runtime_contracts
 
-交付：
+agent/actuator
+  -> agent/runtime_contracts
 
-- 统一 label 模型
-- classifier config
-- 目标 runtime 接入规范
+agent/runtime_orchestrator
+  -> agent/actuator
+  -> agent/classifier
+  -> agent/collector
+  -> agent/metrics
+  -> agent/policy_engine
+  -> agent/runtime_contracts
 
-### Phase 2：Inference Tail Guard MVP
+agent/explain_tune
+  -> agent/metrics
+  -> agent/policy_engine
 
-目标：
+agent/runtime_daemon
+  -> agent/runtime_orchestrator
+  -> agent/actuator
+  -> ebpf_probe
 
-- 证明系统级动态保护可以稳定改善 AI 推理尾延迟
+agent/ebpf_helper
+  -> agent/runtime_daemon
 
-范围：
+agent/classifier, agent/metrics, agent/git_control, ebpf_probe
+  -> no workspace-internal dependencies
+```
 
-- `sched/offcpu/fault` 三类 probe
-- collector 窗口聚合
-- 规则分类
-- `inference_tail_guard` 决策
-- bounded boost 动作
-- benchmark 对照
+更准确地说：
 
-### Phase 3：Tool Call Booster
+- `classifier`、`metrics`、`git_control` 和 `ebpf_probe` 目前没有 workspace 内部依赖。
+- `runtime_contracts` 依赖 `classifier`，并复用/导出 workload tag、stage、latency
+  sensitivity 等概念。
+- `policy_engine` 依赖 `runtime_contracts`，并通过 `agent/policy_engine/src/scenarios.rs`
+  用 `#[path]` 引入 `scenarios/inference_tail_guard/src/policy.rs` 和
+  `scenarios/tool_call_booster/src/policy.rs`。
+- `runtime_orchestrator` 是用户态组合点，依赖 actuator、classifier、collector、metrics、
+  policy_engine 和 runtime_contracts。
+- `runtime_daemon` 负责 CLI、source、metadata 和运行循环，因此依赖 orchestrator、
+  actuator 和 ebpf_probe。
+- `explain_tune` 是离线分析层，依赖 metrics 和 policy_engine。
+- `ebpf_helper` 复用 runtime_daemon 中的 bpftrace pipe/selector/source error 基础设施。
+- `git_control` 是独立辅助 crate，不参与 AegisAI runtime 控制闭环。
 
-目标：
+## 功能分布和关键文件
 
-- 降低工具调用链 end-to-end latency
+| 模块 | 关键文件 | 职责 |
+| --- | --- | --- |
+| 共享契约 | `agent/runtime_contracts/src/model.rs`, `config.rs` | 定义 `ScenarioKind`、`SignalKind`、`Event`、`FeatureWindow`、`WorkloadProfile`、`PolicyContext`、`ActionPlan`、`AppliedAction` 和安全/策略配置类型 |
+| Daemon 入口 | `agent/runtime_daemon/src/main.rs` | 解析 CLI，加载 repo-root config，选择 source/metadata/backend，创建 `RuntimeLoop` 和 `RuntimeOrchestrator`，打印或追加 summary |
+| Source 层 | `agent/runtime_daemon/src/source.rs` | 定义 `SourceEvent`、`EventSource`、Linux probe plan、procfs sampler、bpftrace/helper pipe、probe reader、mock source |
+| Metadata 层 | `agent/runtime_daemon/src/metadata.rs` | 定义 `MetadataProvider`，支持 demo/static/noop/procfs 元数据补全 |
+| Runtime loop | `agent/runtime_daemon/src/runtime_loop.rs` | 批量 poll source，metadata enrichment，定时 tick rollback，统计 signal/window/audit/tool-call lifecycle summary |
+| Orchestrator | `agent/runtime_orchestrator/src/runtime_orchestrator.rs` | 串联 collector、awareness classifier、policy engine、actuator、metrics recorder |
+| Config loader | `agent/runtime_orchestrator/src/config.rs` | 从固定 `configs/` 示例路径读取 runtime/classifier/awareness/safety/scenario 配置 |
+| Collector | `agent/collector/src/collector.rs` | 维护窗口、watermark、late/noise filter、recent events，并输出 trailing feature window |
+| Classifier | `agent/classifier/src/model.rs`, `classifier.rs`, `config.rs` | 规则解析与匹配，生成 workload class、stage label、latency sensitivity 和 matched rules |
+| Policy engine | `agent/policy_engine/src/engine.rs` | 对 enabled policies 评估 candidate，执行 cooldown，按 scenario priority 消解同一 pid/action slot 冲突 |
+| Tail policy | `scenarios/inference_tail_guard/src/policy.rs` | 只匹配 `AI_INFERENCE` + `INTERACTIVE_LATENCY_SENSITIVE`，按尾延迟信号触发动作 |
+| Tool policy | `scenarios/tool_call_booster/src/policy.rs` | 匹配 `TOOL_CALL`，推断 executor/retrieval/rerank，缩放 duration 并写入 tool-call 审计字段 |
+| Actuator | `agent/actuator/src/actuator.rs`, `backend.rs` | action lease 管理，noop/recording/linux 后端，Linux command dry-run/live apply/rollback |
+| Metrics | `agent/metrics/src/recorder.rs`, `model.rs` | 生成 metric records、evaluation/action/rollback traces、scenario stats 和 trend |
+| Explain/tune | `agent/explain_tune/src/engine.rs` | 从 metrics/traces/policies 生成 report、trigger explanation、tune suggestion |
+| eBPF contract | `ebpf/ebpf_probe/src/*.rs` | probe kind、attach point、event validation、filter、registry 和 default descriptors |
+| Helper | `agent/ebpf_helper/src/main.rs` | `--check` 和 `stream --offcpu --io --pid/--process-name` CLI，启动固定 bpftrace 路径 |
 
-范围：
+## 核心数据模型
 
-- tool call 生命周期识别
-- executor / retrieval / rerank 子链路标签
-- 生命周期内 boost 与自动退出
+控制闭环热路径使用一组小而稳定的结构：
 
-### Phase 4：AI-aware Isolation
+- `SourceEvent`：source 层事件，包含 timestamp、pid/tid、signal、value，以及可选进程元
+  数据。
+- `Event`：metadata enrichment 后的 runtime event，进程名和命令行等字段已经补齐到策略
+  可用程度。
+- `FeatureWindow`：collector 产生的每进程窗口特征，包括最大 run queue delay、最大
+  off-CPU time、迁核率、major fault 率、queue wait 等。
+- `WorkloadProfile`：classifier 输出，包含 workload class、stage label、latency
+  sensitivity、tags 和 matched rules。
+- `PolicyContext`：`EventContext + FeatureWindow + WorkloadProfile + audit_fields`，是策略评估
+  的输入。
+- `ActionPlan`：策略输出，包含 scenario、target pid、actions、duration、rationale 和审计
+  字段。
+- `AppliedAction`：actuator 输出的 applied/rolled-back 记录，包含租约时间、状态和 backend
+  审计字段。
+- `MetricRecord`/`MetricTrace`：metrics 层记录的结构化评估、触发、动作、回滚和趋势上下文。
+- `RuntimeRunSummary`：daemon CLI 输出摘要，包含事件数、动作数、回滚数、signal
+  observations、feature maxima、audit highlights 和 tool-call lifecycle summary。
 
-目标：
+当前共享 contract 支持的信号：
 
-- 在多任务并发场景下保护交互型 AI workload
+```text
+run_queue_delay
+offcpu_time
+cpu_migration
+major_page_fault
+subprocess_start_delay
+queue_wait
+io_latency
+```
 
-### Phase 5：Explain / Tune
+当前共享 contract 支持的动作：
 
-目标：
+```text
+RaiseNice       # nice/priority delta
+SetAffinity     # CPU affinity strategy + max CPU ratio
+UseCpuset       # cpuset intent, live path mostly guarded/placeholder
+WarmupExecutor  # tool-call executor warmup intent, current backend records/defer
+```
 
-- 生成实验报告、触发解释和参数建议
+## 配置接口
 
-## 9. 配置设计
+`RuntimeOrchestratorConfig::load_from_repo_root` 当前从 repo root 下的固定示例路径读取配置：
 
-这一版把配置也按职责拆开，避免以后所有规则都堆进一个文件里。
+```text
+configs/runtime/runtime.example.toml
+configs/classifier/process_rules.example.toml
+configs/scenarios/ai_workload_awareness.example.toml
+configs/scenarios/inference_tail_guard.example.toml
+configs/scenarios/tool_call_booster.example.toml
+configs/safety/default.toml
+```
 
-### `configs/runtime/`
+配置到运行时类型的映射：
 
-负责目标环境信息：
+- `configs/runtime/runtime.example.toml` -> `RuntimeConfig`
+  - 目标平台：`deployment_target = "linux"`、`kernel_min = "5.15"`、`cgroup_version = "v2"`。
+  - runtime 选择：`process_names = ["ollama", "llama-server"]` 或 `pid_allowlist`。
+  - collection：`focus_signals` 决定 Linux probe plan 和 collector 是否接收某信号。
+  - metrics：`track` 决定 metrics recorder 跟踪哪些指标。
+- `configs/classifier/process_rules.example.toml` -> `Vec<ProcessRule>`
+  - 当前示例包含 `ollama`、`llama-server`、`python inference_worker`、
+    `tool-executor`、`retrieval-worker`、`rerank-worker`、`stress-ng`。
+- `configs/scenarios/ai_workload_awareness.example.toml` -> `AwarenessConfig`
+  - 控制 cmdline/cgroup/parent/PID allowlist 规则开关。
+  - 定义 interactive/tool/background 默认标签集合。
+- `configs/scenarios/inference_tail_guard.example.toml` -> `ScenarioPolicy`
+  - `evaluation_window_ms = 500`、`cooldown_ms = 1500`、`max_boost_duration_ms = 800`。
+  - 触发项包括 run queue delay、off-CPU spike、CPU migration rate、major fault rate。
+  - 动作包括 `raise_nice = -5`、`pin_strategy = "prefer_reserved_cores"`、`use_cpuset = false`。
+- `configs/scenarios/tool_call_booster.example.toml` -> `ScenarioPolicy`
+  - `evaluation_window_ms = 300`、`cooldown_ms = 800`、`max_boost_duration_ms = 1200`。
+  - 触发项包括 subprocess startup delay、queue wait、optional I/O latency。
+  - 动作包括 `raise_nice = -3`、`pin_strategy = "prefer_low_contention_cores"`、
+    `warmup_executor = true`。
+- `configs/safety/default.toml` -> `SafetyConfig`
+  - `require_revert = true`
+  - `allow_background_throttle = false`
+  - `max_priority_delta = 5`
+  - `max_boost_duration_ms = 800`
+  - `max_affinity_change_ratio = 0.5`
 
-- kernel version
-- cgroup mode
-- reserved cores
-- target runtime selection
+局限：配置解析器是仓库内手写的最小 TOML 子集解析器，服务当前示例文件结构；它不是完整
+TOML 解析库，也没有通用配置 discovery 或 profile overlay。
 
-### `configs/classifier/`
+## 对外接口
 
-负责 workload 识别规则：
+### Daemon CLI
 
-- process name
-- cmdline pattern
-- stage tag
-- parent-child relation
+常用 mock 路径：
 
-### `configs/scenarios/`
+```bash
+cargo run -p aegisai-runtime-daemon -- \
+  --repo-root . \
+  --source mock \
+  --metadata demo \
+  --actuator-backend noop
+```
 
-负责各场景独立策略：
+Tool-call lifecycle mock：
 
-- `inference_tail_guard.example.toml`
-- `tool_call_booster.example.toml`
-- `ai_workload_awareness.example.toml`
+```bash
+cargo run -p aegisai-runtime-daemon -- \
+  --repo-root . \
+  --source mock \
+  --mock-profile tool-call-lifecycle \
+  --metadata noop \
+  --actuator-backend noop
+```
 
-### `configs/safety/`
+Linux source，允许部分 probe 失败：
 
-负责全局安全限制：
+```bash
+cargo run -p aegisai-runtime-daemon -- \
+  --repo-root . \
+  --source linux \
+  --metadata procfs \
+  --actuator-backend linux-skeleton \
+  --allow-partial-probes
+```
 
-- 最大优先级提升幅度
-- 最大 boost 窗口
-- 是否允许 throttle background
-- 回退要求
+Linux command dry-run：
 
-## 10. benchmark 设计
+```bash
+cargo run -p aegisai-runtime-daemon -- \
+  --repo-root . \
+  --source linux \
+  --metadata procfs \
+  --actuator-backend linux-command-dry-run \
+  --allow-partial-probes
+```
 
-benchmark 不再只围绕一个 `llm_benchmark` 目录，而是明确服务三条主线。
+Live command path 被强制加门：
 
-### `bench/inference_tail_guard`
+```bash
+cargo run -p aegisai-runtime-daemon -- \
+  --repo-root . \
+  --source linux \
+  --metadata procfs \
+  --actuator-backend linux-command \
+  --confirm-live-actuator \
+  --live-pid-allowlist <pid,...>
+```
 
-用于验证：
+默认 live command 只允许 nice 相关动作；只有显式加 `--enable-live-affinity` 才会允许
+`taskset` 亲和性动作。`--live-pid-allowlist` 也会把 runtime selection 改为 PID allowlist
+模式，并清空 process-name selection，防止 live actuator 扩散到非目标进程。
 
-- 无优化 vs 开启 boost
-- CPU 干扰场景
-- I/O 干扰场景
-- TTFT / P95 / P99 / jitter
+### Helper CLI
 
-### `bench/tool_call_booster`
+helper readiness：
 
-用于验证：
+```bash
+cargo run -p aegisai-ebpf-helper -- --check
+```
 
-- tool executor 启动延迟
-- retrieval / rerank 子链路时延
-- 工具链 end-to-end latency
+helper stream：
 
-### `bench/ai_workload_awareness`
+```bash
+cargo run -p aegisai-ebpf-helper -- \
+  stream --offcpu --io --process-name ollama
+```
 
-用于验证：
+helper 支持的外部选择器是 `--pid` 和 `--process-name`，支持的固定信号开关是 `--offcpu`
+和 `--io`。如果 helper 不在 `PATH`，daemon 侧可通过 `AEGISAI_EBPF_HELPER=/path/to/helper`
+指定；helper 内部 bpftrace 命令可通过 `AEGISAI_BPFTRACE=/path/to/bpftrace` 指定。
 
-- 规则识别准确性
-- 标签覆盖率
-- runtime 适配完整度
+### Rust trait/API 边界
 
-### `bench/interference`
+主要内部接口：
 
-用于统一放置干扰源定义：
+- `EventSource`
+  - `source_name()`
+  - `next_event()`
+  - `poll_batch(max_batch)`
+- `MetadataProvider`
+  - `provider_name()`
+  - `snapshot_process(pid)`
+- `ProbeEventReader`
+  - `start(plan, config)`
+  - `next_probe_event()`
+  - `poll_probe_events(max_events)`
+  - `stop()`
+- `LinuxProbeDriver`
+  - `attach_probe(probe, config)`
+  - `poll_events(max_events, timeout_ms)`
+  - `stop()`
+- `ActuatorBackend`
+  - `apply(plan, now_ms)`
+  - `rollback(applied, lease, now_ms)`
+- `LinuxSyscallExecutor` / `LinuxSyscallApplier` / `LinuxProcessStateProvider`
+  - 分离 Linux syscall plan、状态捕获、命令执行和回滚审计。
 
-- `stress-ng`
-- `fio`
-- background batch workers
+主要可复用结构：
 
-## 11. 当前明确不做
+- `RuntimeOrchestrator::with_actuator(config, actuator)`
+- `RuntimeOrchestrator::process_event(event) -> OrchestrationOutcome`
+- `RuntimeOrchestrator::tick(now_ms) -> Vec<AppliedAction>`
+- `Collector::ingest(event)` 与 `Collector::process_window(pid, now, trailing_window_us)`
+- `Classifier::classify_process(snapshot)`
+- `PolicyEngine::evaluate_all(contexts)`
+- `Actuator::apply(plan, now_ms, require_revert)` 与 `Actuator::expire(now_ms)`
+- `MetricsRecorder::record(input)`
+- `ExplainTuneEngine::analyze(records, traces, policies)`
 
-- 自动多模型智能分类
-- 完整 GPU 协同调度
-- 大型 dashboard
-- AI 直接参与实时策略执行
-- 过强、不可回退的系统控制
+## 系统运行完整调用流程
 
-## 12. 接下来应该怎么落地
+### 1. CLI 解析和配置加载
 
-当前正确推进顺序：
+`agent/runtime_daemon/src/main.rs` 的 `main` 先解析 `CliConfig`，然后调用
+`RuntimeOrchestratorConfig::load_from_repo_root(&cli.repo_root)` 读取固定 `configs/` 文件。
 
-1. 证明 effective live `inference_tail_guard` actuator benefit
-2. 用 rootless main + privileged helper 路线验证真实 eBPF off-CPU / I/O latency 信号
-3. 把 `tool_call_booster` 从 trigger proof 推进到 repeated A/B benefit proof
-4. 加固 actuator、runtime source、benefit report 等热路径测试
-5. 再进入 AI-aware isolation、explain/tune 自动化和高级扩展
+随后有两处运行时调整：
 
-## 13. 辅助文档
+1. `runtime_config_for_source`
+   - 如果 backend 是 `linux-command` 且 CLI 提供了 `--live-pid-allowlist`，则把 runtime
+     selection 切到 `pid_allowlist`，并清空 `process_names`。
+2. `config_for_actuator_scope`
+   - 如果 backend 是 `linux-command` 且没有 `--enable-live-affinity`，则移除
+     Inference Tail Guard 的 `pin_strategy`，让 live path 先收敛到 nice-only。
 
-- `docs/architecture.md`：系统分层和骨架说明
-- `docs/mvp.md`：MVP 边界与成功标准
-- `docs/current_status.md`：当前仓库状态、验证结果和 beads 待办索引
-- `docs/roadmap.md`：阶段路线
-- `docs/next_stage.md`：下一大阶段执行计划
-- `docs/experiments.md`：实验与 benchmark 设计
-- `docs/resume_pitch.md`：简历与项目表述
+之后 `build_actuator` 创建 backend，`RuntimeOrchestrator::with_actuator` 创建组合点，
+`RuntimeLoop::new` 创建主循环。
+
+### 2. Source 选择
+
+CLI 的 `--source` 决定事件来源：
+
+- `mock`
+  - `MockEventSource::demo_sequence()`
+  - `MockEventSource::tool_call_lifecycle_sequence()`
+- `linux`
+  - `LinuxProbeSource::from_runtime_with_config(&runtime_config, cli.probe_reader_config())`
+
+mock source 可以配 `demo`、`noop` 或 Linux 上的 `procfs` metadata；Linux source 只支持
+`procfs` metadata。
+
+### 3. Linux probe plan 生成
+
+Linux source 根据 `RuntimeConfig.focus_signals` 调用 `LinuxProbePlan::from_runtime`：
+
+```text
+run_queue_delay      -> sched_probe
+cpu_migration        -> sched_probe
+major_page_fault     -> fault_probe
+offcpu_time          -> offcpu_probe
+io_latency           -> io_probe
+subprocess_start_delay -> runtime-only
+queue_wait             -> runtime-only
+```
+
+计划生成后进入 `DriverBackedProbeEventReader<RealLinuxProbeDriver>`：
+
+- `ProcfsSchedstatProbeDriver`
+  - 读取 `/proc/<pid>/schedstat`、`/proc/<pid>/sched`、`/proc/<pid>/stat`。
+  - 生成 procfs 派生的 run queue delay、CPU migration、major page fault 事件。
+- `BpfTraceProbeDriver<SystemEbpfHelperPipe>`
+  - 通过 `aegisai-ebpf-helper --check` 验证 helper。
+  - 启动 `aegisai-ebpf-helper stream --offcpu --io --pid ... --process-name ...`。
+  - 读取 helper stdout/stderr 中的 `aegisai_probe ...` 行并转成 probe event。
+
+如果 `ProbeReaderConfig.require_all_probes = true`，任何必要 probe attach 失败都会让 Linux
+source 报错；`--allow-partial-probes` 会把它改成 false，让 procfs-backed 信号继续进入
+闭环，同时在启动状态中记录失败 probe。
+
+### 4. SourceEvent 转 Runtime Event
+
+`RuntimeLoop::run` 从 `EventSource::poll_batch` 拿到 `SourceEvent` 后调用
+`enrich_source_event`。
+
+metadata provider 负责补齐缺失字段：
+
+- `StaticMetadataProvider`：demo 和集成测试用。
+- `NoopMetadataProvider`：mock event 已自描述时使用。
+- `ProcfsMetadataProvider`：Linux 上读取 process name、cmdline、cgroup、parent pid、
+  parent process name、parent cmdline。
+
+补齐后的事件成为共享 contract 中的 `Event`。
+
+### 5. RuntimeLoop 驱动节奏
+
+`RuntimeLoop::run` 对每个事件执行：
+
+1. 按 `tick_interval_ms` 调用 `orchestrator.tick(next_tick)`，让到期 lease 回滚。
+2. enrichment 后记录 `signal_observations`。
+3. 更新 tool-call lifecycle tracker。
+4. 调用 `RuntimeOrchestrator::process_event(runtime_event)`。
+5. 汇总 `feature_window_maxima`、applied action、inline rollback、triggered scenario。
+6. 达到 `--max-events` 或 source drain 后退出。
+7. 最后用 `drain_after_source_ms` 做一次最终 tick，回收 pending rollback。
+8. 输出 `RuntimeRunSummary`，并可通过 `--verification-log` 追加到日志。
+
+### 6. Orchestrator 单事件处理
+
+`RuntimeOrchestrator::process_event` 是主热路径：
+
+1. `self.actuator.expire(event.timestamp_ms)`
+   - 在新评估前先回滚到期动作。
+2. `should_collect_signal`
+   - 如果 `focus_signals` 为空或包含该 signal，进入 collector。
+3. `to_collector_event`
+   - 把 runtime `SignalKind` 转成 collector `EventKind` 和 `ProbeSource`。
+4. `self.collector.ingest(collector_event)`
+   - 更新窗口和 recent events。
+5. `self.classifier.classify(&event)`
+   - runtime process name、PID allowlist、parent inference、process rules 一起生成
+     `WorkloadProfile`。
+6. 为每个 enabled policy 调用 `project_feature_window`
+   - 用该 policy 的 `evaluation_window_ms` 生成 trailing process window。
+7. 构造 `PolicyContext`
+   - 包含 event context、feature window、profile、tool_call_id 等 audit fields。
+8. `self.policy_engine.evaluate_all(policy_contexts.iter())`
+   - 生成一个或多个 `ActionPlan`。
+9. `self.actuator.apply(plan, event.timestamp_ms, self.config.safety.require_revert)`
+   - backend apply，并记录 lease。
+10. `self.metrics.record(...)`
+   - 写 evaluation trace、action trace、rollback trace、notes 和 metric snapshot。
+11. 返回 `OrchestrationOutcome`
+   - 包含 profile、每个 scenario 的 feature window、applied actions、rollbacks、metric record。
+
+### 7. Classifier/Awareness 细节
+
+`AiWorkloadAwareness` 在 orchestrator 内部组合 runtime config、awareness config 和
+`aegisai_classifier::Classifier`：
+
+- runtime process name 命中时，加 `interactive_default` 标签。
+- PID allowlist 命中时，加 `interactive_default` 标签。
+- parent process 命中 runtime process 时，加 `interactive_default` 标签。
+- process rules 命中时，合并规则定义的 tags 和 matched rule id。
+- 若已有 `TOOL_CALL`，补 `tool_executor_default`。
+- 若已有 `BACKGROUND_JOB`，补 `background_default`。
+
+随后 `WorkloadClass::from_tags`、`StageLabel::from_tags`、`LatencySensitivity::from_tags` 把标签
+归约成 policy 需要的 profile。
+
+### 8. PolicyEngine 和场景策略
+
+当前配置加载的 enabled scenario 是：
+
+```text
+inference_tail_guard
+tool_call_booster
+```
+
+`ScenarioKind::AiWorkloadAwareness` 已存在于共享类型和优先级中，但当前 `load_from_repo_root`
+没有把它作为独立 active policy 加载；awareness 主要作为 classifier 基础能力服务其他场景。
+
+`PolicyEngine::evaluate_all` 的步骤：
+
+1. 对每个 context 调 `evaluate_candidate`。
+2. 应用 scenario-specific evaluator：
+   - `inference_tail_guard::evaluate`
+   - `tool_call_booster::evaluate`
+   - 其他 scenario 走 generic evaluator。
+3. 检查 `(pid, scenario)` cooldown。
+4. 生成 candidate plan 后，按 `(pid, action slot)` 冲突消解。
+5. 冲突时按 scenario priority 保留更高优先级动作：
+
+```text
+inference_tail_guard > tool_call_booster > ai_workload_awareness > unknown
+```
+
+Inference Tail Guard 只匹配同时带有：
+
+```text
+AI_INFERENCE
+INTERACTIVE_LATENCY_SENSITIVE
+```
+
+Tool Call Booster 只匹配 `TOOL_CALL`，再按标签分 stage：
+
+```text
+TOOL_CALL only                    -> executor
+TOOL_CALL + RETRIEVAL_STAGE       -> retrieval
+TOOL_CALL + RERANK_STAGE          -> rerank
+```
+
+Tool Call Booster 的 duration ratio：
+
+```text
+executor  -> 1/1
+retrieval -> 3/4
+rerank    -> 1/2
+```
+
+### 9. Actuator apply/rollback
+
+`Actuator` 不直接执行系统命令。它负责：
+
+- 调用 backend apply。
+- 合并 `backend.apply.*` 和 lease audit fields。
+- 如果 `require_revert = true`，按 `(pid, scenario)` 存储 `ActionLease`。
+- `expire(now_ms)` 时按到期时间稳定排序，调用 backend rollback。
+
+后端分层：
+
+- `NoopActuatorBackend`
+  - 默认安全后端，只记录 simulated apply/rollback。
+- `RecordingActuatorBackend`
+  - 测试后端，记录操作序列。
+- `LinuxActuatorBackend`
+  - 把 `ActionPlan` 转为 `LinuxSyscallPlan`。
+- `PlannedOnlyLinuxSyscallExecutor`
+  - 捕获 nice/affinity/cpuset 原始状态，执行 apply/rollback operation，并写审计字段。
+- `CommandLinuxSyscallApplier`
+  - dry-run 或 live command applier。
+  - live 时通过 `LiveLinuxCommandGuard` 强制确认、PID allowlist、操作 scope。
+
+live command 当前实际会执行：
+
+```text
+renice <target_nice> -p <pid>
+taskset -pc <cpu-list> <pid>   # only with --enable-live-affinity
+```
+
+当前不会真正实现：
+
+```text
+cpuset cgroup write
+executor warmup side effect
+```
+
+这些动作现在主要作为 plan/audit/rollback surface 存在。
+
+### 10. Metrics 和 Explain/Tune
+
+`MetricsRecorder::record` 会生成两种视图：
+
+- `MetricRecord`
+  - 当前事件的 evaluated scenarios、triggered scenarios、action count、rollback count、
+    side effects、tracked metric trends。
+- `MetricTrace`
+  - scenario evaluation、measurement observed、action applied、action rolled back、side effect
+    observed 等解释性 trace。
+
+`ExplainTuneEngine::analyze` 消费 records、traces 和 policies，生成：
+
+- 每个 scenario 的 evaluation/trigger/rollback/side-effect 汇总。
+- trigger explanations。
+- tool-call chain reports。
+- tune suggestions。
+- findings。
+
+这个模块当前是离线分析工具，不在热路径里做在线调参。
+
+## 权限边界
+
+产品形态是：
+
+```text
+aegisai-runtime-daemon   普通用户进程，负责 config/policy/control/reporting
+aegisai-ebpf-helper      受控 privileged helper，负责固定 eBPF/bpftrace attachment
+```
+
+daemon 不把任意 bpftrace source 交给 helper。helper CLI 只暴露：
+
+```text
+stream --offcpu --io --pid <pid> --process-name <name>
+```
+
+当前 helper 内部依赖 bpftrace，涉及：
+
+```text
+sched:sched_switch
+block:block_rq_issue
+block:block_rq_complete
+```
+
+因此不同 kernel 的 tracepoint 字段兼容性仍是验证风险。Linux source 支持
+`--allow-partial-probes`，让 helper 不可用时仍可保留 procfs-backed signals。
+
+## 验证和 Benchmarks
+
+workspace 总验证：
+
+```bash
+bash bench/scripts/verify_workspace.sh
+```
+
+该脚本覆盖：
+
+- `cargo check --workspace`
+- `cargo test --workspace`
+- Tool Call Booster report unit tests
+- `cargo fmt --all -- --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- mock daemon smoke
+- Linux source partial-probe smoke
+
+Inference Tail Guard Phase 4 严格收益报告：
+
+```bash
+bash bench/scripts/inference_tail_guard_phase4_report.sh
+```
+
+Tool Call Booster repeated A/B harness：
+
+```bash
+bash bench/scripts/tool_call_booster_real_executor_harness.sh
+```
+
+当前 `docs/mvp_benefit_report.md` 结论：
+
+- `Result: FAIL`
+- live guarded mode contract 通过。
+- live guarded 已记录有效 host-level `taskset` 动作。
+- 但 live guarded 没有达到稳定改善门槛。
+- dry-run/noop 的改善被视为闭环证据，不视为 MVP benefit proof。
+
+## 已知问题和差距
+
+当前仍打开的 beads issue：
+
+- `AegisAI_Runtime-jtt`：用 controlled workload 验证 helper-backed real `offcpu_time` 和
+  `io_latency` 事件。
+- `AegisAI_Runtime-lql`：继续调优 live Inference Tail Guard affinity benefit；当前有效动作
+  已出现，但严格收益仍未过线。
+- `AegisAI_Runtime-94s`：运行 controlled Tool Call Booster live guarded benefit proof。
+- `AegisAI_Runtime-v2y`：把 live CPU affinity planning 从 actuator 大文件中模块化。
+
+源码和设计层面的限制：
+
+- `ai_workload_awareness` 当前是 classifier/awareness 基础能力，不是已加载的独立 active
+  scenario policy。
+- eBPF crate 主要提供 probe contract/descriptor/registry；当前 Linux 主路径的 sched/fault
+  信号来自 procfs 派生，offcpu/io 来自 helper-backed bpftrace。
+- bpftrace I/O 程序依赖 host block tracepoint 字段，跨 kernel 可移植性仍需实测。
+- `linux-command` 通过 `renice`/`taskset` 命令执行，而不是直接 syscall 或 cgroup API。
+- cpuset/background throttling 在 policy/audit surface 中存在，但 live 控制基本未启用。
+- warmup executor 现在是审计/计划语义，尚未接入真实 executor warmup side effect。
+- 配置加载固定读取 `configs/*/*.example.toml`，没有生产配置 profile、动态 reload 或完整 TOML
+  schema 校验。
+- Linux source preflight smoke 可能处理 0 个事件；它证明启动、权限降级和 partial-probe
+  安全，不证明性能收益。
+- 当前热点大文件仍包括 `agent/runtime_daemon/src/source.rs`、
+  `agent/actuator/src/backend.rs`、`agent/explain_tune/src/engine.rs`、
+  `agent/runtime_orchestrator/src/runtime_orchestrator.rs`、`agent/policy_engine/src/engine.rs`
+  和 `bench/scripts/inference_tail_guard_ollama_smoke.sh`；后续修改应小步、测试先行。
+- 还没有生产 service packaging、installer、dashboard、GPU scheduler 或在线 adaptive policy
+  loop。
+
+## 阅读路线
+
+- `docs/current_status.md`：当前状态和 TODO 索引。
+- `docs/mvp.md`：MVP 定义和严格收益规则。
+- `docs/mvp_benefit_report.md`：最新收益证据和当前 FAIL 结论。
+- `docs/next_stage.md`：证据强化阶段计划。
+- `docs/verification_log.md`：append-only 验证历史。
+- `docs/architecture.md`：早期分层架构说明。
+- `agent/runtime_daemon/README.md`：CLI/source/metadata 细节。
+- `agent/actuator/README.md`：backend 和 rollback 设计。
+- `agent/ebpf_helper/README.md`：helper 权限边界。
+- `bench/README.md`：benchmark 组织原则。
