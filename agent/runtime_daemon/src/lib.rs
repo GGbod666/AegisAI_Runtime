@@ -13,11 +13,11 @@ pub use runtime_loop::{
     ToolCallLifecycleSummary,
 };
 pub use source::{
-    DriverBackedProbeEventReader, EventSource, LinuxProbeDriver, LinuxProbeHost, LinuxProbePlan,
-    LinuxProbeSource, MockEventSource, PlannedProbe, PreflightLinuxProbeDriver, ProbeAttachment,
-    ProbeAttachmentStatus, ProbeEventReader, ProbeReaderConfig, ProbeReaderShutdown,
-    ProbeReaderStartup, ProcfsSchedstatProbeDriver, ProcfsSchedstatSampler,
-    ProcfsSchedstatSnapshot, ProcfsTargetSelectors, SourceError, SourceEvent,
-    StaticProbeEventReader, SystemLinuxProbeHost, SystemProcfsSchedstatSampler,
-    UnavailableLinuxProbeDriver, UnsupportedProbeEventReader,
+    BpfTracePipe, BpfTraceProbeDriver, DriverBackedProbeEventReader, EventSource, LinuxProbeDriver,
+    LinuxProbeHost, LinuxProbePlan, LinuxProbeSource, MockEventSource, PlannedProbe,
+    PreflightLinuxProbeDriver, ProbeAttachment, ProbeAttachmentStatus, ProbeEventReader,
+    ProbeReaderConfig, ProbeReaderShutdown, ProbeReaderStartup, ProcfsSchedstatProbeDriver,
+    ProcfsSchedstatSampler, ProcfsSchedstatSnapshot, ProcfsTargetSelectors, RealLinuxProbeDriver,
+    SourceError, SourceEvent, StaticProbeEventReader, SystemBpfTracePipe, SystemLinuxProbeHost,
+    SystemProcfsSchedstatSampler, UnavailableLinuxProbeDriver, UnsupportedProbeEventReader,
 };

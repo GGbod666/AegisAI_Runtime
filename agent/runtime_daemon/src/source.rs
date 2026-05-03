@@ -1,6 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::env;
 use std::fmt;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
+use std::thread::JoinHandle;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ebpf_probe::{
     AttachPoint, Event as ProbeEvent, EventKind as ProbeEventKind, MetricUnit, ProbeConfig,
@@ -564,6 +569,672 @@ where
 
         Ok(events)
     }
+}
+
+pub struct RealLinuxProbeDriver<P, S> {
+    procfs: ProcfsSchedstatProbeDriver<S>,
+    bpftrace: BpfTraceProbeDriver<P>,
+    attached_procfs: bool,
+    attached_bpftrace: bool,
+}
+
+impl RealLinuxProbeDriver<SystemBpfTracePipe, SystemProcfsSchedstatSampler> {
+    pub fn from_runtime(runtime: &RuntimeConfig) -> Self {
+        Self::new(
+            ProcfsSchedstatProbeDriver::from_runtime(runtime),
+            BpfTraceProbeDriver::from_runtime(runtime),
+        )
+    }
+}
+
+impl<P, S> RealLinuxProbeDriver<P, S> {
+    pub fn new(procfs: ProcfsSchedstatProbeDriver<S>, bpftrace: BpfTraceProbeDriver<P>) -> Self {
+        Self {
+            procfs,
+            bpftrace,
+            attached_procfs: false,
+            attached_bpftrace: false,
+        }
+    }
+}
+
+impl<P, S> LinuxProbeDriver for RealLinuxProbeDriver<P, S>
+where
+    P: BpfTracePipe,
+    S: ProcfsSchedstatSampler,
+{
+    fn driver_name(&self) -> &str {
+        "real-linux-probe-driver"
+    }
+
+    fn attach_probe(
+        &mut self,
+        probe: &PlannedProbe,
+        config: &ProbeReaderConfig,
+    ) -> ProbeAttachmentStatus {
+        let status = match probe.kind {
+            ProbeKind::Sched | ProbeKind::Fault => self.procfs.attach_probe(probe, config),
+            ProbeKind::OffCpu | ProbeKind::Io => self.bpftrace.attach_probe(probe, config),
+        };
+
+        if status == ProbeAttachmentStatus::Attached {
+            match probe.kind {
+                ProbeKind::Sched | ProbeKind::Fault => self.attached_procfs = true,
+                ProbeKind::OffCpu | ProbeKind::Io => self.attached_bpftrace = true,
+            }
+        }
+
+        status
+    }
+
+    fn poll_events(
+        &mut self,
+        max_events: usize,
+        timeout_ms: u64,
+    ) -> Result<Vec<ProbeEvent>, SourceError> {
+        if max_events == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut events = self.bpftrace.poll_events(max_events, 0)?;
+        if events.len() < max_events {
+            events.extend(
+                self.procfs
+                    .poll_events(max_events.saturating_sub(events.len()), 0)?,
+            );
+        }
+
+        if !events.is_empty() || timeout_ms == 0 {
+            return Ok(events);
+        }
+
+        if self.attached_bpftrace {
+            events.extend(self.bpftrace.poll_events(max_events, timeout_ms)?);
+            if events.len() < max_events && self.attached_procfs {
+                events.extend(
+                    self.procfs
+                        .poll_events(max_events.saturating_sub(events.len()), 0)?,
+                );
+            }
+        } else if self.attached_procfs {
+            events.extend(self.procfs.poll_events(max_events, timeout_ms)?);
+        } else {
+            std::thread::sleep(Duration::from_millis(timeout_ms));
+        }
+
+        Ok(events)
+    }
+
+    fn stop(&mut self) -> Result<String, SourceError> {
+        let bpftrace_stop = self.bpftrace.stop()?;
+        let procfs_stop = self.procfs.stop()?;
+        Ok(format!("{bpftrace_stop}; {procfs_stop}"))
+    }
+}
+
+pub trait BpfTracePipe {
+    fn pipe_name(&self) -> &str;
+
+    fn check_available(&self) -> Result<(), String>;
+
+    fn start(&mut self, program: &str) -> Result<(), SourceError>;
+
+    fn read_lines(&mut self, max_lines: usize, timeout_ms: u64)
+        -> Result<Vec<String>, SourceError>;
+
+    fn stop(&mut self) -> Result<String, SourceError>;
+}
+
+pub struct BpfTraceProbeDriver<P> {
+    pipe: P,
+    selectors: ProcfsTargetSelectors,
+    attached_offcpu: bool,
+    attached_io: bool,
+    started: bool,
+}
+
+impl BpfTraceProbeDriver<SystemBpfTracePipe> {
+    pub fn from_runtime(runtime: &RuntimeConfig) -> Self {
+        Self::new(
+            ProcfsTargetSelectors::from_runtime(runtime),
+            SystemBpfTracePipe::default(),
+        )
+    }
+}
+
+impl<P> BpfTraceProbeDriver<P> {
+    pub fn new(selectors: ProcfsTargetSelectors, pipe: P) -> Self {
+        Self {
+            pipe,
+            selectors,
+            attached_offcpu: false,
+            attached_io: false,
+            started: false,
+        }
+    }
+}
+
+impl<P> LinuxProbeDriver for BpfTraceProbeDriver<P>
+where
+    P: BpfTracePipe,
+{
+    fn driver_name(&self) -> &str {
+        self.pipe.pipe_name()
+    }
+
+    fn attach_probe(
+        &mut self,
+        probe: &PlannedProbe,
+        _config: &ProbeReaderConfig,
+    ) -> ProbeAttachmentStatus {
+        if let Err(error) = probe.config.validate() {
+            return ProbeAttachmentStatus::Failed(error.to_string());
+        }
+
+        let supports_all_signals = probe.required_signals.iter().all(|signal| {
+            matches!(
+                (probe.kind, signal),
+                (ProbeKind::OffCpu, SignalKind::OffCpuTime)
+                    | (ProbeKind::Io, SignalKind::IoLatency)
+            )
+        });
+
+        if !supports_all_signals || probe.required_signals.is_empty() {
+            return ProbeAttachmentStatus::Failed(
+                "bpftrace driver supports offcpu_time via offcpu_probe and io_latency via io_probe"
+                    .to_string(),
+            );
+        }
+
+        if let Err(reason) = self.pipe.check_available() {
+            return ProbeAttachmentStatus::Failed(reason);
+        }
+
+        for signal in &probe.required_signals {
+            match signal {
+                SignalKind::OffCpuTime => self.attached_offcpu = true,
+                SignalKind::IoLatency => self.attached_io = true,
+                _ => {}
+            }
+        }
+
+        ProbeAttachmentStatus::Attached
+    }
+
+    fn poll_events(
+        &mut self,
+        max_events: usize,
+        timeout_ms: u64,
+    ) -> Result<Vec<ProbeEvent>, SourceError> {
+        if max_events == 0 || !(self.attached_offcpu || self.attached_io) {
+            return Ok(Vec::new());
+        }
+
+        self.ensure_started()?;
+
+        let max_lines = max_events.saturating_mul(8).max(max_events);
+        let mut events = Vec::new();
+        for line in self.pipe.read_lines(max_lines, timeout_ms)? {
+            let Some(event) = parse_bpftrace_probe_line(&line)? else {
+                continue;
+            };
+
+            if self.accepts_event(&event) {
+                events.push(event);
+                if events.len() >= max_events {
+                    break;
+                }
+            }
+        }
+
+        Ok(events)
+    }
+
+    fn stop(&mut self) -> Result<String, SourceError> {
+        self.started = false;
+        self.pipe.stop()
+    }
+}
+
+impl<P> BpfTraceProbeDriver<P>
+where
+    P: BpfTracePipe,
+{
+    fn ensure_started(&mut self) -> Result<(), SourceError> {
+        if self.started {
+            return Ok(());
+        }
+
+        let program = bpftrace_program(&self.selectors, self.attached_offcpu, self.attached_io);
+        self.pipe.start(&program)?;
+        self.started = true;
+        Ok(())
+    }
+
+    fn accepts_event(&self, event: &ProbeEvent) -> bool {
+        matches!(
+            event.kind,
+            ProbeEventKind::OffCpuDuration if self.attached_offcpu
+        ) || matches!(
+            event.kind,
+            ProbeEventKind::BlockIoLatency if self.attached_io
+        )
+    }
+}
+
+pub struct SystemBpfTracePipe {
+    command: String,
+    child: Option<Child>,
+    receiver: Option<Receiver<String>>,
+    reader_threads: Vec<JoinHandle<()>>,
+}
+
+impl Default for SystemBpfTracePipe {
+    fn default() -> Self {
+        Self {
+            command: env::var("AEGISAI_BPFTRACE").unwrap_or_else(|_| "bpftrace".to_string()),
+            child: None,
+            receiver: None,
+            reader_threads: Vec::new(),
+        }
+    }
+}
+
+impl BpfTracePipe for SystemBpfTracePipe {
+    fn pipe_name(&self) -> &str {
+        "bpftrace-ebpf-driver"
+    }
+
+    fn check_available(&self) -> Result<(), String> {
+        if !command_exists(&self.command) {
+            return Err(format!(
+                "`{}` is not available in PATH; install bpftrace to stream real offcpu/io eBPF events",
+                self.command
+            ));
+        }
+
+        bpftrace_permission_check()?;
+        Ok(())
+    }
+
+    fn start(&mut self, program: &str) -> Result<(), SourceError> {
+        if self.child.is_some() {
+            return Ok(());
+        }
+
+        let mut child = Command::new(&self.command)
+            .arg("-q")
+            .arg("-e")
+            .arg(program)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| {
+                SourceError::Unsupported(format!(
+                    "failed to start `{}` for real eBPF probe ingestion: {error}",
+                    self.command
+                ))
+            })?;
+
+        let stdout = child.stdout.take().ok_or_else(|| {
+            SourceError::Unsupported("failed to capture bpftrace stdout".to_string())
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            SourceError::Unsupported("failed to capture bpftrace stderr".to_string())
+        })?;
+        let (sender, receiver) = mpsc::channel();
+        self.reader_threads
+            .push(spawn_pipe_reader(stdout, sender.clone()));
+        self.reader_threads.push(spawn_pipe_reader(stderr, sender));
+        self.receiver = Some(receiver);
+        self.child = Some(child);
+        Ok(())
+    }
+
+    fn read_lines(
+        &mut self,
+        max_lines: usize,
+        timeout_ms: u64,
+    ) -> Result<Vec<String>, SourceError> {
+        if max_lines == 0 {
+            return Ok(Vec::new());
+        }
+
+        if let Some(child) = self.child.as_mut() {
+            if let Some(status) = child.try_wait().map_err(|error| {
+                SourceError::Unsupported(format!("failed to check bpftrace status: {error}"))
+            })? {
+                return Err(SourceError::Unsupported(format!(
+                    "bpftrace exited before probe events were available: {status}"
+                )));
+            }
+        }
+
+        let Some(receiver) = self.receiver.as_ref() else {
+            return Err(SourceError::InvalidConfig(
+                "bpftrace pipe must be started before reading events".to_string(),
+            ));
+        };
+
+        let mut lines = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
+        while lines.len() < max_lines {
+            if timeout_ms == 0 || !lines.is_empty() {
+                match receiver.try_recv() {
+                    Ok(line) => lines.push(line),
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => break,
+                }
+            } else {
+                let now = std::time::Instant::now();
+                if now >= deadline {
+                    break;
+                }
+                match receiver.recv_timeout(deadline.saturating_duration_since(now)) {
+                    Ok(line) => lines.push(line),
+                    Err(mpsc::RecvTimeoutError::Timeout) => break,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        }
+
+        Ok(lines)
+    }
+
+    fn stop(&mut self) -> Result<String, SourceError> {
+        let mut stop_reason = "bpftrace eBPF driver stopped without a running child".to_string();
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            match child.wait() {
+                Ok(status) => {
+                    stop_reason = format!("bpftrace eBPF driver stopped with status {status}");
+                }
+                Err(error) => {
+                    stop_reason = format!("bpftrace eBPF driver stop wait failed: {error}");
+                }
+            }
+        }
+
+        self.receiver = None;
+        for thread in self.reader_threads.drain(..) {
+            let _ = thread.join();
+        }
+        Ok(stop_reason)
+    }
+}
+
+impl Drop for SystemBpfTracePipe {
+    fn drop(&mut self) {
+        let _ = self.stop();
+    }
+}
+
+#[cfg(test)]
+struct FakeBpfTracePipe {
+    lines: VecDeque<Vec<String>>,
+    started_program: Option<String>,
+    available: Result<(), String>,
+    stopped: bool,
+}
+
+#[cfg(test)]
+impl FakeBpfTracePipe {
+    fn new(lines: Vec<Vec<&str>>) -> Self {
+        Self {
+            lines: lines
+                .into_iter()
+                .map(|batch| batch.into_iter().map(str::to_string).collect())
+                .collect(),
+            started_program: None,
+            available: Ok(()),
+            stopped: false,
+        }
+    }
+
+    fn unavailable(reason: impl Into<String>) -> Self {
+        Self {
+            lines: VecDeque::new(),
+            started_program: None,
+            available: Err(reason.into()),
+            stopped: false,
+        }
+    }
+}
+
+#[cfg(test)]
+impl BpfTracePipe for FakeBpfTracePipe {
+    fn pipe_name(&self) -> &str {
+        "fake-bpftrace"
+    }
+
+    fn check_available(&self) -> Result<(), String> {
+        self.available.clone()
+    }
+
+    fn start(&mut self, program: &str) -> Result<(), SourceError> {
+        self.started_program = Some(program.to_string());
+        Ok(())
+    }
+
+    fn read_lines(
+        &mut self,
+        max_lines: usize,
+        _timeout_ms: u64,
+    ) -> Result<Vec<String>, SourceError> {
+        let mut lines = self.lines.pop_front().unwrap_or_default();
+        lines.truncate(max_lines);
+        Ok(lines)
+    }
+
+    fn stop(&mut self) -> Result<String, SourceError> {
+        self.stopped = true;
+        Ok("fake bpftrace stopped".to_string())
+    }
+}
+
+fn spawn_pipe_reader<R>(reader: R, sender: mpsc::Sender<String>) -> JoinHandle<()>
+where
+    R: std::io::Read + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let reader = BufReader::new(reader);
+        for line in reader.lines().map_while(Result::ok) {
+            if sender.send(line).is_err() {
+                break;
+            }
+        }
+    })
+}
+
+fn parse_bpftrace_probe_line(raw: &str) -> Result<Option<ProbeEvent>, SourceError> {
+    let raw = raw.trim();
+    let Some(rest) = raw.strip_prefix("aegisai_probe ") else {
+        return Ok(None);
+    };
+
+    let fields = rest
+        .split_whitespace()
+        .filter_map(|part| part.split_once('='))
+        .collect::<BTreeMap<_, _>>();
+
+    let signal = required_bpftrace_field(&fields, "signal")?;
+    let timestamp_ns = parse_bpftrace_u64(&fields, "ts_ns")?;
+    let pid = parse_bpftrace_u32(&fields, "pid")?;
+    let tid = parse_bpftrace_u32(&fields, "tid")?;
+    let comm = required_bpftrace_field(&fields, "comm")?;
+    let value_ns = parse_bpftrace_u64(&fields, "value_ns")?;
+
+    let (probe, kind) = match signal {
+        "offcpu_time" => (ProbeKind::OffCpu, ProbeEventKind::OffCpuDuration),
+        "io_latency" => (ProbeKind::Io, ProbeEventKind::BlockIoLatency),
+        other => {
+            return Err(SourceError::InvalidConfig(format!(
+                "unsupported bpftrace probe signal `{other}`"
+            )));
+        }
+    };
+
+    let event = ProbeEvent::new(
+        timestamp_ns,
+        probe,
+        kind,
+        ebpf_probe::EventTarget::new(pid, tid, comm),
+        ebpf_probe::EventMetric::duration_ns(value_ns),
+    );
+    event.validate().map_err(|error| {
+        SourceError::InvalidConfig(format!("invalid bpftrace probe event `{raw}`: {error}"))
+    })?;
+    Ok(Some(event))
+}
+
+fn required_bpftrace_field<'a>(
+    fields: &BTreeMap<&'a str, &'a str>,
+    name: &str,
+) -> Result<&'a str, SourceError> {
+    fields.get(name).copied().ok_or_else(|| {
+        SourceError::InvalidConfig(format!("bpftrace probe event is missing `{name}`"))
+    })
+}
+
+fn parse_bpftrace_u64(fields: &BTreeMap<&str, &str>, name: &str) -> Result<u64, SourceError> {
+    required_bpftrace_field(fields, name)?
+        .parse::<u64>()
+        .map_err(|_| SourceError::InvalidConfig(format!("invalid bpftrace `{name}` value")))
+}
+
+fn parse_bpftrace_u32(fields: &BTreeMap<&str, &str>, name: &str) -> Result<u32, SourceError> {
+    required_bpftrace_field(fields, name)?
+        .parse::<u32>()
+        .map_err(|_| SourceError::InvalidConfig(format!("invalid bpftrace `{name}` value")))
+}
+
+fn bpftrace_program(
+    selectors: &ProcfsTargetSelectors,
+    include_offcpu: bool,
+    include_io: bool,
+) -> String {
+    let offcpu_predicate = bpftrace_target_predicate(selectors, "args->prev_pid", "comm");
+    let io_predicate = bpftrace_target_predicate(selectors, "tid", "comm");
+    let mut sections = Vec::new();
+
+    if include_offcpu {
+        sections.push(format!(
+            r#"tracepoint:sched:sched_switch
+/args->prev_state != 0 && ({offcpu_predicate})/
+{{
+  @aegisai_offcpu_ts[args->prev_pid] = nsecs;
+  @aegisai_offcpu_pid[args->prev_pid] = pid;
+}}
+
+tracepoint:sched:sched_switch
+/@aegisai_offcpu_ts[args->next_pid]/
+{{
+  $delta = nsecs - @aegisai_offcpu_ts[args->next_pid];
+  if ($delta > 0) {{
+    printf("aegisai_probe signal=offcpu_time ts_ns=%llu pid=%u tid=%u comm=%s value_ns=%llu\n",
+      nsecs, @aegisai_offcpu_pid[args->next_pid], args->next_pid, str(args->next_comm), $delta);
+  }}
+  delete(@aegisai_offcpu_ts[args->next_pid]);
+  delete(@aegisai_offcpu_pid[args->next_pid]);
+}}"#
+        ));
+    }
+
+    if include_io {
+        sections.push(format!(
+            r#"tracepoint:block:block_rq_issue
+/({io_predicate})/
+{{
+  @aegisai_io_ts[args->dev, args->sector] = nsecs;
+  @aegisai_io_pid[args->dev, args->sector] = pid;
+  @aegisai_io_tid[args->dev, args->sector] = tid;
+  @aegisai_io_comm[args->dev, args->sector] = comm;
+}}
+
+tracepoint:block:block_rq_complete
+/@aegisai_io_ts[args->dev, args->sector]/
+{{
+  $delta = nsecs - @aegisai_io_ts[args->dev, args->sector];
+  if ($delta > 0) {{
+    printf("aegisai_probe signal=io_latency ts_ns=%llu pid=%u tid=%u comm=%s value_ns=%llu\n",
+      nsecs, @aegisai_io_pid[args->dev, args->sector], @aegisai_io_tid[args->dev, args->sector], @aegisai_io_comm[args->dev, args->sector], $delta);
+  }}
+  delete(@aegisai_io_ts[args->dev, args->sector]);
+  delete(@aegisai_io_pid[args->dev, args->sector]);
+  delete(@aegisai_io_tid[args->dev, args->sector]);
+  delete(@aegisai_io_comm[args->dev, args->sector]);
+}}"#
+        ));
+    }
+
+    sections.join("\n\n")
+}
+
+fn bpftrace_target_predicate(
+    selectors: &ProcfsTargetSelectors,
+    tid_expr: &str,
+    comm_expr: &str,
+) -> String {
+    let mut predicates = Vec::new();
+
+    for pid in &selectors.pid_allowlist {
+        predicates.push(format!("pid == {pid}"));
+        predicates.push(format!("{tid_expr} == {pid}"));
+    }
+
+    for process_name in &selectors.process_names {
+        predicates.push(format!(
+            "{comm_expr} == \"{}\"",
+            escape_bpftrace_string(process_name)
+        ));
+    }
+
+    if predicates.is_empty() {
+        "1".to_string()
+    } else {
+        predicates.join(" || ")
+    }
+}
+
+fn escape_bpftrace_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn command_exists(command: &str) -> bool {
+    if command.contains('/') {
+        return std::path::Path::new(command).is_file();
+    }
+
+    let Some(paths) = env::var_os("PATH") else {
+        return false;
+    };
+
+    env::split_paths(&paths).any(|path| path.join(command).is_file())
+}
+
+#[cfg(target_os = "linux")]
+fn current_effective_uid() -> Option<u32> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let uid_line = status.lines().find(|line| line.starts_with("Uid:"))?;
+    uid_line.split_whitespace().nth(2)?.parse::<u32>().ok()
+}
+
+#[cfg(target_os = "linux")]
+fn bpftrace_permission_check() -> Result<(), String> {
+    if current_effective_uid() == Some(0) {
+        return Ok(());
+    }
+
+    Err(
+        "bpftrace eBPF probes require root on this host; rerun as root or use --allow-partial-probes for procfs-only fallback"
+            .to_string(),
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+fn bpftrace_permission_check() -> Result<(), String> {
+    Err("bpftrace eBPF probes are only available on Linux".to_string())
 }
 
 fn delta_probe_event(
@@ -1216,7 +1887,7 @@ impl LinuxProbeSource {
     ) -> Result<Self, SourceError> {
         Ok(Self::with_reader_and_config(
             LinuxProbePlan::from_runtime(runtime)?,
-            DriverBackedProbeEventReader::new(ProcfsSchedstatProbeDriver::from_runtime(runtime)),
+            DriverBackedProbeEventReader::new(RealLinuxProbeDriver::from_runtime(runtime)),
             reader_config,
         ))
     }
@@ -1541,11 +2212,12 @@ mod tests {
     use ebpf_probe::{AttachPoint, EventMetric, EventTarget, ProbeKind};
 
     use super::{
-        DriverBackedProbeEventReader, EventSource, LinuxProbeDriver, LinuxProbeHost,
-        LinuxProbePlan, LinuxProbeSource, MockEventSource, PreflightLinuxProbeDriver,
-        ProbeAttachmentStatus, ProbeReaderConfig, ProcfsSchedstatProbeDriver,
-        ProcfsSchedstatSampler, ProcfsSchedstatSnapshot, ProcfsTargetSelectors, SignalKind,
-        SourceError, SourceEvent, StaticProbeEventReader,
+        BpfTraceProbeDriver, DriverBackedProbeEventReader, EventSource, FakeBpfTracePipe,
+        LinuxProbeDriver, LinuxProbeHost, LinuxProbePlan, LinuxProbeSource, MockEventSource,
+        PreflightLinuxProbeDriver, ProbeAttachmentStatus, ProbeReaderConfig,
+        ProcfsSchedstatProbeDriver, ProcfsSchedstatSampler, ProcfsSchedstatSnapshot,
+        ProcfsTargetSelectors, RealLinuxProbeDriver, SignalKind, SourceError, SourceEvent,
+        StaticProbeEventReader,
     };
 
     struct FakeLinuxProbeDriver {
@@ -2107,6 +2779,174 @@ mod tests {
             .iter()
             .any(|attachment| attachment.kind == ProbeKind::OffCpu
                 && matches!(attachment.status, ProbeAttachmentStatus::Failed(_))));
+    }
+
+    #[test]
+    fn bpftrace_driver_emits_offcpu_and_io_latency_events() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::OffCpuTime, SignalKind::IoLatency],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let pipe = FakeBpfTracePipe::new(vec![vec![
+            "noise from tool startup",
+            "aegisai_probe signal=offcpu_time ts_ns=2000000 pid=700 tid=701 comm=ollama value_ns=4500000",
+            "aegisai_probe signal=io_latency ts_ns=3000000 pid=700 tid=701 comm=ollama value_ns=900000",
+        ]]);
+        let driver = BpfTraceProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            pipe,
+        );
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        let offcpu = source
+            .next_event()
+            .expect("bpftrace driver should poll")
+            .expect("offcpu event should be produced");
+        let io = source
+            .next_event()
+            .expect("bpftrace driver should keep buffered events")
+            .expect("io event should be produced");
+
+        assert_eq!(offcpu.signal, SignalKind::OffCpuTime);
+        assert_eq!(offcpu.value, 4_500);
+        assert_eq!(offcpu.timestamp_ms, 2);
+        assert_eq!(offcpu.process_name.as_deref(), Some("ollama"));
+        assert_eq!(offcpu.tid, Some(701));
+        assert_eq!(io.signal, SignalKind::IoLatency);
+        assert_eq!(io.value, 900);
+
+        let startup = source.startup().expect("startup should exist");
+        assert_eq!(startup.reader_name, "fake-bpftrace");
+        assert!(startup.attachments.iter().all(|attachment| {
+            matches!(attachment.kind, ProbeKind::OffCpu | ProbeKind::Io)
+                && attachment.status == ProbeAttachmentStatus::Attached
+        }));
+    }
+
+    #[test]
+    fn bpftrace_driver_reports_unavailable_attach_reason() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let driver = BpfTraceProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            FakeBpfTracePipe::unavailable("bpftrace requires root"),
+        );
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader(plan, reader);
+
+        let error = source
+            .next_event()
+            .expect_err("unavailable bpftrace should fail startup");
+
+        assert!(matches!(error, SourceError::Unsupported(_)));
+        assert!(error.to_string().contains("bpftrace requires root"));
+    }
+
+    #[test]
+    fn real_linux_probe_driver_combines_procfs_and_bpftrace_signals() {
+        let plan = LinuxProbePlan::from_signals(
+            [
+                SignalKind::RunQueueDelay,
+                SignalKind::MajorPageFault,
+                SignalKind::OffCpuTime,
+                SignalKind::IoLatency,
+            ],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let sampler = FakeProcfsSignalSampler::new(vec![
+            vec![ProcfsSchedstatSnapshot {
+                timestamp_ns: 1_000_000,
+                pid: 700,
+                tid: 700,
+                comm: "ollama".to_string(),
+                run_queue_delay_ns: Some(2_000_000),
+                cpu_migrations: None,
+                major_page_faults: Some(4),
+            }],
+            vec![ProcfsSchedstatSnapshot {
+                timestamp_ns: 2_000_000,
+                pid: 700,
+                tid: 700,
+                comm: "ollama".to_string(),
+                run_queue_delay_ns: Some(2_500_000),
+                cpu_migrations: None,
+                major_page_faults: Some(7),
+            }],
+        ]);
+        let procfs = ProcfsSchedstatProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            sampler,
+        );
+        let bpftrace = BpfTraceProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            FakeBpfTracePipe::new(vec![vec![
+                "aegisai_probe signal=offcpu_time ts_ns=2000000 pid=700 tid=700 comm=ollama value_ns=3000000",
+                "aegisai_probe signal=io_latency ts_ns=2100000 pid=700 tid=700 comm=ollama value_ns=1200000",
+            ]]),
+        );
+        let driver = RealLinuxProbeDriver::new(procfs, bpftrace);
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        let batch = source
+            .poll_batch(8)
+            .expect("real linux driver should poll bpftrace events and prime procfs");
+        let second_batch = source
+            .poll_batch(8)
+            .expect("second poll should emit procfs deltas");
+        let signals = batch
+            .iter()
+            .chain(second_batch.iter())
+            .map(|event| event.signal.clone())
+            .collect::<BTreeSet<_>>();
+
+        assert!(signals.contains(&SignalKind::OffCpuTime));
+        assert!(signals.contains(&SignalKind::IoLatency));
+        assert!(signals.contains(&SignalKind::RunQueueDelay));
+        assert!(signals.contains(&SignalKind::MajorPageFault));
+
+        let startup = source.startup().expect("startup should exist");
+        assert_eq!(startup.reader_name, "real-linux-probe-driver");
+        assert_eq!(startup.attachments.len(), 4);
+        assert!(startup
+            .attachments
+            .iter()
+            .all(|attachment| attachment.status == ProbeAttachmentStatus::Attached));
+    }
+
+    #[test]
+    fn bpftrace_program_scopes_to_configured_targets() {
+        let selectors = ProcfsTargetSelectors::new(["ollama"], [42].into_iter().collect());
+        let program = super::bpftrace_program(&selectors, true, true);
+
+        assert!(program.contains("tracepoint:sched:sched_switch"));
+        assert!(program.contains("tracepoint:block:block_rq_issue"));
+        assert!(program.contains("tracepoint:block:block_rq_complete"));
+        assert!(program.contains("aegisai_probe signal=offcpu_time"));
+        assert!(program.contains("aegisai_probe signal=io_latency"));
+        assert!(program.contains("pid == 42"));
+        assert!(program.contains("args->prev_pid == 42"));
+        assert!(program.contains("comm == \"ollama\""));
     }
 
     #[test]

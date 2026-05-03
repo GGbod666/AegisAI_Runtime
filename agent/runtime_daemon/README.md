@@ -27,7 +27,9 @@ Current Linux source behavior:
 
 - samples `/proc/<pid>/schedstat`, `/proc/<pid>/sched`, and `/proc/<pid>/stat`
   for target runtimes to produce minimal `run_queue_delay`, `cpu_migration`,
-  and `major_page_fault` events before the full eBPF reader is wired
+  and `major_page_fault` events
+- streams real eBPF-backed `offcpu_time` and `io_latency` events through
+  `bpftrace`, normalized into the existing `SourceEvent` model
 - prints signal observation summaries and feature-window maxima so
   `cpu_migration` and `major_page_fault` can be interpreted in real-machine
   experiments
@@ -39,10 +41,8 @@ Current Linux source behavior:
 - carries a `ProbeReaderConfig` with startup policy and ring-buffer sizing hints
 - records reader startup and shutdown state so Linux integration can validate attach/drain behavior
 - records whether a driver is expected to stream events or is an explicit no-event preflight/audit path
-- can be run with `--allow-partial-probes` while `offcpu_time` and `io_latency`
-  still wait for the later eBPF reader path
-- treats `offcpu_time` as non-blocking when procfs fallback is active; eBPF is
-  still the intended path for that signal
+- can be run with `--allow-partial-probes` to keep procfs-backed signals flowing
+  when the host cannot attach `bpftrace` eBPF probes
 - preflight may attach successfully and still return no events by design because it does not load eBPF programs or read ring buffers
 
 Current Linux reader CLI knobs:
@@ -51,6 +51,16 @@ Current Linux reader CLI knobs:
 - `--probe-buffer-events <n>`
 - `--probe-poll-timeout-ms <n>`
 - `--verification-log <path>` to append daemon summaries to the validation audit log
+
+Linux eBPF requirements:
+
+- `bpftrace` must be installed and runnable as root on the validation host
+- set `AEGISAI_BPFTRACE=/path/to/bpftrace` if it is not available as `bpftrace`
+  in `PATH`
+- current bpftrace probes attach `sched:sched_switch`,
+  `block:block_rq_issue`, and `block:block_rq_complete`; hosts with different
+  block tracepoint fields should use `--allow-partial-probes` until the script is
+  adjusted for that kernel
 
 Current actuator backend modes:
 

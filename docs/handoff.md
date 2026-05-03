@@ -67,8 +67,9 @@ Strong evidence:
 
 Bounded evidence:
 
-- Procfs fallback covers current safe Linux preflight signals, but real eBPF
-  off-CPU and I/O latency ingestion is still pending.
+- Procfs fallback covers current safe Linux preflight signals, and runtime
+  source wiring now includes bpftrace-backed off-CPU and I/O latency ingestion;
+  root controlled-workload validation is still pending.
 - `linux-command-dry-run` proves command planning and rollback audit shape
   without changing host state.
 - The latest Phase 4 report shows live guarded trends but deliberately reports
@@ -84,8 +85,7 @@ Not proven:
 
 - `AegisAI_Runtime-s6f` — Prove effective live Inference Tail Guard actuator
   benefit.
-- `AegisAI_Runtime-4nv` — Complete real eBPF signal coverage for off-CPU and
-  I/O latency.
+- `AegisAI_Runtime-jtt` — Validate real off-CPU and I/O eBPF signals as root.
 - `AegisAI_Runtime-bx1` — Turn Tool Call Booster harness into repeated A/B
   benefit proof.
 - `AegisAI_Runtime-azv` — Harden audit coverage for actuator and runtime hot
@@ -106,8 +106,7 @@ bd show <issue-id>
    permissions, and experiment window are explicit.
 4. Regenerate `docs/mvp_benefit_report.md` only from real artifacts and keep the
    strict effective-action gate.
-5. Wire missing eBPF-backed off-CPU/I/O signals behind the existing source
-   abstraction.
+5. Validate root bpftrace off-CPU/I/O observations with controlled workloads.
 6. Promote Tool Call Booster from lifecycle trigger proof to repeated benefit
    proof.
 

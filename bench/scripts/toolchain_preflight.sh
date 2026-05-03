@@ -67,13 +67,13 @@ check_command() {
 
 package_inventory() {
   if command -v rpm >/dev/null 2>&1; then
-    rpm -q rustfmt clippy stress-ng bpftool clang llvm util-linux 2>&1 || true
+    rpm -q rustfmt clippy stress-ng bpftool bpftrace clang llvm util-linux 2>&1 || true
     return 0
   fi
 
   if command -v dpkg-query >/dev/null 2>&1; then
     dpkg-query -W -f='${binary:Package}\t${Version}\n' \
-      rustfmt clippy stress-ng bpftool clang llvm util-linux 2>&1 || true
+      rustfmt clippy stress-ng bpftool bpftrace clang llvm util-linux 2>&1 || true
     return 0
   fi
 
@@ -98,6 +98,7 @@ run_and_log informational "Installed package inventory" package_inventory
 check_command required rustc || overall_status=1
 check_command required cargo || overall_status=1
 check_command required bpftool || overall_status=1
+check_command required bpftrace || overall_status=1
 check_command required clang || overall_status=1
 check_command required llc || overall_status=1
 check_command required taskset || overall_status=1
@@ -109,9 +110,9 @@ check_command optional cargo-clippy || true
 check_command optional stress-ng || true
 
 append ""
-append "- Recommended required-tool install if approval is available: \`dnf install -y bpftool clang llvm util-linux\`"
+append "- Recommended required-tool install if approval is available: \`dnf install -y bpftool bpftrace clang llvm util-linux\`"
 append "- Recommended optional-tool install if approval is available: \`dnf install -y rustfmt clippy stress-ng\`"
-append "- Debian/Ubuntu equivalent packages: \`apt-get install -y bpftool clang llvm util-linux rustfmt clippy stress-ng\`"
+append "- Debian/Ubuntu equivalent packages: \`apt-get install -y bpftool bpftrace clang llvm util-linux rustfmt clippy stress-ng\`"
 append "- Ollama/model installation: \`outside this stage\`"
 if [[ "${overall_status}" -eq 0 ]]; then
   append "- Overall result: \`PASS\`"

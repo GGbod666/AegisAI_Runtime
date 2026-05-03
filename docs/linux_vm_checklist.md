@@ -50,6 +50,7 @@ The current runtime is still probe-reader skeleton code, but the VM should be pr
 sysctl kernel.unprivileged_bpf_disabled || true
 bpftool version || true
 which bpftool || true
+which bpftrace || true
 which clang || true
 which llc || true
 ```
@@ -59,13 +60,13 @@ If the VM is missing these tools, install the Linux-side dependencies before rea
 For Fedora/openEuler-style hosts, the required preflight tools map to:
 
 ```bash
-dnf install -y bpftool clang llvm util-linux
+dnf install -y bpftool bpftrace clang llvm util-linux
 ```
 
 For Debian/Ubuntu-style hosts, use:
 
 ```bash
-apt-get install -y bpftool clang llvm util-linux
+apt-get install -y bpftool bpftrace clang llvm util-linux
 ```
 
 ## 4. Build Verification
@@ -124,7 +125,9 @@ cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata p
 
 Expected current result:
 
-- the process either exits with a clear preflight failure, or continues in planning-only mode if partial probes are allowed
+- the process either attaches the real `bpftrace` off-CPU / I/O probes as root,
+  exits with a clear probe failure, or continues with procfs-backed signals if
+  partial probes are allowed
 - the output reflects planned probes and runtime-only signals
 - preflight should validate tracefs, tracepoint availability, and kprobe symbol visibility
 
