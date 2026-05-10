@@ -793,6 +793,7 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 
 - `docs/README.md`：docs 目录职责边界和阅读顺序。
 - `docs/status.md`：当前状态、最新 artifact 索引和开放缺口。
+- `docs/latest_tasks.md`：基于当前缺口拆出的最新精细任务清单。
 - `docs/strategy.md`：MVP 定义、严格收益规则、当前阶段和实验方法。
 - `docs/acceptance_ledger.md`：已验收 19 项 evidence-hardening 台账。
 - `docs/linux_validation.md`：Linux 主机、helper 和 live guarded 实验检查清单。

@@ -9,6 +9,7 @@ and artifact interpretation.
 | File | Responsibility | Do not put here |
 | --- | --- | --- |
 | `status.md` | Current factual snapshot, latest artifact index, open gap index, restart context. | Long task ledgers, historical plans, experiment procedures. |
+| `latest_tasks.md` | Current concrete execution task list derived from open gaps and README limits. | Task state changes; update `bd` for status. |
 | `acceptance_ledger.md` | Accepted 19-task evidence-hardening ledger and acceptance gate record. | Active task tracking; use `bd` for that. |
 | `strategy.md` | MVP definition, strict benefit rules, current product-evidence stage, roadmap, experiment method. | Current artifact tables or command transcripts. |
 | `architecture.md` | Durable system architecture, deployment boundaries, production-config and hotspot-refactor debt boundaries. | Current status or active work queues. |
@@ -20,11 +21,12 @@ and artifact interpretation.
 ## Reading Order
 
 1. `status.md`
-2. `strategy.md`
-3. `mvp_benefit_report.md`
-4. `acceptance_ledger.md` when acceptance history matters
-5. `linux_validation.md` before Linux host or live guarded work
-6. Latest entries in `verification_log.md` only when raw evidence detail is
+2. `latest_tasks.md`
+3. `strategy.md`
+4. `mvp_benefit_report.md`
+5. `acceptance_ledger.md` when acceptance history matters
+6. `linux_validation.md` before Linux host or live guarded work
+7. Latest entries in `verification_log.md` only when raw evidence detail is
    needed
 
 ## Maintenance Rules
