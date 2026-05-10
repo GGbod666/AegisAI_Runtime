@@ -82,6 +82,9 @@ run_and_log required "Cargo test" cargo test --workspace || overall_status=1
 run_and_log required "Tool Call Booster report unit tests" \
   python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py' || overall_status=1
 
+run_and_log required "Inference Tail Guard report unit tests" \
+  python3 -m unittest discover -s bench/scripts -p 'test_*.py' || overall_status=1
+
 if has_cargo_command fmt; then
   run_and_log required "Cargo fmt check" cargo fmt --all -- --check || overall_status=1
 else
