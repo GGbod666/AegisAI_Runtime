@@ -8,6 +8,7 @@
 
 mod actuator;
 mod backend;
+pub mod cpu_affinity;
 mod model;
 
 pub use actuator::Actuator;
@@ -21,6 +22,7 @@ pub use backend::{
     PlannedOnlyLinuxSyscallExecutor, ProcfsLinuxProcessStateProvider, RecordingActuatorBackend,
     SystemLinuxCommandRunner, UnavailableLinuxProcessStateProvider, UnconfirmedLinuxCommandRunner,
 };
+pub use cpu_affinity::{CpuAffinityCapture, CpuAffinityPlanner, CpuAffinityTarget, CpuTopology};
 pub use model::{Action, ActionPlan, AppliedAction, AppliedActionState, PinStrategy, ScenarioKind};
 
 #[cfg(test)]
