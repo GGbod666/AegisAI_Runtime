@@ -173,11 +173,7 @@ fn intersect_allowed_cpus(configured_cpus: &[u32], online_cpus: Option<&[u32]>) 
         .filter(|cpu| online_set.contains(cpu))
         .collect::<Vec<_>>();
 
-    if online_intersection.is_empty() {
-        configured_cpus
-    } else {
-        online_intersection
-    }
+    online_intersection
 }
 
 fn normalize_cpu_list(mut cpus: Vec<u32>) -> Vec<u32> {
@@ -222,16 +218,67 @@ mod tests {
     }
 
     #[test]
-    fn planner_falls_back_when_online_is_unavailable_or_disjoint() {
+    fn planner_intersects_proc_status_allowed_list_with_online_cpus() {
+        let status = "Name:\tollama\nCpus_allowed_list:\t0-7,16,32\nMems_allowed_list:\t0\n";
+        let configured_cpus = parse_status_cpu_list(status).expect("procfs CPU list");
+        let online_cpus = parse_cpu_list("1-3,6,8").expect("online CPU list");
+        let planner = CpuAffinityPlanner::with_online_cpus(Some(online_cpus));
+        let capture = planner
+            .plan_capture(configured_cpus)
+            .expect("affinity capture");
+
+        assert_eq!(capture.allowed_cpus, vec![1, 2, 3, 6]);
+
+        let target = planner
+            .plan_apply_target("prefer_reserved_cores", 0.5, &capture.allowed_cpus)
+            .expect("affinity target");
+
+        assert_eq!(target.cpus(), &[1, 2]);
+        assert_eq!(target.to_taskset_list(), "1,2");
+    }
+
+    #[test]
+    fn planner_uses_restricted_vm_online_mask_for_taskset_targets() {
+        let status = "Name:\tollama\nCpus_allowed_list:\t0-127\nMems_allowed_list:\t0\n";
+        let configured_cpus = parse_status_cpu_list(status).expect("procfs CPU list");
+        let online_cpus = parse_cpu_list("0-3").expect("online CPU list");
+        let planner = CpuAffinityPlanner::with_online_cpus(Some(online_cpus));
+        let capture = planner
+            .plan_capture(configured_cpus)
+            .expect("affinity capture");
+
+        assert_eq!(capture.configured_cpus.len(), 128);
+        assert_eq!(capture.allowed_cpus, vec![0, 1, 2, 3]);
+
+        let target = planner
+            .plan_apply_target("prefer_low_contention_cores", 0.5, &capture.allowed_cpus)
+            .expect("affinity target");
+
+        assert_eq!(target.cpus(), &[2, 3]);
+        assert_eq!(target.to_taskset_list(), "2,3");
+    }
+
+    #[test]
+    fn planner_does_not_select_taskset_target_for_empty_online_intersection() {
+        let status = "Name:\tollama\nCpus_allowed_list:\t4-5\nMems_allowed_list:\t0\n";
+        let configured_cpus = parse_status_cpu_list(status).expect("procfs CPU list");
+        let planner = CpuAffinityPlanner::with_online_cpus(Some(vec![0, 1]));
+        let capture = planner
+            .plan_capture(configured_cpus)
+            .expect("affinity capture");
+
+        assert!(capture.allowed_cpus.is_empty());
+        assert!(planner
+            .plan_apply_target("prefer_reserved_cores", 0.5, &capture.allowed_cpus)
+            .is_err());
+    }
+
+    #[test]
+    fn planner_falls_back_when_online_is_unavailable() {
         let unavailable = CpuAffinityPlanner::with_online_cpus(None)
             .plan_capture(vec![0, 1, 2, 3])
             .expect("affinity capture");
         assert_eq!(unavailable.allowed_cpus, vec![0, 1, 2, 3]);
-
-        let disjoint = CpuAffinityPlanner::with_online_cpus(Some(vec![0, 1]))
-            .plan_capture(vec![4, 5])
-            .expect("affinity capture");
-        assert_eq!(disjoint.allowed_cpus, vec![4, 5]);
     }
 
     #[test]
@@ -265,5 +312,19 @@ mod tests {
 
         assert_eq!(target.cpus(), &[0, 2, 4]);
         assert_eq!(target.to_taskset_list(), "0,2,4");
+    }
+
+    #[test]
+    fn planner_generates_deterministic_rollback_targets() {
+        let planner = CpuAffinityPlanner::default();
+
+        for allowed_cpus in [vec![4, 0, 2, 2], vec![2, 4, 0], vec![0, 2, 4]] {
+            let target = planner
+                .plan_rollback_target(&allowed_cpus)
+                .expect("rollback target");
+
+            assert_eq!(target.cpus(), &[0, 2, 4]);
+            assert_eq!(target.to_taskset_list(), "0,2,4");
+        }
     }
 }
