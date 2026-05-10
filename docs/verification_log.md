@@ -14086,3 +14086,39 @@ triggered_scenarios: none
     `str(args->next_comm)` when `next_comm` is already `string[16]`. The probe
     template now passes `args->next_comm` directly.
   - I/O latency validation was intentionally out of scope for this run.
+
+### 2026-05-10T03:48:11Z - Helper-backed io_latency validation
+
+- Scope: `AegisAI_Runtime-jtt`; controlled block I/O workload with daemon Linux
+  source and privileged helper.
+- Host: `Linux gg-vm 6.8.0-110-generic #110-Ubuntu SMP PREEMPT_DYNAMIC Thu Mar 19 15:09:20 UTC 2026 x86_64 GNU/Linux`
+- Tooling: `bpftrace v0.20.2`; tracefs mounted at `/sys/kernel/tracing`.
+- Tracepoint compatibility:
+  - `/sys/kernel/tracing/events/block/block_rq_issue/format` includes `dev`
+    and `sector`.
+  - `/sys/kernel/tracing/events/block/block_rq_complete/format` includes `dev`
+    and `sector`.
+- Workload: temporary Python block I/O loop with `/proc/<pid>/comm` set to
+  `ollama`; it repeatedly wrote and fsync'd `/tmp/aegisai-jtt/io-workload.bin`.
+- Helper readiness:
+  - Helper path: `/tmp/aegisai-jtt/bin/aegisai-ebpf-helper`
+  - Helper mode: `4755 root:root`
+  - Command: `AEGISAI_BPFTRACE=/usr/bin/bpftrace /tmp/aegisai-jtt/bin/aegisai-ebpf-helper --check`
+  - Exit status: `0`
+- Helper I/O attach/stream:
+  - Command: `timeout 10s /tmp/aegisai-jtt/bin/aegisai-ebpf-helper stream --io --process-name ollama`
+  - Exit status: `124` from `timeout`, with helper still streaming until the
+    test cutoff.
+  - Raw helper events: `4005` `aegisai_probe signal=io_latency ...` lines.
+  - Stderr lines: `0`
+- Daemon Linux source:
+  - Command: `AEGISAI_EBPF_HELPER=/tmp/aegisai-jtt/bin/aegisai-ebpf-helper /tmp/aegisai-jtt/bin/aegisai-runtime-daemon --repo-root /tmp/aegisai-jtt/repo --source linux --metadata procfs --actuator-backend linux-skeleton --allow-partial-probes --probe-poll-timeout-ms 1000 --batch-size 16 --max-events 8 --drain-ms 0 --verification-log /tmp/aegisai-jtt/repo/docs/verification_log.md`
+  - Temporary repo config limited `[collection].focus_signals` to
+    `["io_latency"]` and selection to process name `ollama`.
+  - Exit status: `0`
+  - Daemon summary normalized `io_latency` `SourceEvent` observations:
+    `events=8 total=5013 max=712`.
+  - Processed events: `8`
+  - Daemon stderr lines: `0`
+- Result: helper-backed `io_latency` is compatible with this kernel's block
+  tracepoint fields and appears in the runtime daemon summary.
