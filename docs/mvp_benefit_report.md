@@ -7,6 +7,13 @@
 - Run ID: `live_guarded_phase4_calibrated_20260510T043859Z`
 - Changed variable: `affinity_nice_interaction`
 
+## Benefit Gate
+
+- PASS requires both an effective `live_guarded` host-level actuator action and a stable repeated benefit: at least three comparable rounds, at least two thirds of comparable rounds improved, and mean improvement of at least 5% for TTFT P95/P99, latency P95/P99, or jitter.
+- This artifact set is `FAIL`: `live_guarded` recorded `3` effective host-level actuator changes and mode contracts `PASS`, but no live guarded metric crossed the stable trend rule.
+- Specific failure reason: `noisy_workload`, because live guarded produced intermittent improvements without stable repeated benefit.
+- `noop_observation` and `dry_run` rows are control evidence for recognition, trigger, audit, and rollback behavior only; their deltas are not counted as host-level MVP benefit.
+
 ## Controls
 
 - Tuned variable: `affinity_nice_interaction`
