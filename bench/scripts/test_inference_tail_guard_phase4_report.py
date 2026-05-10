@@ -59,6 +59,29 @@ def counts_row(mode: str) -> dict[str, str]:
     }
 
 
+def live_daemon_log(action_evidence: str) -> str:
+    if action_evidence == "effective_taskset":
+        return (
+            "backend.apply.apply.1.detail=command=taskset -pc 0-1 1234;"
+            "output=pid 1234's current affinity list: 0-3\n"
+            "pid 1234's new affinity list: 0-1\n"
+        )
+    if action_evidence == "noop_taskset":
+        return (
+            "backend.apply.apply.1.detail=command=taskset -pc 0-1 1234;"
+            "output=pid 1234's current affinity list: 0-1\n"
+            "pid 1234's new affinity list: 0-1\n"
+        )
+    if action_evidence == "priority_limited":
+        return (
+            "backend.apply.apply.1.detail=command=taskset -pc 0-1 1234;"
+            "output=pid 1234's current affinity list: 0-1\n"
+            "pid 1234's new affinity list: 0-1\n"
+            "backend.apply.priority_raise_limited=true\n"
+        )
+    raise ValueError(f"unknown live action evidence: {action_evidence}")
+
+
 class Phase4ReportGateTests(unittest.TestCase):
     def run_report(
         self,
@@ -66,7 +89,7 @@ class Phase4ReportGateTests(unittest.TestCase):
         *,
         control_metric_ms: float,
         live_metric_ms: float,
-        effective_live_actions: bool,
+        live_action_evidence: str,
         samples: int = 3,
         rounds: int = 3,
         live_metrics_by_round: list[float] | None = None,
@@ -97,21 +120,10 @@ class Phase4ReportGateTests(unittest.TestCase):
             )
             live_dir = round_dir / "live_guarded"
             live_dir.mkdir(parents=True, exist_ok=True)
-            if effective_live_actions:
-                (live_dir / "daemon.log").write_text(
-                    "backend.apply.apply.1.detail=command=taskset -pc 0-1 1234;"
-                    "output=pid 1234's current affinity list: 0-3\n"
-                    "pid 1234's new affinity list: 0-1\n",
-                    encoding="utf-8",
-                )
-            else:
-                (live_dir / "daemon.log").write_text(
-                    "backend.apply.apply.1.detail=command=taskset -pc 0-1 1234;"
-                    "output=pid 1234's current affinity list: 0-1\n"
-                    "pid 1234's new affinity list: 0-1\n"
-                    "backend.apply.priority_raise_limited=true\n",
-                    encoding="utf-8",
-                )
+            (live_dir / "daemon.log").write_text(
+                live_daemon_log(live_action_evidence),
+                encoding="utf-8",
+            )
 
         env = os.environ.copy()
         env.update(
@@ -146,12 +158,13 @@ class Phase4ReportGateTests(unittest.TestCase):
                 root,
                 control_metric_ms=80.0,
                 live_metric_ms=100.0,
-                effective_live_actions=True,
+                live_action_evidence="effective_taskset",
             )
 
             report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Result: `FAIL`", report)
+            self.assertNotIn("Result: `PASS`", report)
             self.assertIn("Apparent improvements were limited to observation or dry-run modes", report)
             self.assertIn("Selected mode contracts: `PASS`", report)
             self.assertIn("Live effective host-level actuator changes: `3`", report)
@@ -162,6 +175,61 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertIn("changed_variable", aggregate)
             self.assertIn("stress_shape", aggregate)
 
+    def test_live_action_count_zero_does_not_pass_even_with_live_trend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                live_action_evidence="noop_taskset",
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertNotIn("Result: `PASS`", report)
+            self.assertIn("Live effective host-level actuator changes: `0`", report)
+            self.assertIn("Live priority-limited/no-op nice applications: `0`", report)
+            self.assertIn("no effective live actuator changes were observed", report)
+            self.assertIn("Failure cause: `action_effectiveness`", report)
+
+    def test_effective_live_action_with_failed_trend_does_not_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=100.0,
+                live_action_evidence="effective_taskset",
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertNotIn("Result: `PASS`", report)
+            self.assertIn("Live effective host-level actuator changes: `3`", report)
+            self.assertIn("Failure cause: `no_measurable_benefit`", report)
+
+    def test_priority_limited_actions_do_not_count_as_effective_live_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                live_action_evidence="priority_limited",
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertNotIn("Result: `PASS`", report)
+            self.assertIn("Live effective host-level actuator changes: `0`", report)
+            self.assertIn("Live priority-limited/no-op nice applications: `3`", report)
+            self.assertIn("live actuator changes were priority-limited or no-op", report)
+            self.assertIn("Failure cause: `action_effectiveness`", report)
+
     def test_live_trend_without_effective_live_action_does_not_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -169,12 +237,13 @@ class Phase4ReportGateTests(unittest.TestCase):
                 root,
                 control_metric_ms=100.0,
                 live_metric_ms=80.0,
-                effective_live_actions=False,
+                live_action_evidence="priority_limited",
             )
 
             report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Result: `FAIL`", report)
+            self.assertNotIn("Result: `PASS`", report)
             self.assertIn("no effective live actuator changes were observed", report)
             self.assertIn("Failure cause: `action_effectiveness`", report)
 
@@ -185,7 +254,7 @@ class Phase4ReportGateTests(unittest.TestCase):
                 root,
                 control_metric_ms=100.0,
                 live_metric_ms=80.0,
-                effective_live_actions=True,
+                live_action_evidence="effective_taskset",
             )
 
             report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
@@ -203,7 +272,7 @@ class Phase4ReportGateTests(unittest.TestCase):
                 root,
                 control_metric_ms=100.0,
                 live_metric_ms=100.0,
-                effective_live_actions=True,
+                live_action_evidence="effective_taskset",
                 live_metrics_by_round=[120.0, 80.0, 120.0],
             )
 
@@ -219,7 +288,7 @@ class Phase4ReportGateTests(unittest.TestCase):
                 root,
                 control_metric_ms=100.0,
                 live_metric_ms=80.0,
-                effective_live_actions=True,
+                live_action_evidence="effective_taskset",
                 samples=1,
             )
 
