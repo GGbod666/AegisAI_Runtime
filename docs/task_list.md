@@ -315,6 +315,12 @@ Acceptance:
 - A design note exists for profile selection, schema validation, and what is
   intentionally deferred.
 
+Result:
+
+- `docs/engineering_debt_boundaries.md` records the production profile
+  selection boundary, schema validation stages, and intentionally deferred
+  areas.
+
 ### 19. Split hotspot files only when attached to active work
 
 Problem:
@@ -328,6 +334,12 @@ Problem:
 Acceptance:
 
 - Refactors are small, behavior-preserving, and covered by targeted tests.
+
+Result:
+
+- `docs/engineering_debt_boundaries.md` records that hotspot splits are only
+  allowed when attached to active behavior work, with targeted verification.
+  No P3-only behavior refactor was performed.
 
 ## Deferred For This Stage
 
