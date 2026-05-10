@@ -3,55 +3,59 @@
 ## Verdict
 
 - Result: `FAIL`
-- Conclusion: live action is effective, but stable benefit is below threshold; MVP benefit is not proven.
-- Run ID: `live_affinity_online_fix_phase4_20260503T043809Z`
+- Conclusion: MVP benefit not proven: no live guarded mode met the stable improvement threshold.
+- Run ID: `live_guarded_phase4_calibrated_20260510T043859Z`
 
 ## Controls
 
 - Model: `qwen2.5:0.5b`
+- Num predict: `32`
 - Rounds per scenario: `3`
 - Samples per mode: `4`
 - Concurrency: `2`
 - Modes: `baseline,noop_observation,dry_run,live_guarded`
+- Scenarios: `cpu`
+- Interference shape: `cpu_workers=1; io_workers=0; hdd_workers=0; hdd_bytes=128M`
+- Live actuator confirmation: `1`
+- Live PID allowlist: `2029`
+- Live affinity enabled: `1`
 
 ## Aggregate Comparison
 
 | scenario | mode | rounds | samples | TTFT P95 mean | TTFT P99 mean | lat P95 mean | lat P99 mean | jitter mean | cpu mig total | maj fault total | TTFT P95 delta % | TTFT P99 delta % | lat P95 delta % | lat P99 delta % | jitter delta % | live effective actions | live priority-limited |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| CPU interference | baseline | 3/3 | 12/12 | 36364.664 | 36364.664 | 64581.843 | 64581.843 | 18019.105 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
-| CPU interference | dry_run | 3/3 | 12/12 | 27150.718 | 27150.718 | 58309.693 | 58309.693 | 18160.665 | 124 | 0 | 25.34 | 25.34 | 9.71 | 9.71 | -0.79 | 0 | 0 |
-| CPU interference | live_guarded | 3/3 | 12/12 | 34950.017 | 34950.017 | 63317.628 | 63317.628 | 19525.786 | 76 | 0 | 3.89 | 3.89 | 1.96 | 1.96 | -8.36 | 3 | 3 |
-| CPU interference | noop_observation | 3/3 | 12/12 | 34444.411 | 34444.411 | 66511.966 | 66511.966 | 19563.392 | 125 | 0 | 5.28 | 5.28 | -2.99 | -2.99 | -8.57 | 0 | 0 |
+| CPU interference | baseline | 3/3 | 12/12 | 15931.045 | 15931.045 | 30791.519 | 30791.519 | 8769.607 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
+| CPU interference | dry_run | 3/3 | 12/12 | 17952.846 | 17952.846 | 33673.275 | 33673.275 | 9256.934 | 155 | 0 | -12.69 | -12.69 | -9.36 | -9.36 | -5.56 | 0 | 0 |
+| CPU interference | live_guarded | 3/3 | 12/12 | 16937.616 | 16937.616 | 32296.528 | 32296.528 | 8946.017 | 551 | 0 | -6.32 | -6.32 | -4.89 | -4.89 | -2.01 | 3 | 3 |
+| CPU interference | noop_observation | 3/3 | 12/12 | 17218.930 | 17218.930 | 33031.618 | 33031.618 | 9273.479 | 169 | 0 | -8.08 | -8.08 | -7.28 | -7.28 | -5.75 | 0 | 0 |
 
 ## Per-Round Comparison
 
 | scenario | round | status | mode | ok/total | TTFT P95 | TTFT P99 | lat P95 | lat P99 | jitter | triggers | rollbacks | action errors | cpu mig total | maj fault total | live effective actions | live priority-limited |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| CPU interference | 1 | 0 | baseline | 4/4 | 40546.589 | 40546.589 | 62905.635 | 62905.635 | 17038.862 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| CPU interference | 1 | 0 | noop_observation | 4/4 | 32963.896 | 32963.896 | 62305.455 | 62305.455 | 18111.777 | 7 | 7 | 0 | 38 | 0 | 0 | 0 |
-| CPU interference | 1 | 0 | dry_run | 4/4 | 26374.187 | 26374.187 | 55898.739 | 55898.739 | 17393.654 | 3 | 3 | 0 | 44 | 0 | 0 | 0 |
-| CPU interference | 1 | 0 | live_guarded | 4/4 | 36575.216 | 36575.216 | 69688.999 | 69688.999 | 22389.770 | 4 | 4 | 0 | 21 | 0 | 1 | 1 |
-| CPU interference | 2 | 0 | baseline | 4/4 | 36691.510 | 36691.510 | 68119.801 | 68119.801 | 18998.677 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| CPU interference | 2 | 0 | noop_observation | 4/4 | 31956.518 | 31956.518 | 63568.463 | 63568.463 | 19581.171 | 7 | 7 | 0 | 49 | 0 | 0 | 0 |
-| CPU interference | 2 | 0 | dry_run | 4/4 | 22312.608 | 22312.608 | 52927.078 | 52927.078 | 17198.661 | 4 | 4 | 0 | 51 | 0 | 0 | 0 |
-| CPU interference | 2 | 0 | live_guarded | 4/4 | 32387.006 | 32387.006 | 56165.264 | 56165.264 | 17737.476 | 3 | 3 | 0 | 20 | 0 | 1 | 1 |
-| CPU interference | 3 | 0 | baseline | 4/4 | 31855.894 | 31855.894 | 62720.093 | 62720.093 | 18019.775 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| CPU interference | 3 | 0 | noop_observation | 4/4 | 38412.819 | 38412.819 | 73661.980 | 73661.980 | 20997.227 | 3 | 3 | 0 | 38 | 0 | 0 | 0 |
-| CPU interference | 3 | 0 | dry_run | 4/4 | 32765.360 | 32765.360 | 66103.262 | 66103.262 | 19889.680 | 2 | 2 | 0 | 29 | 0 | 0 | 0 |
-| CPU interference | 3 | 0 | live_guarded | 4/4 | 35887.829 | 35887.829 | 64098.622 | 64098.622 | 18450.112 | 4 | 4 | 0 | 35 | 0 | 1 | 1 |
+| CPU interference | 1 | 0 | baseline | 4/4 | 14804.951 | 14804.951 | 31377.233 | 31377.233 | 9337.818 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| CPU interference | 1 | 0 | noop_observation | 4/4 | 17304.248 | 17304.248 | 32386.890 | 32386.890 | 9132.110 | 2 | 2 | 0 | 57 | 0 | 0 | 0 |
+| CPU interference | 1 | 0 | dry_run | 4/4 | 17812.327 | 17812.327 | 33315.716 | 33315.716 | 9207.516 | 2 | 2 | 0 | 55 | 0 | 0 | 0 |
+| CPU interference | 1 | 0 | live_guarded | 4/4 | 17993.195 | 17993.195 | 32085.153 | 32085.153 | 8922.126 | 21 | 21 | 0 | 169 | 0 | 1 | 1 |
+| CPU interference | 2 | 0 | baseline | 4/4 | 17176.310 | 17176.310 | 30038.282 | 30038.282 | 8277.314 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| CPU interference | 2 | 0 | noop_observation | 4/4 | 16637.461 | 16637.461 | 32585.830 | 32585.830 | 9600.796 | 3 | 3 | 0 | 63 | 0 | 0 | 0 |
+| CPU interference | 2 | 0 | dry_run | 4/4 | 19204.631 | 19204.631 | 34422.905 | 34422.905 | 9166.452 | 2 | 2 | 0 | 37 | 0 | 0 | 0 |
+| CPU interference | 2 | 0 | live_guarded | 4/4 | 15263.055 | 15263.055 | 30226.151 | 30226.151 | 8361.363 | 19 | 19 | 0 | 185 | 0 | 1 | 1 |
+| CPU interference | 3 | 0 | baseline | 4/4 | 15811.875 | 15811.875 | 30959.043 | 30959.043 | 8693.690 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| CPU interference | 3 | 0 | noop_observation | 4/4 | 17715.080 | 17715.080 | 34122.135 | 34122.135 | 9087.531 | 3 | 3 | 0 | 49 | 0 | 0 | 0 |
+| CPU interference | 3 | 0 | dry_run | 4/4 | 16841.579 | 16841.579 | 33281.204 | 33281.204 | 9396.834 | 2 | 2 | 0 | 63 | 0 | 0 | 0 |
+| CPU interference | 3 | 0 | live_guarded | 4/4 | 17556.598 | 17556.598 | 34578.280 | 34578.280 | 9554.562 | 23 | 23 | 0 | 197 | 0 | 1 | 1 |
 
 ## Stable Trend Check
 
-- CPU interference / dry_run / TTFT P95: 2/3 rounds improved, mean delta 23.76%.
-- CPU interference / dry_run / TTFT P99: 2/3 rounds improved, mean delta 23.76%.
-- CPU interference / dry_run / Latency P95: 2/3 rounds improved, mean delta 9.35%.
-- CPU interference / dry_run / Latency P99: 2/3 rounds improved, mean delta 9.35%.
-- Apparent improvements were limited to observation or dry-run modes, so they are treated as non-proof for MVP benefit.
+- No metric crossed the stable trend rule: at least two thirds of comparable rounds improved and mean improvement was at least 5%.
 
 ## Live Guarded Contract
 
 - No live guarded mode contract failures were recorded.
-- Live guarded recorded `3` effective host-level `taskset` actions.
+- Selected mode contracts: `PASS`.
+- Live effective host-level actuator changes: `3`.
+- Live priority-limited/no-op nice applications: `3`.
 
 ## Interpretation
 
@@ -59,11 +63,9 @@
 - `cpu_migration` and `major_page_fault` columns are procfs-backed explainability signals for the run shape; they do not replace the live guarded latency benefit rule.
 - `offcpu_time` can be sourced from the real eBPF helper when available, but it is not a blocking benefit gate in this report.
 - Host-level MVP benefit requires a real guarded actuator run to show a stable downward trend in tail latency, TTFT, or jitter.
-- This run clears the effective live action gate through host-level `taskset`, but it remains a `FAIL` because stable repeated benefit did not cross the threshold.
+- If live `renice` is denied by host permissions, the report remains a closed-loop validation artifact, not a benefit proof.
 
 ## Artifacts
 
-| run id | CSV | live effective action count | FAIL reason |
-| --- | --- | --- | --- |
-| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_runs.csv` | `3` | live action is effective, but stable benefit is below threshold |
-| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_aggregate.csv` | `3` | live action is effective, but stable benefit is below threshold |
+- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_runs.csv`
+- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_aggregate.csv`

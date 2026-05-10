@@ -15,6 +15,7 @@ MODES="${AEGISAI_PHASE4_MODES:-baseline,noop_observation,dry_run}"
 SCENARIOS="${AEGISAI_PHASE4_SCENARIOS:-cpu,cpu_io}"
 
 MODEL="${AEGISAI_OLLAMA_MODEL:-qwen2.5:0.5b}"
+NUM_PREDICT="${AEGISAI_OLLAMA_NUM_PREDICT:-96}"
 CPU_WORKERS="${AEGISAI_PHASE4_CPU:-2}"
 IO_WORKERS="${AEGISAI_PHASE4_IO:-1}"
 HDD_WORKERS="${AEGISAI_PHASE4_HDD:-1}"
@@ -344,14 +345,33 @@ for scenario in ${SCENARIOS//,/ }; do
   done
 done
 
-python3 - "${DETAIL_CSV}" "${AGGREGATE_CSV}" "${SUMMARY_MD}" "${RUN_ID}" "${ROUNDS}" "${SAMPLES}" "${CONCURRENCY}" "${MODES}" "${MODEL}" <<'PY'
+python3 - "${DETAIL_CSV}" "${AGGREGATE_CSV}" "${SUMMARY_MD}" "${RUN_ID}" "${ROUNDS}" "${SAMPLES}" "${CONCURRENCY}" "${MODES}" "${MODEL}" "${NUM_PREDICT}" "${SCENARIOS}" "${CPU_WORKERS}" "${IO_WORKERS}" "${HDD_WORKERS}" "${HDD_BYTES}" "${AEGISAI_CONFIRM_LIVE_ACTUATOR:-0}" "${AEGISAI_LIVE_PID_ALLOWLIST:-}" "${AEGISAI_ENABLE_LIVE_AFFINITY:-0}" <<'PY'
 import csv
 import math
 import statistics
 import sys
 from collections import defaultdict
 
-detail_path, aggregate_path, summary_path, run_id, rounds, samples, concurrency, modes, model = sys.argv[1:10]
+(
+    detail_path,
+    aggregate_path,
+    summary_path,
+    run_id,
+    rounds,
+    samples,
+    concurrency,
+    modes,
+    model,
+    num_predict,
+    scenarios,
+    cpu_workers,
+    io_workers,
+    hdd_workers,
+    hdd_bytes,
+    live_confirm,
+    live_pid_allowlist,
+    live_enable_affinity,
+) = sys.argv[1:19]
 
 METRICS = [
     ("ttft_p95_ms", "TTFT P95"),
@@ -520,6 +540,10 @@ live_priority_limited_count = sum(
     if row["mode"] == "live_guarded" and row["run_status"] == "0"
 )
 live_host_effective = live_effective_action_count > 0
+mode_contracts_pass = all(
+    row["mode"] == "missing" or row["run_status"] == "0"
+    for row in rows
+)
 
 if live_stable_improvements and live_host_effective:
     mvp_result = "PASS"
@@ -650,6 +674,9 @@ for row in rows:
     failure_lines.append(f'- {row["scenario_label"]} round {row["round"]}: {", ".join(reasons)}.')
 if not failure_lines:
     failure_lines.append("- No live guarded mode contract failures were recorded.")
+failure_lines.append(f"- Selected mode contracts: `{'PASS' if mode_contracts_pass else 'FAIL'}`.")
+failure_lines.append(f"- Live effective host-level actuator changes: `{live_effective_action_count}`.")
+failure_lines.append(f"- Live priority-limited/no-op nice applications: `{live_priority_limited_count}`.")
 if not live_host_effective:
     failure_lines.append(f"- Live guarded recorded no effective host-level actuator changes; priority-limited no-op nice applications: {live_priority_limited_count}.")
 
@@ -665,10 +692,16 @@ content = [
     "## Controls",
     "",
     f"- Model: `{model}`",
+    f"- Num predict: `{num_predict}`",
     f"- Rounds per scenario: `{rounds}`",
     f"- Samples per mode: `{samples}`",
     f"- Concurrency: `{concurrency}`",
     f"- Modes: `{modes}`",
+    f"- Scenarios: `{scenarios}`",
+    f"- Interference shape: `cpu_workers={cpu_workers}; io_workers={io_workers}; hdd_workers={hdd_workers}; hdd_bytes={hdd_bytes}`",
+    f"- Live actuator confirmation: `{live_confirm}`",
+    f"- Live PID allowlist: `{live_pid_allowlist}`",
+    f"- Live affinity enabled: `{live_enable_affinity}`",
     "",
     "## Aggregate Comparison",
     "",

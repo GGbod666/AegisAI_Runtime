@@ -143,6 +143,9 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Result: `FAIL`", report)
             self.assertIn("Apparent improvements were limited to observation or dry-run modes", report)
+            self.assertIn("Selected mode contracts: `PASS`", report)
+            self.assertIn("Live effective host-level actuator changes: `3`", report)
+            self.assertIn("Interference shape: `cpu_workers=2; io_workers=1; hdd_workers=1; hdd_bytes=128M`", report)
 
     def test_live_trend_without_effective_live_action_does_not_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -173,6 +176,8 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Result: `PASS`", report)
             self.assertIn("stable improvement trend with effective host-level actuator changes", report)
+            self.assertIn("Selected mode contracts: `PASS`", report)
+            self.assertIn("Live effective host-level actuator changes: `3`", report)
 
 
 if __name__ == "__main__":
