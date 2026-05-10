@@ -14001,3 +14001,88 @@ triggered_scenarios: none
 ```
 
 - Overall result: `PASS`
+
+### unix:1778384261 - Runtime daemon summary
+
+- Source: `linux-probe`
+- Metadata provider: `procfs`
+- Actuator backend: `linux-skeleton`
+- Processed events: `8`
+- Applied actions: `1`
+- Inline rollbacks: `0`
+- Tick rollbacks: `0`
+- Metric records: `8`
+- Trace records: `17`
+- Signal observations:
+  - `offcpu_time`: events=8, total=165842, max=21169
+- Feature window maxima:
+  - `cpu_migrations_per_sec`: 0
+  - `major_page_faults_per_sec`: 0
+  - `offcpu_time_us_max`: 21169
+  - `optional_io_latency_us_max`: 0
+  - `queue_wait_us_max`: 0
+  - `run_queue_delay_us_max`: 0
+  - `subprocess_start_delay_us_max`: 0
+- Audit highlights:
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.0.detail=planned_apply:5705:set_nice:-5`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.0.status=ok`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.1.detail=planned_apply:5705:set_affinity:prefer_reserved_cores:0.5`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.1.status=ok`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.2.detail=planned_apply:5705:use_cpuset:false`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.2.status=ok`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.applied_count=3`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.attempted_count=3`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.failed_count=0`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.partial=false`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.result=ok`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.apply.skipped_count=0`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.capture.affinity.captured=true`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.capture.affinity.original_cpus=0,1,2,3`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.capture.nice.captured=true`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.capture.nice.original=0`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.capture.provider=procfs`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.lease.backend=planned-only`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.lease.linux.affinity.captured=true`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.lease.linux.affinity.original_cpus=0,1,2,3`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.lease.linux.applier=planned-applier`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.lease.linux.capture.provider=procfs`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.lease.linux.nice.captured=true`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.lease.linux.nice.original=0`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.lease.rollback_strategy=linux_syscall_restore`
+  - `pid=5705;scenario=inference_tail_guard;backend.apply.lease.target_pid=5705`
+- Triggered scenarios: `inference_tail_guard:1`
+
+### 2026-05-10T03:37:57Z - Helper-backed offcpu_time validation
+
+- Scope: `AegisAI_Runtime-jtt`; controlled off-CPU workload with daemon Linux
+  source and privileged helper.
+- Host: `Linux gg-vm 6.8.0-110-generic #110-Ubuntu SMP PREEMPT_DYNAMIC Thu Mar 19 15:09:20 UTC 2026 x86_64 GNU/Linux`
+- Tooling: `bpftrace v0.20.2`; tracefs mounted at `/sys/kernel/tracing`.
+- Workload: temporary `/tmp/aegisai-jtt/bin/ollama` Python sleep loop, PID `5705`;
+  `/proc/5705/comm` was `ollama`.
+- Helper readiness:
+  - Helper path: `/tmp/aegisai-jtt/bin/aegisai-ebpf-helper`
+  - Helper mode: `4755 root:root`
+  - Command: `AEGISAI_BPFTRACE=/usr/bin/bpftrace /tmp/aegisai-jtt/bin/aegisai-ebpf-helper --check`
+  - Exit status: `0`
+- Helper off-CPU attach/stream:
+  - Command: `timeout 8s /tmp/aegisai-jtt/bin/aegisai-ebpf-helper stream --offcpu --pid 5705`
+  - Exit status: `124` from `timeout`, with helper still streaming until the
+    test cutoff.
+  - Raw helper events: `348` `aegisai_probe signal=offcpu_time ...` lines.
+  - Stderr lines: `0`
+- Daemon Linux source:
+  - Command: `AEGISAI_EBPF_HELPER=/tmp/aegisai-jtt/bin/aegisai-ebpf-helper target/debug/aegisai-runtime-daemon --repo-root /tmp/aegisai-jtt/repo --source linux --metadata procfs --actuator-backend linux-skeleton --allow-partial-probes --probe-poll-timeout-ms 1000 --batch-size 16 --max-events 8 --drain-ms 0 --verification-log docs/verification_log.md`
+  - Temporary repo config limited `[collection].focus_signals` to
+    `["offcpu_time"]` and selection to process name `ollama`.
+  - Exit status: `0`
+  - Daemon summary normalized `offcpu_time` `SourceEvent` observations:
+    `events=8 total=165842 max=21169`.
+  - Processed events: `8`
+  - Attach status: helper readiness passed and helper emitted raw off-CPU probe
+    events; daemon ingested and normalized them through `linux-probe`.
+- Notes:
+  - Initial helper stream failed on this host because bpftrace v0.20.2 rejects
+    `str(args->next_comm)` when `next_comm` is already `string[16]`. The probe
+    template now passes `args->next_comm` directly.
+  - I/O latency validation was intentionally out of scope for this run.

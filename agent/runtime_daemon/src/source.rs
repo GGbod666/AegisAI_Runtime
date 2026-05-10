@@ -1348,7 +1348,7 @@ tracepoint:sched:sched_switch
   $delta = nsecs - @aegisai_offcpu_ts[args->next_pid];
   if ($delta > 0) {{
     printf("aegisai_probe signal=offcpu_time ts_ns=%llu pid=%u tid=%u comm=%s value_ns=%llu\n",
-      nsecs, @aegisai_offcpu_pid[args->next_pid], args->next_pid, str(args->next_comm), $delta);
+      nsecs, @aegisai_offcpu_pid[args->next_pid], args->next_pid, args->next_comm, $delta);
   }}
   delete(@aegisai_offcpu_ts[args->next_pid]);
   delete(@aegisai_offcpu_pid[args->next_pid]);
@@ -3159,6 +3159,8 @@ mod tests {
         assert!(program.contains("tracepoint:block:block_rq_complete"));
         assert!(program.contains("aegisai_probe signal=offcpu_time"));
         assert!(program.contains("aegisai_probe signal=io_latency"));
+        assert!(program.contains("args->next_comm, $delta"));
+        assert!(!program.contains("str(args->next_comm)"));
         assert!(program.contains("pid == 42"));
         assert!(program.contains("args->prev_pid == 42"));
         assert!(program.contains("comm == \"ollama\""));
