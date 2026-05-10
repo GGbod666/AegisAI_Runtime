@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import tempfile
 import unittest
 
 
@@ -67,6 +68,42 @@ class SummarizeAbTests(unittest.TestCase):
         self.assertEqual(by_mode["live_guarded"]["benefit_verdict"], "PASS")
         self.assertEqual(by_mode["live_guarded"]["improved_rounds"], "2")
         self.assertEqual(by_mode["live_guarded"]["comparable_rounds"], "3")
+        self.assertIn(
+            "executor warmup is plan/audit-only",
+            by_mode["live_guarded"]["verdict_reason"],
+        )
+
+    def test_report_states_warmup_executor_boundary(self) -> None:
+        rows: list[dict[str, str]] = []
+        for round_no in range(1, 4):
+            rows.append(detail_row(round_no, "baseline", 100.0))
+            rows.append(detail_row(round_no, "live_guarded", 90.0))
+
+        summary_rows = summarize_ab.build_summary_rows(
+            rows,
+            ["baseline", "live_guarded"],
+            rounds=3,
+            min_benefit_pct=5.0,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = pathlib.Path(tmp) / "report.md"
+            summarize_ab.write_report(
+                report_path,
+                "test-run",
+                pathlib.Path(tmp),
+                ["baseline", "live_guarded"],
+                rounds=3,
+                min_benefit_pct=5.0,
+                detail_rows=rows,
+                summary_rows=summary_rows,
+            )
+
+            report = report_path.read_text(encoding="utf-8")
+
+        self.assertIn("Benefit scope: guarded scheduler actions only", report)
+        self.assertIn("`WarmupExecutor` is plan/audit-only", report)
+        self.assertIn("No live executor/cache warmup side effect is implemented", report)
 
 
 if __name__ == "__main__":

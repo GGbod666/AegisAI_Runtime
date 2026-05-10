@@ -15,6 +15,12 @@ from typing import Any
 
 CONTRACT_STAGES = ("executor", "retrieval", "rerank")
 GUARDED_MODES = {"guarded", "live_guarded", "linux_command", "linux-command"}
+WARMUP_EXECUTOR_BOUNDARY = (
+    "`WarmupExecutor` is plan/audit-only in the current backend: apply records "
+    "`warmup executor deferred` and rollback records a no-op. No live "
+    "executor/cache warmup side effect is implemented or required for this "
+    "benefit verdict."
+)
 
 
 DETAIL_COLUMNS = [
@@ -427,7 +433,10 @@ def verdict_reason(
         return f"average delta did not improve by >={min_benefit_pct:.1f}%"
     if not guarded_mode:
         return "control mode only; latency trend is not guarded host-level benefit proof"
-    return "guarded mode met repeated latency improvement gate"
+    return (
+        "scheduler-side guarded mode met repeated latency improvement gate; "
+        "executor warmup is plan/audit-only"
+    )
 
 
 def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) -> None:
@@ -471,6 +480,8 @@ def write_report(
         f"- Benefit threshold: `{min_benefit_pct:.1f}%` latency improvement in at least two thirds of comparable rounds",
         f"- Overall contract verdict: `{overall_contract}`",
         f"- Overall benefit verdict: `{overall_benefit}`",
+        "- Benefit scope: guarded scheduler actions only (`nice` and, when enabled, `affinity`).",
+        f"- Executor warmup boundary: {WARMUP_EXECUTOR_BOUNDARY}",
         "",
         "## Aggregate",
         "",
@@ -501,7 +512,8 @@ def write_report(
             "",
             "- `baseline` is the unobserved executor sample and anchors latency deltas.",
             "- `noop` and `dry_run` prove recognition, trigger, audit, and rollback closure, but they are controls rather than host-level guarded benefit proof.",
-            "- A guarded benefit PASS requires a guarded mode, clean mode contracts, and repeated latency improvement versus same-round baseline.",
+            "- A guarded benefit PASS requires a guarded scheduler mode, clean mode contracts, and repeated latency improvement versus same-round baseline.",
+            "- Do not read a Tool Call Booster benefit PASS as proof that executor warmup is live unless a future backend records a real warmup side effect.",
         ]
     )
     path.write_text("\n".join(lines) + "\n")

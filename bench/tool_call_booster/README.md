@@ -36,6 +36,11 @@ stdout/stderr 到 `.cache/aegisai/tool_call_booster/<run_id>/`。
 - summary 报告每档 latency delta、trigger count、rollback count 和明确
   `benefit_verdict`
 
+当前 benefit 证明边界只覆盖 scheduler 侧动作：`nice`，以及显式打开 live affinity
+时的 `taskset`。`WarmupExecutor` 仍是策略/审计意图；当前后端 apply 只记录
+`warmup executor deferred`，rollback 只记录 no-op，不代表真实 executor/cache warmup
+已经上线。
+
 默认 `noop` 与 `dry_run` 只证明识别、触发、审计和 rollback 闭环；它们不会
 单独被判定为主机级收益证明。只有显式加入 guarded/live 档，并在至少三分之二
 可比较轮次中相对 baseline 改善达到 `AEGISAI_TCB_MIN_BENEFIT_PCT`，报告才会给
