@@ -37,26 +37,31 @@ action effectiveness and repeated benefit are proven.
 
 ## Required Work
 
-### 1. Real eBPF Signal Validation
+### Completed: Real eBPF Signal Validation
 
 Beads issue: `AegisAI_Runtime-jtt`
 
-Goal:
+Result:
 
-- validate helper-backed `offcpu_time` and `io_latency` observations with
-  controlled workloads
-- keep the main daemon rootless and the helper as the narrow privileged boundary
-- record helper readiness, tracepoint compatibility, event counts, and fallback
-  behavior
+- helper-backed `offcpu_time` and `io_latency` observations were validated with
+  controlled workloads on 2026-05-10
+- the main daemon remained rootless and used `aegisai-ebpf-helper` as the narrow
+  privileged boundary
+- helper readiness, commands, host details, tracepoint compatibility, raw event
+  counts, daemon event counts, and partial-probe behavior are recorded in
+  `docs/verification_log.md`
 
-Exit checks:
+Artifact references:
 
-- Linux source emits normalized off-CPU and I/O latency `SourceEvent` records
-  from controlled workloads through the helper
-- failures distinguish helper absence, permission failure, tracepoint mismatch,
-  and no workload events
+- `2026-05-10T03:37:57Z - Helper-backed offcpu_time validation`: `348` raw
+  helper events and `8` normalized daemon events.
+- `2026-05-10T03:48:11Z - Helper-backed io_latency validation`: tracepoint
+  fields compatible, `4005` raw helper events, and `8` normalized daemon events.
+- Future helper conclusions should distinguish `helper unavailable`,
+  `tracepoint incompatible`, `no workload events`, and `validated signal`; both
+  completed runs are `validated signal`.
 
-### 2. Live CPU Affinity Reliability
+### 1. Live CPU Affinity Reliability
 
 Beads issue: `AegisAI_Runtime-v2y`
 
@@ -74,7 +79,7 @@ Exit checks:
 - Inference Tail Guard live affinity uses the planner without weakening report
   rules
 
-### 3. Effective Live Inference Tail Guard
+### 2. Effective Live Inference Tail Guard
 
 Beads issue: `AegisAI_Runtime-lql`
 
@@ -93,7 +98,7 @@ Exit checks:
 - report verdict is `PASS` only if the strict trend and effective-action rules
   are both satisfied
 
-### 4. Tool Call Booster Benefit Proof
+### 3. Tool Call Booster Benefit Proof
 
 Beads issue: `AegisAI_Runtime-94s`
 
@@ -112,7 +117,7 @@ Exit checks:
   explicit PASS/FAIL verdict
 - dry-run and noop are treated as closed-loop evidence, not host benefit proof
 
-### 5. Hot-Path Test Hardening
+### 4. Hot-Path Test Hardening
 
 Goal:
 

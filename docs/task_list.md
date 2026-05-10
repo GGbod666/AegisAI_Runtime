@@ -11,20 +11,20 @@ spells out dependencies, priority, and concrete acceptance checks.
 The repository has a runnable control loop and guarded live actuator path, but
 the latest MVP benefit report still returns `FAIL`: live guarded mode produced
 effective host-level `taskset` actions, while the stable tail-latency benefit
-threshold was not met.
+threshold was not met. Helper-backed off-CPU and I/O real-signal validation is
+complete and indexed in `docs/current_status.md` and `docs/verification_log.md`.
 
 Semantic dependencies:
 
 ```text
 P0 status/doc consistency
-  -> P1 helper real-signal validation (AegisAI_Runtime-jtt)
-      -> P2 Tool Call Booster I/O/retrieval evidence is more credible
+  -> P2 Tool Call Booster I/O/retrieval evidence is more credible
 
 P1 live CPU affinity planning reliability (AegisAI_Runtime-v2y)
   -> P1/P2 Inference Tail Guard live benefit tuning (AegisAI_Runtime-lql)
       -> MVP benefit PASS, or an explicit reproducible FAIL reason
 
-P1 helper signal validation + P1 live actuator reliability
+P1 live actuator reliability
   -> P2 Tool Call Booster live guarded benefit proof (AegisAI_Runtime-94s)
 
 P2 hot-path tests
@@ -64,11 +64,11 @@ Acceptance:
 - `current_status.md` points to `docs/mvp_benefit_report.md`.
 - `mvp_benefit_report.md` keeps the run ID, verdict, and artifact paths.
 
-## P1: Real Signal Evidence
+## P1: Real Signal Evidence - Completed
 
 ### 3. Validate helper-backed `offcpu_time`
 
-Beads issue: `AegisAI_Runtime-jtt`
+Beads issue: `AegisAI_Runtime-jtt` (closed)
 
 Work:
 
@@ -83,10 +83,14 @@ Acceptance:
 - Normalized `offcpu_time` `SourceEvent` observations appear in daemon output.
 - If attachment fails, the failure records the exact helper/bpftrace/kernel
   compatibility reason.
+- Result: `docs/verification_log.md` entry
+  `2026-05-10T03:37:57Z - Helper-backed offcpu_time validation` records
+  helper readiness, host details, the off-CPU attach command, `348` raw helper
+  events, daemon exit `0`, and `8` normalized daemon observations.
 
 ### 4. Validate helper-backed `io_latency`
 
-Beads issue: `AegisAI_Runtime-jtt`
+Beads issue: `AegisAI_Runtime-jtt` (closed)
 
 Work:
 
@@ -99,10 +103,15 @@ Acceptance:
 - Normalized `io_latency` `SourceEvent` observations appear in daemon output.
 - If the kernel tracepoint layout is incompatible, the report records the
   tracepoint and field that failed.
+- Result: `docs/verification_log.md` entry
+  `2026-05-10T03:48:11Z - Helper-backed io_latency validation` records block
+  tracepoint field compatibility, helper readiness, the I/O attach command,
+  `4005` raw helper events, daemon exit `0`, and `8` normalized daemon
+  observations.
 
 ### 5. Record helper validation artifacts
 
-Beads issue: `AegisAI_Runtime-jtt`
+Beads issue: `AegisAI_Runtime-jtt` (closed)
 
 Work:
 
@@ -114,6 +123,10 @@ Acceptance:
 - The result is referenced from the relevant report or status doc.
 - The conclusion distinguishes "helper unavailable", "tracepoint incompatible",
   "no workload events", and "validated signal".
+- Result: `docs/current_status.md` now references the `jtt` artifact records and
+  defines the conclusion taxonomy. The completed 2026-05-10 runs are
+  `validated signal`; helper absence, tracepoint mismatch, and zero-event runs
+  remain distinct failure buckets for future validations.
 
 ## P1: Live Affinity Reliability
 
