@@ -303,7 +303,7 @@ mod tests {
                 "# branch.ab +2 -1",
                 "1 M. N... 100644 100644 100644 abcdef abcdef src/main.rs",
                 "1 .M N... 100644 100644 100644 abcdef abcdef README.md",
-                "? docs/linux_vm_checklist.md",
+                "? docs/linux_validation.md",
                 "! target",
             ]
             .join("\n")),

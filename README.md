@@ -792,13 +792,13 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 ## 阅读路线
 
 - `docs/README.md`：docs 目录职责边界和阅读顺序。
-- `docs/current_status.md`：当前状态快照。
-- `docs/task_list.md`：精细待办清单、依赖和验收条件。
-- `docs/mvp.md`：MVP 定义和严格收益规则。
+- `docs/status.md`：当前状态、最新 artifact 索引和开放缺口。
+- `docs/strategy.md`：MVP 定义、严格收益规则、当前阶段和实验方法。
+- `docs/acceptance_ledger.md`：已验收 19 项 evidence-hardening 台账。
+- `docs/linux_validation.md`：Linux 主机、helper 和 live guarded 实验检查清单。
 - `docs/mvp_benefit_report.md`：最新收益证据和当前 FAIL 结论。
-- `docs/next_stage.md`：证据强化阶段计划。
 - `docs/verification_log.md`：append-only 验证历史。
-- `docs/architecture.md`：早期分层架构说明。
+- `docs/architecture.md`：稳定架构、部署边界和工程债边界。
 - `agent/runtime_daemon/README.md`：CLI/source/metadata 细节。
 - `agent/actuator/README.md`：backend 和 rollback 设计。
 - `agent/ebpf_helper/README.md`：helper 权限边界。

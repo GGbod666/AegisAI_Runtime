@@ -1,0 +1,208 @@
+# Linux Validation
+
+This file owns Linux host setup, preflight, helper validation, and live guarded
+experiment checklists. Product strategy lives in `docs/strategy.md`; current
+artifact status lives in `docs/status.md`.
+
+## Host Split
+
+Development can happen on Windows or any non-production host for architecture,
+crate integration, mock-source development, control-loop verification,
+configuration, and docs.
+
+Linux validation is required for:
+
+- real `/proc` metadata enrichment
+- scheduler-state capture and actuator rollback safety
+- real probe-backed event ingestion
+- eBPF helper loading and validation
+- scheduling actions such as `nice` and `taskset`
+- benchmark data collection and final experiment results
+
+Current baseline:
+
+- helper-backed `offcpu_time` and `io_latency` have been validated on Linux host
+  `gg-vm`
+- live guarded Inference Tail Guard has effective host-level action evidence but
+  no stable MVP benefit yet
+- live guarded Tool Call Booster has contract `PASS` but benefit `FAIL`
+
+## Base Host Checks
+
+Run these first:
+
+```bash
+uname -a
+uname -r
+rustc --version
+cargo --version
+```
+
+Confirm kernel `5.15+`, Rust availability, and repository readability from a
+Linux filesystem.
+
+## Cgroup And Procfs Checks
+
+```bash
+mount | grep cgroup
+cat /proc/self/cgroup
+cat /proc/self/cpuset
+grep '^Cpus_allowed_list:' /proc/self/status
+cat /sys/devices/system/cpu/online
+```
+
+Confirm cgroup v2 or a known host layout, readable `/proc/<pid>/status`
+`Cpus_allowed_list`, readable `/proc/<pid>/cpuset`, and readable online CPU
+topology.
+
+## eBPF And Capability Checks
+
+The main runtime daemon should remain rootless. Prepare the narrow privileged
+helper instead:
+
+```bash
+sysctl kernel.unprivileged_bpf_disabled || true
+bpftool version || true
+which bpftool || true
+which aegisai-ebpf-helper || true
+aegisai-ebpf-helper --check || true
+which bpftrace || true
+which clang || true
+which llc || true
+```
+
+Install missing Linux dependencies before real probe validation:
+
+```bash
+dnf install -y bpftool bpftrace clang llvm util-linux
+apt-get install -y bpftool bpftrace clang llvm util-linux
+```
+
+Use the command matching the host distribution.
+
+## Build Verification
+
+From the repository root:
+
+```bash
+cargo fmt --all -- --check
+cargo test --workspace
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+This confirms the Linux host matches the accepted workspace baseline before live
+probe or actuator experiments.
+
+## Version Checkpoint
+
+Before each live Linux experiment batch:
+
+```bash
+cargo run -p aegisai-git-control -- status --path .
+cargo run -p aegisai-git-control -- checkpoint --path . --label "linux experiment baseline"
+```
+
+Record repository root, branch, HEAD, dirty state, and a normalized checkpoint
+label.
+
+## Safe Runtime Smoke Tests
+
+```bash
+cargo run -p aegisai-runtime-daemon -- --repo-root . --source mock --metadata demo --actuator-backend noop
+cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata procfs --actuator-backend linux-skeleton --allow-partial-probes
+```
+
+Confirm daemon startup, procfs metadata enrichment, mock scenario triggers, and
+Linux source preflight. Zero events in Linux source smoke are acceptable because
+this checks startup/configuration safety, not benefit.
+
+## Helper Validation
+
+For helper-backed signals:
+
+```bash
+AEGISAI_EBPF_HELPER=/path/to/aegisai-ebpf-helper \
+AEGISAI_BPFTRACE=/usr/bin/bpftrace \
+  cargo run -p aegisai-runtime-daemon -- \
+    --repo-root . \
+    --source linux \
+    --metadata procfs \
+    --actuator-backend linux-skeleton \
+    --allow-partial-probes
+```
+
+Use controlled off-CPU and block I/O workloads. Record conclusions with these
+buckets:
+
+- `helper unavailable`
+- `tracepoint incompatible`
+- `no workload events`
+- `validated signal`
+
+For portability work, capture the exact tracepoint or field that failed.
+
+## Actuator State Capture Check
+
+Before live host actions:
+
+```bash
+cargo test -p aegisai-actuator
+```
+
+Focus on original nice capture, original affinity capture, online/allowed CPU
+intersection, cpuset capture, rollback audit fields, and explicit live guards.
+
+## Benchmark Entry Conditions
+
+Do not collect benchmark numbers until:
+
+- mock mode passes
+- Linux source starts without unsupported-reader failure
+- helper readiness is understood for the current host
+- actuator rollback paths are auditable
+- the target runtime process can be identified by classifier rules
+- live experiment window, PID allowlist, and permissions are explicit
+
+## Live Guarded Experiments
+
+Inference Tail Guard:
+
+```bash
+AEGISAI_AB_MODES=baseline,noop_observation,dry_run,live_guarded \
+AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
+AEGISAI_LIVE_PID_ALLOWLIST=<pid,...> \
+  bash bench/scripts/inference_tail_guard_phase4_report.sh
+```
+
+Enable affinity only when intended:
+
+```bash
+AEGISAI_ENABLE_LIVE_AFFINITY=1
+```
+
+The CPU affinity planner intersects `/proc/<pid>/status` `Cpus_allowed_list`
+with `/sys/devices/system/cpu/online`; empty intersections should remain a
+visible action-effectiveness risk rather than falling back to disallowed CPUs.
+
+Tool Call Booster:
+
+```bash
+AEGISAI_TCB_MODES=baseline,noop_observation,dry_run,live_guarded \
+AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
+  bash bench/scripts/tool_call_booster_real_executor_harness.sh
+```
+
+Reports should include latency deltas, trigger counts, rollback counts, action
+errors, explicit contract/benefit verdicts, and the `WarmupExecutor` boundary.
+
+## Pre-Ollama Preflight
+
+```bash
+bash bench/scripts/toolchain_preflight.sh
+bash bench/scripts/inference_tail_guard_preflight.sh
+```
+
+The preflight script appends a validation-style entry to
+`docs/verification_log.md` unless `AEGISAI_VERIFY_LOG` is redirected. It checks
+safe host readiness before a separate Ollama/model installation stage or before
+running real `ollama`/`llama.cpp` plus `stress-ng` experiments.

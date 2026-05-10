@@ -1,122 +1,90 @@
-﻿# AegisAI Runtime 架构说明
+# Architecture And Engineering Boundaries
 
-## 1. 当前架构判断
+This file owns durable architecture and process boundaries. Current status lives
+in `docs/status.md`; product strategy and roadmap live in `docs/strategy.md`.
 
-项目方向没有问题，但骨架需要从“只有分层”升级成“分层 + 场景主线”并存。
+## Architecture Shape
 
-因此当前架构采用双轴设计：
+AegisAI Runtime uses a dual-axis design:
 
-- 能力轴：观测、识别、决策、执行、评估
-- 场景轴：AI workload 感知、尾延迟保护、工具链调用优化
+- capability axis: observe, collect, classify, decide, act, measure
+- scenario axis: AI workload awareness, inference tail protection, tool-call
+  optimization
 
-## 2. 设计目标
+Design goals:
 
-系统需要同时满足：
+- low-overhead observability
+- AI workload identification
+- bounded and reversible intervention
+- scenario-extensible policy
+- benchmark-backed effect measurement
 
-- 低开销观测
-- AI workload 可识别
-- 干预有限时且可回退
-- 策略按场景扩展
-- 效果可以被 benchmark 验证
+Non-goals:
 
-## 3. 非目标
+- generic monitoring platform
+- Linux scheduler replacement
+- complex AI decision-making in realtime scheduler paths
+- one-shot implementation of RAG, multi-agent, GPU, dashboard, and adaptive
+  policy extensions
 
-第一轮明确不追求：
+## Capability Layers
 
-- 通用系统监控平台
-- 替代 Linux scheduler
-- 实时路径中的复杂 AI 决策
-- 一次性做完 RAG、多智能体、GPU 协同
+Observe:
 
-## 4. 能力轴
+- use a narrow privileged eBPF helper for key interference signals
+- emit a normalized event stream
+- keep the main daemon rootless
+- fall back to procfs/PSI-style signals when helper support is unavailable
 
-### 4.1 Observe Layer
+Collector:
 
-职责：
+- aggregate events over policy windows
+- form feature views by process, thread, and cgroup
 
-- 用窄权限 eBPF helper 低开销采集关键系统干扰信号
-- 输出统一事件流
-- 尽量限制在目标进程 / cgroup 范围内
+Classifier:
 
-第一轮保留：
+- identify AI workload and stage labels
+- provide routing labels for scenario policies
+- treat AI workload awareness as foundational capability, not a normal plugin
 
-- `sched_probe`
-- `offcpu_probe`
-- `fault_probe`
-- `io_probe`
+Policy:
 
-### 4.2 Collector Layer
+- convert labels and feature views into bounded decisions
+- enforce cooldowns, priorities, duration limits, and safety constraints
 
-职责：
+Actuator:
 
-- 在时间窗口内聚合事件
-- 形成 policy 可消费的 feature view
-- 做 process / thread / cgroup 维度归并
+- execute reversible actions
+- record action lifecycle and rollback state
+- delegate live CPU affinity planning to `agent/actuator/src/cpu_affinity.rs`
 
-### 4.3 Classifier Layer
+Metrics / Explain:
 
-职责：
+- record before/after metrics and side effects
+- support offline reports and threshold suggestions
 
-- 识别 AI workload
-- 打阶段标签
-- 为场景策略提供路由依据
+## Scenario Lines
 
-说明：
+`ai_workload_awareness`:
 
-这层已经被提升为基础能力，不再视作普通插件。
+- runtime recognition
+- stage labels
+- interactive-sensitive markers
+- background job distinction
 
-### 4.4 Policy Layer
+`inference_tail_guard`:
 
-职责：
+- tail-latency risk detection
+- bounded boost decisions
+- TTFT, P95/P99, and jitter evaluation
 
-- 把指标与标签转换为策略决策
-- 处理冷却时间、优先级、最大干预时长和安全约束
+`tool_call_booster`:
 
-### 4.5 Actuator Layer
+- tool call lifecycle recognition
+- executor/retrieval/rerank subpath tracking
+- lifecycle-scoped scheduler protection
 
-职责：
-
-- 执行系统动作
-- 保证动作可撤销
-- 记录动作生命周期
-- 通过独立 CPU affinity planner 处理 online CPU、allowed CPU、目标 CPU 和 rollback
-  target 规划，避免 backend 热路径直接承载拓扑策略
-
-### 4.6 Metrics / Explain Layer
-
-职责：
-
-- 记录优化前后收益
-- 支持离线报告与参数建议
-
-## 5. 场景轴
-
-### 5.1 `ai_workload_awareness`
-
-负责：
-
-- runtime 识别
-- 阶段标签
-- 交互敏感任务标记
-- background job 区分
-
-### 5.2 `inference_tail_guard`
-
-负责：
-
-- 捕捉尾延迟风险信号
-- 触发 bounded boost
-- 评估 TTFT / P95 / P99 / jitter 改善
-
-### 5.3 `tool_call_booster`
-
-负责：
-
-- 识别 tool call 生命周期
-- 跟踪子链路
-- 在生命周期内做轻量保护
-
-## 6. 数据流
+## Data Flow
 
 ```mermaid
 flowchart TD
@@ -131,68 +99,123 @@ flowchart TD
     I --> J["Explain / Tune"]
 ```
 
-闭环如下：
+Closed-loop sequence:
 
-1. privileged helper 以固定 probe 集合捕捉关键系统事件
-2. rootless runtime daemon 消费 helper 输出的标准事件流
-3. collector 聚合窗口内特征
-4. classifier 输出 workload label
-5. 场景策略消费 label 和 feature
-6. actuator 执行带回退边界的动作
-7. metrics 评估收益与副作用
+1. privileged helper captures a fixed probe set
+2. rootless daemon consumes normalized events
+3. collector aggregates window features
+4. classifier emits workload labels
+5. scenario policy consumes labels and features
+6. actuator applies bounded, rollback-capable actions
+7. metrics evaluate benefit and side effects
 
-当前 live affinity 设计边界：
+## Repository Map
 
-- `agent/actuator/src/cpu_affinity.rs` 负责解析 `Cpus_allowed_list`、读取 Linux
-  online CPU、求 allowed/online 交集、选择 reserved/low-contention target，并格式化
-  rollback target。
-- `linux-command` backend 只消费 planner 结果并执行受保护的 `taskset` apply/rollback。
-- 空交集不会回退到 offline/disallowed CPU；这种情况应作为 action effectiveness 风险记录。
+- `ebpf/`: probe contracts, descriptors, and helper-adjacent observability
+- `agent/`: runtime daemon, collector, classifier, policy, actuator, metrics,
+  explain/tune, git control
+- `agent/ebpf_helper`: the only component intended to carry root or eBPF
+  capability
+- `scenarios/`: scenario packages for awareness, tail guard, and tool call
+  booster
+- `bench/`: scenario benchmarks, reports, and host preflights
+- `configs/`: runtime, classifier, scenario, and safety config examples
 
-当前 Tool Call Booster 执行动作边界：
+The main daemon should not run as root and should not pass arbitrary
+eBPF/bpftrace programs to the helper.
 
-- benefit proof 覆盖 guarded scheduler actions：`nice`，以及显式启用时的
-  `affinity`。
-- `WarmupExecutor` 仍是 plan/audit-only；当前 backend 记录 deferred apply 和 no-op
-  rollback，不代表真实 executor/cache warmup 已上线。
+## Deployment Boundary
 
-## 7. 仓库映射
+Target runtime environment:
 
-### `ebpf/`
+- Linux kernel `5.15+`
+- cgroup v2 or an explicitly understood host layout
+- eBPF-capable environment for helper-backed signals
 
-观测能力入口。
+Default split:
 
-### `agent/`
+- `aegisai-runtime-daemon`: ordinary user process
+- `aegisai-ebpf-helper`: administrator-installed helper with minimal root or
+  eBPF capability
+- degraded path: procfs/PSI-style ordinary-permission observation when helper
+  support is unavailable
 
-控制闭环与核心逻辑入口。
+Windows or macOS are acceptable for docs, control-plane preparation, and mock
+verification. Probe validation and benchmark evidence require Linux.
 
-`agent/ebpf_helper` 是唯一允许拥有 root 或 eBPF capability 的观测侧辅助组件。
-主 daemon 不应以 root 运行，也不应向 helper 传入任意 eBPF/bpftrace 程序。
+## Live Action Boundaries
 
-### `scenarios/`
+Current live affinity boundary:
 
-三条主线的独立场景包入口。
+- `agent/actuator/src/cpu_affinity.rs` parses `Cpus_allowed_list`, reads online
+  CPU topology, intersects allowed/online CPUs, selects reserved/low-contention
+  targets, and formats rollback targets.
+- `linux-command` consumes planner output and executes protected `taskset`
+  apply/rollback.
+- Empty intersections must remain visible action-effectiveness risks, not fall
+  back to offline or disallowed CPUs.
 
-### `bench/`
+Current Tool Call Booster action boundary:
 
-按场景组织 benchmark 与干扰实验。
+- benefit proof covers guarded scheduler actions: `nice`, plus explicitly
+  enabled `affinity`
+- `WarmupExecutor` remains plan/audit-only; current backend records deferred
+  apply and no-op rollback, not real executor/cache warmup
 
-### `configs/`
+## Production Config Boundaries
 
-按 runtime / classifier / safety / scenario 拆分配置。
+Current state:
 
-## 8. 部署边界
+- `RuntimeOrchestratorConfig::load_from_repo_root` reads fixed files under
+  `configs/*/*.example.toml` plus `configs/safety/default.toml`.
+- Example files are suitable for tests, demos, and benchmark harnesses; they are
+  not a production profile contract.
 
-项目运行目标明确为 Linux：
+Profile selection rules for future production work:
 
-- Linux kernel 5.15+
-- cgroup v2
-- 支持 eBPF 的运行环境
+- select one named profile before reading component config files
+- precedence should be CLI flag, then environment variable, then a documented
+  non-production local default
+- profile names are identifiers, not paths; accept lowercase letters, digits,
+  `_`, and `-`; reject path separators, `.` segments, empty names, and absolute
+  paths
+- production mode must not silently load `*.example.toml`
 
-默认部署边界：
+Schema validation should check TOML syntax, keys/types, required fields, enum
+values, numeric ranges, cross-file safety, and host/environment readiness.
+Errors should name profile, file, section, key, and violated constraint.
 
-- `aegisai-runtime-daemon`：普通用户运行
-- `aegisai-ebpf-helper`：管理员安装/授权，最小化 root 或 eBPF capability
-- 无 helper 或权限不足时：保持 rootless 控制面，降级到 procfs/PSI 等普通权限观测
+Deferred config work:
 
-Windows 或 macOS 适合做文档整理和控制面准备，但 probe 验证和 benchmark 需要在 Linux 主机或 Linux VM 中完成。
+- hot reload and dynamic profile switching
+- remote config distribution
+- secret storage/interpolation
+- schema migrations
+- dashboard/UI editing
+- profile inheritance
+- adaptive policy writes back into profile files
+- enabling live cpuset writes by profile alone
+
+## Hotspot Refactor Boundaries
+
+Known hotspots:
+
+- `agent/runtime_daemon/src/source.rs`
+- `agent/actuator/src/backend.rs`
+- `agent/explain_tune/src/engine.rs`
+- `agent/runtime_orchestrator/src/runtime_orchestrator.rs`
+- `agent/policy_engine/src/engine.rs`
+- `bench/scripts/inference_tail_guard_ollama_smoke.sh`
+
+Do not split these as standalone cleanup. A split is acceptable only when it is
+attached to active behavior work and covered by targeted verification.
+
+Required boundaries:
+
+- preserve public behavior and CLI/script outputs unless the active issue
+  requires a behavior change
+- extract one cohesive concern at a time
+- avoid combining splitting with broad renames, style cleanup, or unrelated
+  moves
+- preserve or add targeted tests before claiming behavior preservation
+- record the active `bd` issue that justified the split
