@@ -29,7 +29,9 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 可比较样本采集；报告中的 `benefit_verdict` 才是收益是否证明的明确结论。
 `noop` / `dry_run` 只证明识别、触发、审计和 rollback 闭环，不单独证明真实
 host-level latency benefit。显式加入 `live_guarded` 时必须设置
-`AEGISAI_CONFIRM_LIVE_ACTUATOR=1` 和 `AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>`。
+`AEGISAI_CONFIRM_LIVE_ACTUATOR=1`。可设置
+`AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>` 固定 allowlist；未设置时 harness 会从
+当前轮次的真实 executor 进程树派生 allowlist，并写入 artifact。
 该阶段仍不声明 background isolation 或 explain/tune 已正式固化。
 
 ## 真实 Ollama A/B harness 前置条件

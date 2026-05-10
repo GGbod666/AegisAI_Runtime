@@ -63,6 +63,8 @@ AEGISAI_TCB_MIN_BENEFIT_PCT=5 \
 
 需要把 benefit verdict 作为 shell hard gate 时，设置
 `AEGISAI_TCB_REQUIRE_BENEFIT=1`。这通常只适合显式受控的 guarded/live 实验窗口。
-`live_guarded` 还必须设置 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1` 和
-`AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>`；默认不启用 live affinity，只有设置
-`AEGISAI_ENABLE_LIVE_AFFINITY=1` 才会允许 `taskset`。
+`live_guarded` 还必须设置 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1`；可以用
+`AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>` 固定 allowlist，未设置时 harness 会从
+当前轮次的 executor / retrieval / rerank / background 进程树派生 allowlist。
+默认不启用 live affinity，只有设置 `AEGISAI_ENABLE_LIVE_AFFINITY=1` 才会允许
+`taskset`。

@@ -71,7 +71,7 @@ Common overrides:
   AEGISAI_TCB_MIN_BENEFIT_PCT=5
   AEGISAI_TCB_REQUIRE_BENEFIT=0
   AEGISAI_CONFIRM_LIVE_ACTUATOR=1
-  AEGISAI_LIVE_PID_ALLOWLIST=1234
+  AEGISAI_LIVE_PID_ALLOWLIST=1234  # optional; derived per round when omitted
   AEGISAI_TCB_ARTIFACT_DIR=/path/to/results
 USAGE
 }
@@ -146,6 +146,17 @@ is_pid_allowlist() {
   [[ "${1:-}" =~ ^[0-9]+(,[0-9]+)*$ ]]
 }
 
+is_live_mode() {
+  case "$1" in
+    guarded|live_guarded|linux_command|linux-command)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 mode_backend() {
   local mode="$1"
   case "${mode}" in
@@ -179,11 +190,9 @@ has_live_mode() {
   IFS=',' read -r -a modes <<<"${MODES}"
   for raw_mode in "${modes[@]}"; do
     mode="$(printf '%s' "${raw_mode}" | xargs)"
-    case "${mode}" in
-      guarded|live_guarded|linux_command|linux-command)
-        return 0
-        ;;
-    esac
+    if is_live_mode "${mode}"; then
+      return 0
+    fi
   done
   return 1
 }
@@ -308,12 +317,13 @@ start_executor() {
 
 run_daemon() {
   local backend="$1"
-  local stdout="$2"
-  local stderr="$3"
+  local live_pid_allowlist="$2"
+  local stdout="$3"
+  local stderr="$4"
   local -a live_args=()
 
   if [[ "${backend}" == "linux-command" ]]; then
-    live_args=(--confirm-live-actuator --live-pid-allowlist "${LIVE_PID_ALLOWLIST}")
+    live_args=(--confirm-live-actuator --live-pid-allowlist "${live_pid_allowlist}")
     if [[ "${LIVE_ENABLE_AFFINITY}" == "1" ]]; then
       live_args+=(--enable-live-affinity)
     fi
@@ -333,6 +343,34 @@ run_daemon() {
     "${live_args[@]}" \
     >"${stdout}" 2>"${stderr}" &
   daemon_pid="$!"
+}
+
+derive_live_pid_allowlist() {
+  local pids=()
+  local child_pid
+
+  if [[ -n "${LIVE_PID_ALLOWLIST}" ]]; then
+    printf '%s\n' "${LIVE_PID_ALLOWLIST}"
+    return 0
+  fi
+
+  if [[ -z "${executor_pid}" ]] || ! kill -0 "${executor_pid}" >/dev/null 2>&1; then
+    return 1
+  fi
+
+  pids+=("${executor_pid}")
+  if ! has_command pgrep; then
+    printf 'pgrep is required to derive live_guarded child PID allowlist\n' >&2
+    return 1
+  fi
+
+  while IFS= read -r child_pid; do
+    if [[ -n "${child_pid}" ]]; then
+      pids+=("${child_pid}")
+    fi
+  done < <(pgrep -P "${executor_pid}" 2>/dev/null || true)
+
+  printf '%s\n' "${pids[*]}" | tr ' ' ','
 }
 
 build_daemon() {
@@ -375,14 +413,26 @@ run_round_mode() {
   local executor_stderr="${ARTIFACT_DIR}/executor.${prefix}.stderr"
   local daemon_stdout="${ARTIFACT_DIR}/daemon.${prefix}.stdout"
   local daemon_stderr="${ARTIFACT_DIR}/daemon.${prefix}.stderr"
+  local live_pid_allowlist=""
 
   start_executor "${tool_call_id}" "${executor_stdout}" "${executor_stderr}"
   if [[ "${mode}" != "baseline" ]]; then
     sleep "${DAEMON_START_DELAY}"
-    run_daemon "${backend}" "${daemon_stdout}" "${daemon_stderr}"
+    if is_live_mode "${mode}"; then
+      if ! live_pid_allowlist="$(derive_live_pid_allowlist)"; then
+        fail "could not derive live_guarded PID allowlist for ${prefix}"
+      elif ! is_pid_allowlist "${live_pid_allowlist}"; then
+        fail "derived invalid live_guarded PID allowlist for ${prefix}: ${live_pid_allowlist}"
+      else
+        printf '%s\n' "${live_pid_allowlist}" >"${ARTIFACT_DIR}/live_pid_allowlist.${prefix}.txt"
+      fi
+    fi
+    if [[ "${overall_status}" -eq 0 ]]; then
+      run_daemon "${backend}" "${live_pid_allowlist}" "${daemon_stdout}" "${daemon_stderr}"
+    fi
   fi
   wait_for_executor
-  if [[ "${mode}" != "baseline" ]]; then
+  if [[ "${mode}" != "baseline" && -n "${daemon_pid}" ]]; then
     wait_for_daemon
   fi
 }
@@ -420,8 +470,8 @@ if has_live_mode; then
   if [[ "${LIVE_CONFIRM}" != "1" ]]; then
     fail "live_guarded requires AEGISAI_CONFIRM_LIVE_ACTUATOR=1"
   fi
-  if ! is_pid_allowlist "${LIVE_PID_ALLOWLIST}"; then
-    fail "live_guarded requires AEGISAI_LIVE_PID_ALLOWLIST with one or more positive PIDs"
+  if [[ -n "${LIVE_PID_ALLOWLIST}" ]] && ! is_pid_allowlist "${LIVE_PID_ALLOWLIST}"; then
+    fail "AEGISAI_LIVE_PID_ALLOWLIST must be a comma-separated list of positive PIDs when set"
   fi
 fi
 

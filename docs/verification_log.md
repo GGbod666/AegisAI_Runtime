@@ -15407,3 +15407,504 @@ qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from
 - Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
 - Harness aggregate exit status: `0`
 - Benefit verdict: `FAIL`
+
+### 2026-05-10T05:35:48Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_issue_94s_final_20260510T053527Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `3`
+- Modes: `baseline,noop_observation,dry_run,live_guarded`
+- Executor roles observed: `48`
+- Report verdict:
+```text
+overall_contract_verdict=PASS
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,3,3,1684.969,1684.237,1684.969,0,0,,,0,0,0,BASELINE,BASELINE,baseline reference
+noop_observation,noop,PASS,3,3,1689.972,1690.775,1684.969,3,0,0.388,0.360,33,9,0,FAIL,FAIL,only 0/3 comparable rounds improved by >=5.0%
+dry_run,linux-command-dry-run,PASS,3,3,1685.902,1685.924,1684.969,3,0,0.100,0.083,31,9,0,FAIL,FAIL,only 0/3 comparable rounds improved by >=5.0%
+live_guarded,linux-command,PASS,3,3,1695.862,1695.439,1684.969,3,0,0.665,0.653,28,9,0,FAIL,FAIL,only 0/3 comparable rounds improved by >=5.0%
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,1681.551,1681.551,1652.091,1651.591,1652.611,,0,0,0,0,4,none,0,round1.baseline,ok
+1,noop_observation,noop,PASS,tc-real-001-r1-noop_observation,1687.612,1687.612,1652.566,1657.156,1652.495,859.000,64,11,3,11,4,"background:16,executor:14,rerank:28,retrieval:6",0,round1.noop_observation,ok
+1,dry_run,linux-command-dry-run,PASS,tc-real-001-r1-dry_run,1685.902,1685.902,1653.742,1653.528,1654.595,861.000,64,10,3,10,4,"background:22,executor:13,rerank:21,retrieval:8",0,round1.dry_run,ok
+1,live_guarded,linux-command,PASS,tc-real-001-r1-live_guarded,1694.489,1694.489,1665.196,1660.754,1660.380,741.000,64,9,3,9,4,"background:15,executor:24,rerank:12,retrieval:13",0,round1.live_guarded,ok
+2,baseline,none,PASS,tc-real-001-r2-baseline,1684.969,1684.969,1655.632,1655.909,1652.167,,0,0,0,0,4,none,0,round2.baseline,ok
+2,noop_observation,noop,PASS,tc-real-001-r2-noop_observation,1689.972,1689.972,1654.598,1660.619,1656.061,870.000,64,12,3,12,4,"background:15,executor:20,rerank:17,retrieval:12",0,round2.noop_observation,ok
+2,dry_run,linux-command-dry-run,PASS,tc-real-001-r2-dry_run,1684.282,1684.282,1651.619,1651.729,1653.023,716.000,64,9,3,9,4,"background:13,executor:20,rerank:15,retrieval:16",0,round2.dry_run,ok
+2,live_guarded,linux-command,PASS,tc-real-001-r2-live_guarded,1695.965,1695.965,1661.728,1666.870,1661.096,762.000,64,9,3,9,4,"background:15,executor:15,rerank:13,retrieval:21",0,round2.live_guarded,ok
+3,baseline,none,PASS,tc-real-001-r3-baseline,1686.192,1686.192,1655.889,1652.893,1652.497,,0,0,0,0,4,none,0,round3.baseline,ok
+3,noop_observation,noop,PASS,tc-real-001-r3-noop_observation,1694.740,1694.740,1651.923,1662.835,1662.174,869.000,64,10,3,10,4,"background:26,executor:9,rerank:10,retrieval:19",0,round3.noop_observation,ok
+3,dry_run,linux-command-dry-run,PASS,tc-real-001-r3-dry_run,1687.588,1687.588,1653.237,1657.541,1652.822,979.000,64,12,3,12,4,"background:26,executor:14,rerank:13,retrieval:11",0,round3.dry_run,ok
+3,live_guarded,linux-command,PASS,tc-real-001-r3-live_guarded,1695.862,1695.862,1659.539,1659.489,1655.775,978.000,64,10,3,10,4,"background:16,executor:21,rerank:15,retrieval:12",0,round3.live_guarded,ok
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_benefit_report.md`
+
+### 2026-05-10T05:36:44+00:00 - Workspace verification pass
+
+- Scope: post-change validation for runtime control loop and Linux preflight path.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+
+#### Host kernel
+
+- Requirement: required
+- Command: `uname -a`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+Linux gg-vm 6.8.0-110-generic #110-Ubuntu SMP PREEMPT_DYNAMIC Thu Mar 19 15:09:20 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+```
+
+#### Rust compiler version
+
+- Requirement: required
+- Command: `rustc --version`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+rustc 1.95.0 (59807616e 2026-04-14)
+```
+
+#### Cargo version
+
+- Requirement: required
+- Command: `cargo --version`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+```
+
+#### Cargo check
+
+- Requirement: required
+- Command: `cargo check --workspace`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
+```
+
+#### Cargo test
+
+- Requirement: required
+- Command: `cargo test --workspace`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/aegisai_actuator-69f580ec37c84fff)
+
+running 32 tests
+test cpu_affinity::tests::parse_cpu_list_expands_ranges ... ok
+test cpu_affinity::tests::parse_status_cpu_list_extracts_configured_affinity ... ok
+test cpu_affinity::tests::planner_falls_back_when_online_is_unavailable ... ok
+test cpu_affinity::tests::planner_does_not_select_taskset_target_for_empty_online_intersection ... ok
+test cpu_affinity::tests::planner_formats_rollback_target_from_allowed_cpus ... ok
+test cpu_affinity::tests::planner_generates_deterministic_rollback_targets ... ok
+test cpu_affinity::tests::planner_intersects_proc_status_allowed_list_with_online_cpus ... ok
+test cpu_affinity::tests::planner_prefers_effective_online_subset_for_configured_cpu_mismatch ... ok
+test cpu_affinity::tests::planner_selects_low_contention_target_from_highest_allowed_cpus ... ok
+test cpu_affinity::tests::planner_selects_reserved_core_target_from_lowest_allowed_cpus ... ok
+test cpu_affinity::tests::planner_uses_restricted_vm_online_mask_for_taskset_targets ... ok
+test tests::apply_uses_saturating_expiry_at_timestamp_boundary ... ok
+test tests::command_applier_refuses_pid_zero_before_running_commands ... ok
+test tests::command_applier_audits_dry_run_command_details ... ok
+test tests::command_applier_executes_apply_and_rollback_commands ... ok
+test tests::default_command_applier_requires_guarded_live_constructor ... ok
+test tests::expire_returns_due_actions_in_stable_deadline_order ... ok
+test tests::disabled_cpuset_action_does_not_emit_cpuset_rollback_noise ... ok
+test tests::linux_apply_reports_partial_command_application ... ok
+test tests::linux_backend_can_report_a_named_command_backend ... ok
+test tests::linux_backend_is_available_as_a_skeleton_backend ... ok
+test tests::live_command_guard_stage_one_applies_only_nice_and_rolls_back_only_nice ... ok
+test tests::live_command_guard_keeps_cpuset_disabled_even_when_policy_requests_it ... ok
+test tests::live_command_guard_can_degrade_priority_raise_to_noop_nice ... ok
+test tests::live_command_guard_rejects_pid_outside_allowlist_before_commands ... ok
+test tests::live_command_guard_stage_two_applies_nice_and_affinity_with_rollback ... ok
+test tests::non_revertible_actions_are_not_tracked ... ok
+test tests::noop_backend_annotates_apply_and_rollback_audit_fields ... ok
+test tests::reapplying_same_pid_and_scenario_refreshes_active_lease ... ok
+test tests::reapplying_same_pid_and_scenario_rolls_back_only_refreshed_lease ... ok
+test tests::tracks_revertible_actions_until_lease_expiry ... ok
+test tests::planned_executor_can_capture_original_linux_state_from_provider ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/aegisai_classifier-e58ab34da51027d2)
+
+running 6 tests
+test tests::classifies_inference_process_from_example_config ... ok
+test tests::classifies_retrieval_stage_from_cmdline ... ok
+test tests::parses_example_classifier_config ... ok
+test tests::respects_disabled_matcher_options ... ok
+test tests::supports_cgroup_and_tag_marker_rules ... ok
+test tests::supports_parent_relationship_and_pid_allowlist_rules ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/aegisai_collector-d8f4bbbbc2468b17)
+
+running 5 tests
+test collector::tests::aggregates_and_flushes_across_scopes ... ok
+test collector::tests::filters_noise_and_drops_late_events ... ok
+test summary::tests::computes_percentiles_with_nearest_rank ... ok
+test collector::tests::rejects_invalid_configuration ... ok
+test collector::tests::projects_trailing_process_window_for_runtime_control_loop ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/aegisai_ebpf_helper-b30a8eef96e770a2)
+
+running 3 tests
+test tests::parses_check_command ... ok
+test tests::rejects_stream_without_signal ... ok
+test tests::parses_stream_selectors ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/aegisai_explain_tune-d1b55ae3f7dda7ec)
+
+running 5 tests
+test tests::rejects_invalid_config ... ok
+test tests::builds_reports_and_trigger_explanations ... ok
+test tests::suggests_tightening_conservative_policy_when_regressions_go_unhandled ... ok
+test tests::reports_tool_call_lifecycle_subchains_and_isolation_evidence ... ok
+test tests::suggests_relaxing_noisy_policy ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/aegisai_git_control-08a879411fc91f58)
+
+running 3 tests
+test tests::checkpoint_plan_sanitizes_label_and_embeds_head_prefix ... ok
+test tests::discover_repository_reports_non_repo_path ... ok
+test tests::parses_porcelain_v2_snapshot_and_counts_file_buckets ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/aegisai_git_control-d266e11e1c24bac7)
+
+running 4 tests
+test tests::checkpoint_rendering_includes_branch_and_commit_message ... ok
+test tests::cli_parses_checkpoint_command ... ok
+test tests::cli_parses_status_command_with_custom_path ... ok
+test tests::status_rendering_includes_dirty_counts ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/aegisai_metrics-3034277896f40417)
+
+running 6 tests
+test tests::computes_metric_baseline_and_improvement_ratio ... ok
+test tests::enforces_record_and_trace_capacity ... ok
+test tests::records_explicit_action_and_rollback_traces ... ok
+test tests::record_input_builders_deduplicate_lists ... ok
+test tests::rejects_invalid_config ... ok
+test tests::records_synthesized_metrics_and_default_traces ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/aegisai_policy_engine-acc105c3baeab68a)
+
+running 10 tests
+test engine::tests::enforces_cooldown_per_pid_and_scenario ... ok
+test engine::tests::resolves_conflicting_action_slots_by_scenario_priority ... ok
+test engine::tests::clamps_actions_to_safety_limits ... ok
+test engine::tests::skips_non_matching_profiles_and_empty_breaches ... ok
+test scenarios::tool_call_booster::tests::carries_tool_call_id_and_background_isolation_eligibility ... ok
+test scenarios::inference_tail_guard::tests::only_matches_interactive_ai_inference_profiles ... ok
+test scenarios::tool_call_booster::tests::clamps_actions_to_safety_limits ... ok
+test scenarios::tool_call_booster::tests::startup_delay_only_triggers_executor_and_io_focuses_workers ... ok
+test scenarios::tool_call_booster::tests::classifies_tool_call_stage_and_scales_duration ... ok
+test scenarios::inference_tail_guard::tests::clamps_actions_and_supports_tail_signals ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/aegisai_runtime_contracts-0282ee36778fb93e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/aegisai_runtime_daemon-0db8e7529eaa134d)
+
+running 31 tests
+test metadata::tests::missing_process_name_is_rejected ... ok
+test metadata::tests::noop_provider_returns_none ... ok
+test metadata::tests::static_provider_fills_missing_fields ... ok
+test runtime_loop::tests::runtime_loop_can_stop_after_max_events ... ok
+test runtime_loop::tests::mock_runtime_loop_drives_orchestrator_end_to_end ... ok
+test runtime_loop::tests::runtime_loop_summarizes_procfs_explainability_signals ... ok
+test runtime_loop::tests::tool_call_lifecycle_mock_tracks_subchains_and_isolation ... ok
+test runtime_loop::tests::self_describing_mock_source_runs_without_metadata_enrichment ... ok
+test source::tests::bpftrace_driver_emits_offcpu_and_io_latency_events ... ok
+test source::tests::bpftrace_driver_reports_unavailable_attach_reason ... ok
+test source::tests::bpftrace_program_scopes_to_configured_targets ... ok
+test runtime_loop::tests::runtime_loop_collects_audit_highlights_from_backend_execution ... ok
+test source::tests::driver_backed_reader_attaches_polls_and_stops ... ok
+test source::tests::ebpf_helper_args_are_limited_to_selectors_and_signal_flags ... ok
+test source::tests::linux_probe_plan_maps_focus_signals_to_required_probe_set ... ok
+test source::tests::poll_batch_collects_up_to_requested_events ... ok
+test source::tests::preflight_driver_marks_probe_attached_when_host_supports_all_attach_points ... ok
+test source::tests::linux_probe_source_batch_uses_one_driver_poll_at_a_time ... ok
+test source::tests::linux_probe_source_starts_reader_and_records_startup_state ... ok
+test source::tests::preflight_driver_rejects_missing_kprobe_symbol ... ok
+test source::tests::probe_event_adapter_maps_sched_delay_to_source_event ... ok
+test source::tests::procfs_target_selectors_match_process_names_and_pid_allowlist ... ok
+test source::tests::procfs_target_selectors_with_only_pid_allowlist_do_not_match_everything ... ok
+test source::tests::schedstat_and_cmdline_parsers_handle_procfs_shapes ... ok
+test source::tests::real_linux_probe_driver_combines_procfs_and_bpftrace_signals ... ok
+test source::tests::unsupported_probe_reader_reports_failed_required_probes ... ok
+test source::tests::zero_batch_size_is_rejected ... ok
+test source::tests::zero_buffered_probe_config_is_rejected_before_reader_start ... ok
+test source::tests::system_procfs_sampler_reads_migration_and_fault_counters ... ok
+test source::tests::procfs_driver_emits_migration_and_major_fault_events ... ok
+test source::tests::procfs_schedstat_driver_emits_run_queue_delay_events ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/main.rs (target/debug/deps/aegisai_runtime_daemon-4be9a1e68316c866)
+
+running 19 tests
+test tests::cli_accepts_linux_command_backend_names ... ok
+test tests::cli_accepts_verification_log_path ... ok
+test tests::cli_rejects_invalid_live_pid_allowlist ... ok
+test tests::cli_accepts_live_actuator_confirmation_flags ... ok
+test tests::cli_accepts_tool_call_lifecycle_mock_profile ... ok
+test tests::cli_rejects_zero_max_events ... ok
+test tests::cli_supports_max_events_limit ... ok
+test tests::cli_supports_probe_reader_flags ... ok
+test tests::linux_command_dry_run_backend_uses_named_backend ... ok
+test tests::linux_command_requires_explicit_confirmation ... ok
+test tests::linux_command_with_confirmation_and_cli_allowlist_builds_live_backend ... ok
+test tests::linux_command_requires_non_empty_pid_allowlist ... ok
+test tests::live_command_can_plan_affinity_after_explicit_flag ... ok
+test tests::live_command_defaults_to_nice_only_action_plan ... ok
+test tests::verification_log_includes_audit_highlights ... ok
+test tests::live_command_source_selection_uses_cli_pid_allowlist ... ok
+test tests::verification_log_includes_observation_signal_summaries ... ok
+test tests::linux_command_with_confirmation_and_config_allowlist_builds_live_backend ... ok
+test tests::verification_log_includes_tool_call_lifecycle_summary ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ebpf_probe-6db13b93b132d0ee)
+
+running 8 tests
+test event::tests::event_validation_accepts_complete_event ... ok
+test event::tests::event_validation_rejects_missing_timestamp ... ok
+test filter::tests::filter_matches_all_configured_dimensions ... ok
+test filter::tests::filter_is_unbounded_by_default ... ok
+test filter::tests::filter_rejects_target_outside_scope ... ok
+test probe::tests::probe_config_rejects_zero_sample_rate ... ok
+test probe::tests::sched_descriptor_contains_expected_event ... ok
+test registry::tests::default_registry_contains_first_wave_probes ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/runtime_orchestrator-17a423e78471ec6d)
+
+running 8 tests
+test runtime_orchestrator::tests::loads_sample_configs_from_repo ... ok
+test runtime_orchestrator::tests::inference_tail_guard_triggers_for_latency_sensitive_runtime ... ok
+test runtime_orchestrator::tests::action_traces_include_tool_call_lifecycle_audit_fields ... ok
+test runtime_orchestrator::tests::cooldown_prevents_retrigger_and_tick_rolls_back_expired_actions ... ok
+test runtime_orchestrator::tests::process_event_expires_due_action_before_applying_new_action ... ok
+test runtime_orchestrator::tests::records_action_traces_for_metrics_module ... ok
+test runtime_orchestrator::tests::runtime_pid_allowlist_produces_interactive_inference_profile ... ok
+test runtime_orchestrator::tests::tool_call_booster_triggers_for_retrieval_worker ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aegisai_actuator
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aegisai_classifier
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aegisai_collector
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aegisai_explain_tune
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aegisai_git_control
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aegisai_metrics
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aegisai_policy_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aegisai_runtime_contracts
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aegisai_runtime_daemon
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ebpf_probe
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests runtime_orchestrator
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+```
+
+#### Tool Call Booster report unit tests
+
+- Requirement: required
+- Command: `python3 -m unittest discover -s bench/tool_call_booster -p test_*.py`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+```
+
+#### Inference Tail Guard report unit tests
+
+- Requirement: required
+- Command: `python3 -m unittest discover -s bench/scripts -p test_*.py`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.528s
+
+OK
+```
+
+#### Cargo fmt check
+
+- Requirement: required
+- Command: `cargo fmt --all -- --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+```
+
+#### Cargo clippy
+
+- Requirement: required
+- Command: `cargo clippy --all-targets --all-features -- -D warnings`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+```
+
+#### Mock daemon smoke test
+
+- Requirement: required
+- Command: `cargo run -p aegisai-runtime-daemon -- --repo-root . --source mock --metadata demo --actuator-backend noop`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running `target/debug/aegisai-runtime-daemon --repo-root . --source mock --metadata demo --actuator-backend noop`
+AegisAI Runtime Daemon Summary
+source: mock-demo
+metadata: static
+actuator_backend: noop
+processed_events: 3
+applied_actions: 2
+inline_rollbacks: 0
+tick_rollbacks: 2
+metric_records: 5
+trace_records: 10
+signal_observations:
+  offcpu_time: events=1 total=3200 max=3200
+  queue_wait: events=1 total=2700 max=2700
+  run_queue_delay: events=1 total=2500 max=2500
+feature_window_maxima:
+  cpu_migrations_per_sec: 0
+  major_page_faults_per_sec: 0
+  offcpu_time_us_max: 3200
+  optional_io_latency_us_max: 0
+  queue_wait_us_max: 2700
+  run_queue_delay_us_max: 2500
+  subprocess_start_delay_us_max: 0
+audit_highlights:
+  pid=4242;scenario=inference_tail_guard;backend.apply.lease.action_count=3
+  pid=4242;scenario=inference_tail_guard;backend.apply.lease.backend=noop
+  pid=4242;scenario=inference_tail_guard;backend.apply.lease.mode=simulated
+  pid=4242;scenario=inference_tail_guard;backend.apply.lease.target_pid=4242
+  pid=5151;scenario=tool_call_booster;backend.apply.lease.action_count=3
+  pid=5151;scenario=tool_call_booster;backend.apply.lease.backend=noop
+  pid=5151;scenario=tool_call_booster;backend.apply.lease.mode=simulated
+  pid=5151;scenario=tool_call_booster;backend.apply.lease.target_pid=5151
+triggered_scenarios:
+  inference_tail_guard: 1
+  tool_call_booster: 1
+```
+
+#### Linux source preflight smoke test
+
+- Requirement: required
+- Command: `cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata procfs --actuator-backend linux-skeleton --allow-partial-probes`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running `target/debug/aegisai-runtime-daemon --repo-root . --source linux --metadata procfs --actuator-backend linux-skeleton --allow-partial-probes`
+AegisAI Runtime Daemon Summary
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-skeleton
+processed_events: 0
+applied_actions: 0
+inline_rollbacks: 0
+tick_rollbacks: 0
+metric_records: 0
+trace_records: 0
+triggered_scenarios: none
+```
+
+- Overall result: `PASS`
