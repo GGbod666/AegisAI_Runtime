@@ -522,7 +522,19 @@ where
 {
     fn collect_delta_events(&mut self, max_events: usize) -> Result<Vec<ProbeEvent>, SourceError> {
         let mut events = Vec::new();
-        for snapshot in self.sampler.sample(&self.selectors)? {
+        let snapshots = self.sampler.sample(&self.selectors)?;
+        let seen_targets = snapshots
+            .iter()
+            .map(|snapshot| (snapshot.pid, snapshot.tid))
+            .collect::<BTreeSet<_>>();
+        self.previous_run_delay_ns
+            .retain(|target, _| seen_targets.contains(target));
+        self.previous_cpu_migrations
+            .retain(|target, _| seen_targets.contains(target));
+        self.previous_major_page_faults
+            .retain(|target, _| seen_targets.contains(target));
+
+        for snapshot in snapshots {
             if events.len() >= max_events {
                 break;
             }
@@ -2550,6 +2562,26 @@ mod tests {
         }
     }
 
+    fn procfs_snapshot(
+        timestamp_ns: u64,
+        pid: u32,
+        tid: u32,
+        comm: &str,
+        run_queue_delay_ns: Option<u64>,
+        cpu_migrations: Option<u64>,
+        major_page_faults: Option<u64>,
+    ) -> ProcfsSchedstatSnapshot {
+        ProcfsSchedstatSnapshot {
+            timestamp_ns,
+            pid,
+            tid,
+            comm: comm.to_string(),
+            run_queue_delay_ns,
+            cpu_migrations,
+            major_page_faults,
+        }
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn system_procfs_sampler_reads_migration_and_fault_counters() {
@@ -2997,6 +3029,217 @@ mod tests {
     }
 
     #[test]
+    fn real_linux_probe_driver_falls_back_to_procfs_when_ebpf_probe_is_unavailable() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay, SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let sampler = FakeProcfsSignalSampler::new(vec![
+            vec![procfs_snapshot(
+                1_000_000,
+                700,
+                700,
+                "ollama",
+                Some(2_000_000),
+                None,
+                None,
+            )],
+            vec![procfs_snapshot(
+                2_000_000,
+                700,
+                700,
+                "ollama",
+                Some(2_750_000),
+                None,
+                None,
+            )],
+        ]);
+        let procfs = ProcfsSchedstatProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            sampler,
+        );
+        let bpftrace = BpfTraceProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            FakeBpfTracePipe::unavailable("helper unavailable"),
+        );
+        let driver = RealLinuxProbeDriver::new(procfs, bpftrace);
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                require_all_probes: false,
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        let event = source
+            .next_event()
+            .expect("partial probe startup should not fail")
+            .expect("procfs fallback should still emit a schedstat delta");
+
+        assert_eq!(event.signal, SignalKind::RunQueueDelay);
+        assert_eq!(event.value, 750);
+
+        let startup = source.startup().expect("startup should exist");
+        assert!(startup.emits_probe_events);
+        assert_eq!(startup.no_event_reason, None);
+        assert!(startup
+            .attachments
+            .iter()
+            .any(|attachment| attachment.kind == ProbeKind::Sched
+                && attachment.status == ProbeAttachmentStatus::Attached));
+        assert!(startup.attachments.iter().any(|attachment| {
+            attachment.kind == ProbeKind::OffCpu
+                && matches!(
+                    &attachment.status,
+                    ProbeAttachmentStatus::Failed(reason)
+                        if reason.contains("helper unavailable")
+                )
+        }));
+    }
+
+    #[test]
+    fn procfs_driver_skips_missing_counter_fields_without_suppressing_present_deltas() {
+        let plan = LinuxProbePlan::from_signals(
+            [
+                SignalKind::RunQueueDelay,
+                SignalKind::CpuMigration,
+                SignalKind::MajorPageFault,
+            ],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let sampler = FakeProcfsSignalSampler::new(vec![
+            vec![procfs_snapshot(
+                1_000_000,
+                700,
+                700,
+                "ollama",
+                Some(2_000_000),
+                Some(4),
+                Some(2),
+            )],
+            vec![procfs_snapshot(
+                2_000_000,
+                700,
+                700,
+                "ollama",
+                None,
+                Some(7),
+                None,
+            )],
+            vec![procfs_snapshot(
+                3_000_000,
+                700,
+                700,
+                "ollama",
+                Some(2_500_000),
+                None,
+                Some(5),
+            )],
+        ]);
+        let driver = ProcfsSchedstatProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            sampler,
+        );
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        let first_batch = source.poll_batch(8).expect("procfs fallback should poll");
+        let second_batch = source
+            .poll_batch(8)
+            .expect("procfs fallback should keep polling after missing fields");
+
+        assert_eq!(first_batch.len(), 1);
+        assert_eq!(first_batch[0].signal, SignalKind::CpuMigration);
+        assert_eq!(first_batch[0].value, 3);
+        assert_eq!(
+            second_batch
+                .iter()
+                .map(|event| (event.signal.clone(), event.value))
+                .collect::<Vec<_>>(),
+            vec![
+                (SignalKind::RunQueueDelay, 500),
+                (SignalKind::MajorPageFault, 3),
+            ]
+        );
+    }
+
+    #[test]
+    fn procfs_driver_tolerates_target_exit_between_samples() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let sampler = FakeProcfsSignalSampler::new(vec![
+            vec![procfs_snapshot(
+                1_000_000,
+                700,
+                700,
+                "ollama",
+                Some(3_000_000),
+                None,
+                None,
+            )],
+            Vec::new(),
+            vec![procfs_snapshot(
+                3_000_000,
+                700,
+                700,
+                "ollama",
+                Some(5_000_000),
+                None,
+                None,
+            )],
+            vec![procfs_snapshot(
+                4_000_000,
+                700,
+                700,
+                "ollama",
+                Some(5_300_000),
+                None,
+                None,
+            )],
+        ]);
+        let driver = ProcfsSchedstatProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            sampler,
+        );
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        assert!(source
+            .next_event()
+            .expect("empty process-exit sample should not fail")
+            .is_none());
+        let event = source
+            .next_event()
+            .expect("reused pid sample should not fail")
+            .expect("new baseline should produce the next positive delta");
+
+        assert_eq!(event.signal, SignalKind::RunQueueDelay);
+        assert_eq!(event.value, 300);
+    }
+
+    #[test]
     fn bpftrace_driver_emits_offcpu_and_io_latency_events() {
         let plan = LinuxProbePlan::from_signals(
             [SignalKind::OffCpuTime, SignalKind::IoLatency],
@@ -3262,6 +3505,45 @@ mod tests {
             .contains("does not load eBPF programs or read ring buffers"));
 
         let shutdown = source.stop().expect("shutdown should succeed");
+        assert!(shutdown
+            .stop_reason
+            .contains("attaching 2 probe(s) and rejecting 0 probe(s)"));
+    }
+
+    #[test]
+    fn preflight_driver_records_zero_event_startup_as_configuration_check() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::RunQueueDelay, SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let host = FakeLinuxProbeHost::new([
+            "tracepoint:sched/sched_wakeup",
+            "tracepoint:sched/sched_switch",
+            "tracepoint:sched/sched_migrate_task",
+        ]);
+        let reader = DriverBackedProbeEventReader::new(PreflightLinuxProbeDriver::new(host));
+        let mut source = LinuxProbeSource::with_reader(plan, reader);
+
+        let batch = source
+            .poll_batch(8)
+            .expect("preflight reader should start without events");
+
+        assert!(batch.is_empty());
+        let startup = source.startup().expect("startup should exist");
+        assert!(startup
+            .attachments
+            .iter()
+            .all(|attachment| attachment.status == ProbeAttachmentStatus::Attached));
+        assert!(!startup.emits_probe_events);
+        assert!(startup
+            .no_event_reason
+            .as_deref()
+            .expect("preflight should explain no-event behavior")
+            .contains("does not load eBPF programs or read ring buffers"));
+
+        let shutdown = source.stop().expect("shutdown should succeed");
+        assert_eq!(shutdown.emitted_events, 0);
         assert!(shutdown
             .stop_reason
             .contains("attaching 2 probe(s) and rejecting 0 probe(s)"));
