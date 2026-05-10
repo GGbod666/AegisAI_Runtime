@@ -20,6 +20,9 @@ Implemented and verified capabilities:
 - `inference_tail_guard` and `tool_call_booster` both trigger in deterministic/mock or harnessed paths.
 - Phase 4 benefit reporting now refuses to claim MVP benefit unless live guarded
   actions produce effective host-level changes and repeated stable benefit.
+- Latest live benefit status: live action is effective, but stable benefit is
+  still below the acceptance threshold. `docs/mvp_benefit_report.md` is the
+  latest source for this result.
 
 ## Latest Verified Baseline
 
@@ -42,6 +45,13 @@ Notes:
 - The Linux source preflight is allowed to process zero live events; it validates startup/configuration safety, not real workload benefit.
 - The baseline verification above is not a live `ollama` A/B proof; live benefit
   evidence is summarized in `docs/mvp_benefit_report.md`.
+
+## Latest Live Benefit Artifact Index
+
+| run id | CSV | live effective action count | FAIL reason |
+| --- | --- | --- | --- |
+| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_runs.csv` | `3` | live action is effective, but stable benefit is below threshold |
+| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_aggregate.csv` | `3` | live action is effective, but stable benefit is below threshold |
 
 ## Functional Completion
 
@@ -70,7 +80,8 @@ Not complete:
 
 - Privileged-helper controlled-workload validation for off-CPU and I/O eBPF
   observations.
-- Proven host-level MVP benefit from effective live guarded actions.
+- Proven host-level MVP benefit from effective live guarded actions and stable
+  repeated benefit.
 - Production daemon packaging/service management.
 - Dashboard, GPU coordination, adaptive policy learning, or background isolation.
 
@@ -96,7 +107,7 @@ bd ready
 
 The next major stage is not more scaffolding. It is evidence hardening:
 
-1. Run a controlled Linux live experiment where `live_guarded` produces at least one effective host-level actuator change.
+1. Continue from the latest run indexed above: `live_guarded` already produced effective host-level actuator changes.
 2. Keep the Phase 4 benefit gate strict: effective live action plus stable repeated benefit are both required.
 3. Validate helper-backed off-CPU and I/O observations with controlled workloads.
 4. Promote Tool Call Booster from trigger/harness proof to repeated A/B benefit proof.

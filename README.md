@@ -733,10 +733,17 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 当前 `docs/mvp_benefit_report.md` 结论：
 
 - `Result: FAIL`
-- live guarded mode contract 通过。
-- live guarded 已记录有效 host-level `taskset` 动作。
-- 但 live guarded 没有达到稳定改善门槛。
+- 最新来源是 `docs/mvp_benefit_report.md`。
+- live action 有效：live guarded 已记录有效 host-level `taskset` 动作。
+- 稳定收益未过线：live guarded 没有达到稳定改善门槛。
 - dry-run/noop 的改善被视为闭环证据，不视为 MVP benefit proof。
+
+最新有效实验 artifact 索引：
+
+| run id | CSV | live effective action count | FAIL 原因 |
+| --- | --- | --- | --- |
+| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_runs.csv` | `3` | live action 有效，但稳定收益未过线 |
+| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_aggregate.csv` | `3` | live action 有效，但稳定收益未过线 |
 
 ## 已知问题和差距
 

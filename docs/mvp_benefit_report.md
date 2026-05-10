@@ -3,7 +3,7 @@
 ## Verdict
 
 - Result: `FAIL`
-- Conclusion: MVP benefit not proven: no live guarded mode met the stable improvement threshold.
+- Conclusion: live action is effective, but stable benefit is below threshold; MVP benefit is not proven.
 - Run ID: `live_affinity_online_fix_phase4_20260503T043809Z`
 
 ## Controls
@@ -51,6 +51,7 @@
 ## Live Guarded Contract
 
 - No live guarded mode contract failures were recorded.
+- Live guarded recorded `3` effective host-level `taskset` actions.
 
 ## Interpretation
 
@@ -58,9 +59,11 @@
 - `cpu_migration` and `major_page_fault` columns are procfs-backed explainability signals for the run shape; they do not replace the live guarded latency benefit rule.
 - `offcpu_time` can be sourced from the real eBPF helper when available, but it is not a blocking benefit gate in this report.
 - Host-level MVP benefit requires a real guarded actuator run to show a stable downward trend in tail latency, TTFT, or jitter.
-- If live `renice` is denied by host permissions, the report remains a closed-loop validation artifact, not a benefit proof.
+- This run clears the effective live action gate through host-level `taskset`, but it remains a `FAIL` because stable repeated benefit did not cross the threshold.
 
 ## Artifacts
 
-- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_runs.csv`
-- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_aggregate.csv`
+| run id | CSV | live effective action count | FAIL reason |
+| --- | --- | --- | --- |
+| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_runs.csv` | `3` | live action is effective, but stable benefit is below threshold |
+| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_aggregate.csv` | `3` | live action is effective, but stable benefit is below threshold |
