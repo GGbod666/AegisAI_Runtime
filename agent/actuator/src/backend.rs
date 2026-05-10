@@ -1559,7 +1559,11 @@ fn build_linux_rollback_report(
                     _ => {
                         report.missing_state.push("nice".to_string());
                         *execution = std::mem::take(execution)
-                            .with_field(format!("rollback.{index}.status"), "missing_state");
+                            .with_field(format!("rollback.{index}.status"), "missing_state")
+                            .with_field(
+                                format!("rollback.{index}.detail"),
+                                "missing original nice state; rollback skipped",
+                            );
                     }
                 }
             }
@@ -1587,7 +1591,11 @@ fn build_linux_rollback_report(
                     _ => {
                         report.missing_state.push("affinity".to_string());
                         *execution = std::mem::take(execution)
-                            .with_field(format!("rollback.{index}.status"), "missing_state");
+                            .with_field(format!("rollback.{index}.status"), "missing_state")
+                            .with_field(
+                                format!("rollback.{index}.detail"),
+                                "missing original affinity state; rollback skipped",
+                            );
                     }
                 }
             }
@@ -1615,7 +1623,11 @@ fn build_linux_rollback_report(
                     _ => {
                         report.missing_state.push("cpuset".to_string());
                         *execution = std::mem::take(execution)
-                            .with_field(format!("rollback.{index}.status"), "missing_state");
+                            .with_field(format!("rollback.{index}.status"), "missing_state")
+                            .with_field(
+                                format!("rollback.{index}.detail"),
+                                "missing original cpuset state; rollback skipped",
+                            );
                     }
                 }
             }

@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn expire_returns_due_actions_in_stable_deadline_order() {
-        let mut actuator = Actuator::default();
+        let mut actuator = Actuator::with_backend(RecordingActuatorBackend::default());
 
         let mut late_low_pid = sample_plan();
         late_low_pid.target_pid = 11;
@@ -187,6 +187,21 @@ mod tests {
                 (1_300, 7, ScenarioKind::ToolCallBooster),
                 (1_300, 99, ScenarioKind::InferenceTailGuard),
                 (1_700, 11, ScenarioKind::ToolCallBooster),
+            ]
+        );
+        assert_eq!(
+            rollbacks
+                .iter()
+                .map(|rollback| rollback
+                    .audit_fields
+                    .get("backend.rollback.operation_index")
+                    .cloned())
+                .collect::<Vec<_>>(),
+            vec![
+                Some("5".to_string()),
+                Some("6".to_string()),
+                Some("7".to_string()),
+                Some("8".to_string()),
             ]
         );
         assert_eq!(actuator.active_count(), 0);
@@ -260,10 +275,34 @@ mod tests {
                 .get("backend.rollback.rollback.missing_state"),
             Some(&"nice,affinity".to_string())
         );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.0.status"),
+            Some(&"missing_state".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.0.detail"),
+            Some(&"missing original nice state; rollback skipped".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.1.status"),
+            Some(&"missing_state".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.1.detail"),
+            Some(&"missing original affinity state; rollback skipped".to_string())
+        );
     }
 
     #[test]
-    fn linux_backend_can_report_a_named_command_backend() {
+    fn linux_backend_audits_named_backend_on_apply_and_rollback() {
         let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
             FakeLinuxProcessStateProvider,
             FakeLinuxSyscallApplier::new(),
@@ -278,6 +317,55 @@ mod tests {
         assert_eq!(
             applied.audit_fields.get("backend.apply.backend"),
             Some(&"linux-command".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.syscall_executor"),
+            Some(&"planned-only".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.timestamp_ms"),
+            Some(&"3500".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.target_pid"),
+            Some(&"42".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.lease.backend"),
+            Some(&"planned-only".to_string())
+        );
+
+        let rollbacks = actuator.expire(4_300);
+        assert_eq!(rollbacks.len(), 1);
+        assert_eq!(
+            rollbacks[0].audit_fields.get("backend.rollback.backend"),
+            Some(&"linux-command".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.syscall_executor"),
+            Some(&"planned-only".to_string())
+        );
+        assert_eq!(
+            rollbacks[0].audit_fields.get("backend.rollback.phase"),
+            Some(&"rollback".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.timestamp_ms"),
+            Some(&"4300".to_string())
+        );
+        assert_eq!(
+            rollbacks[0].audit_fields.get("backend.rollback.target_pid"),
+            Some(&"42".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.lease.linux.applier"),
+            Some(&"fake-applier".to_string())
         );
     }
 
@@ -327,6 +415,8 @@ mod tests {
             }
         }
     }
+
+    struct RollbackFailingLinuxSyscallApplier;
 
     struct FakeCommandRunner {
         calls: Rc<RefCell<Vec<String>>>,
@@ -433,6 +523,37 @@ mod tests {
         }
     }
 
+    impl LinuxSyscallApplier for RollbackFailingLinuxSyscallApplier {
+        fn applier_name(&self) -> &str {
+            "rollback-failing-applier"
+        }
+
+        fn apply_operation(
+            &mut self,
+            _target_pid: u32,
+            _operation: &LinuxSyscallOperation,
+            _captured_state: &crate::LinuxCapturedState,
+            _now_ms: u64,
+        ) -> Result<String, String> {
+            Ok("applied".to_string())
+        }
+
+        fn rollback_operation(
+            &mut self,
+            _target_pid: u32,
+            operation: &LinuxSyscallOperation,
+            _captured_state: &crate::LinuxCapturedState,
+            _now_ms: u64,
+        ) -> Result<String, String> {
+            match operation {
+                LinuxSyscallOperation::RestoreAffinity => {
+                    Err("rollback affinity denied".to_string())
+                }
+                _ => Ok("rolled_back".to_string()),
+            }
+        }
+    }
+
     #[test]
     fn planned_executor_can_capture_original_linux_state_from_provider() {
         let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
@@ -486,6 +607,59 @@ mod tests {
                 .audit_fields
                 .get("backend.rollback.rollback.missing_state"),
             None
+        );
+    }
+
+    #[test]
+    fn linux_apply_success_reports_rollback_failure_trace() {
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            RollbackFailingLinuxSyscallApplier,
+        );
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_executor(executor));
+
+        let applied = actuator.apply(sample_plan(), 4_900, true);
+
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.result"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.failed_count"),
+            Some(&"0".to_string())
+        );
+
+        let rollbacks = actuator.expire(5_700);
+        assert_eq!(rollbacks.len(), 1);
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.restored"),
+            Some(&"nice".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.failed"),
+            Some(&"affinity:rollback affinity denied".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.0.status"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.1.status"),
+            Some(&"error".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.1.error"),
+            Some(&"rollback affinity denied".to_string())
         );
     }
 
