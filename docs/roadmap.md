@@ -1,20 +1,21 @@
-﻿# Roadmap
+# Roadmap
 
 _Updated: 2026-05-10_
 
 ## Current Position
 
-The project has moved beyond the original framework and runnable-daemon setup
-work. The active phase is evidence hardening:
+The project has moved beyond the original framework, runnable-daemon setup, and
+19-task evidence-hardening pass. The active phase is product evidence:
 
-- prove effective live `inference_tail_guard` benefit under the strict Phase 4
-  gate
-- complete real eBPF-backed off-CPU and I/O latency ingestion
-- turn `tool_call_booster` from trigger proof into repeated A/B benefit proof
-- harden tests around the actuator/runtime hot paths
+- prove or reproducibly falsify effective live `inference_tail_guard` benefit
+  under the strict Phase 4 gate
+- prove or reproducibly falsify Tool Call Booster guarded latency benefit
+- keep helper portability, production config, packaging, cpuset/background
+  isolation, WarmupExecutor side effects, dashboard, GPU, and adaptive policy
+  work behind explicit follow-up issues
 
-See `docs/current_status.md` for the current state and beads issue IDs.
-See `docs/task_list.md` for detailed active tasks.
+See `docs/current_status.md` for the current state and open issue IDs.
+See `docs/task_list.md` for the accepted 19-task ledger.
 
 ## Phase 0：Framework Reset
 
@@ -30,6 +31,8 @@ See `docs/task_list.md` for detailed active tasks.
 - 更新后的仓库骨架
 - 场景目录
 - classifier / safety / scenario 配置入口
+
+状态：完成。
 
 ## Phase 1：Awareness Foundation
 
@@ -48,6 +51,8 @@ See `docs/task_list.md` for detailed active tasks.
 - 能稳定识别目标 AI runtime
 - 标签可供后续策略直接消费
 
+状态：基础闭环完成；awareness 作为 classifier/orchestrator 基础能力服务场景策略。
+
 ## Phase 2：Inference Tail Guard MVP
 
 目标：
@@ -56,7 +61,7 @@ See `docs/task_list.md` for detailed active tasks.
 
 范围：
 
-- `sched/offcpu/page fault` 观测
+- `sched/offcpu/page fault/io` 观测
 - collector 聚合
 - bounded boost
 - 延迟与稳定性评估
@@ -69,9 +74,11 @@ See `docs/task_list.md` for detailed active tasks.
 
 当前状态：
 
-- 控制闭环、dry-run 审计和 Phase 4 报告路径已经具备。
+- 控制闭环、dry-run 审计、live guarded 动作、CPU affinity planner 和 Phase 4 报告路径
+  已具备。
 - 最新 `docs/mvp_benefit_report.md` 正确给出 `FAIL`：已经记录 effective live
   `taskset` action，但稳定收益趋势没有达到门槛，因此不能声明 MVP 收益成立。
+- 下一步由 `AegisAI_Runtime-2kz` 追踪。
 
 ## Phase 3：Tool Calling Booster
 
@@ -84,15 +91,20 @@ See `docs/task_list.md` for detailed active tasks.
 - tool call 生命周期识别
 - executor / retrieval / rerank 子链路标签
 - 生命周期内 boost 与自动退出
+- guarded scheduler benefit report
 
 退出条件：
 
-- 工具调用链存在稳定、可观察的优化收益
+- 工具调用链存在稳定、可观察的优化收益，或者报告给出可复现的失败原因
 
 当前状态：
 
-- 已有 policy path 和真实 executor lifecycle harness。
-- 下一步需要 repeated A/B benefit proof，而不是只证明识别和触发。
+- policy path、真实 executor lifecycle harness、audit continuity、summary/report 和
+  live_guarded proof run 已具备。
+- 最新 artifact contract `PASS`，benefit `FAIL`：`live_guarded` 没有达到重复 latency
+  improvement 门槛。
+- `WarmupExecutor` 仍是 plan/audit-only，不代表真实 executor/cache warmup。
+- 下一步由 `AegisAI_Runtime-79d` 和 `AegisAI_Runtime-14r` 追踪。
 
 ## Phase 4：AI-aware Isolation
 
@@ -109,6 +121,11 @@ See `docs/task_list.md` for detailed active tasks.
 退出条件：
 
 - 并发场景下 tail latency 与 jitter 有明显改善
+
+当前状态：
+
+- policy/audit surface 存在，但 live cpuset/background throttling 尚未启用。
+- 下一步先由 `AegisAI_Runtime-otk` 定义安全边界。
 
 ## Phase 5：Explain / Tune Layer
 
@@ -127,7 +144,31 @@ See `docs/task_list.md` for detailed active tasks.
 
 - 可以基于实验数据自动生成有用结论
 
-## Phase 6：Advanced Extensions
+当前状态：
+
+- 离线 explain/tune 基础能力存在。
+- 在线 adaptive policy learning 暂缓，由 `AegisAI_Runtime-0ry` 后续拆分。
+
+## Phase 6：Productionization
+
+目标：
+
+- 让 runtime daemon 和 helper 能被可靠部署、配置和运维
+
+范围：
+
+- production config profiles
+- schema validation
+- daemon/helper packaging
+- service management
+- helper privilege installation and checks
+
+当前状态：
+
+- 配置 profile 边界已记录在 `docs/engineering_debt_boundaries.md`。
+- 实现由 `AegisAI_Runtime-cqv` 和 `AegisAI_Runtime-ufp` 追踪。
+
+## Phase 7：Advanced Extensions
 
 可能扩展：
 
@@ -136,16 +177,18 @@ See `docs/task_list.md` for detailed active tasks.
 - `gpu_host_coordination`
 - `cold_start_optimizer`
 - `adaptive_policy_learning`
+- dashboard
+
+当前状态：延期，由 `AegisAI_Runtime-0ry` 后续规划。
 
 ## 推荐推进顺序
 
-1. 完成 `AegisAI_Runtime-jtt`：用 controlled workload 验证 helper-backed
-   off-CPU / I/O latency 真实信号。
-2. 完成 `AegisAI_Runtime-v2y`：把 live CPU affinity planning 从 actuator 大文件中
-   模块化，降低后续 live 调参风险。
-3. 完成 `AegisAI_Runtime-lql`：继续调优 Inference Tail Guard live affinity
-   benefit，保持严格 Phase 4 gate。
-4. 完成 `AegisAI_Runtime-94s`：Tool Call Booster live guarded benefit proof。
-5. 穿插完成热路径测试加固：actuator rollback、Linux source/procfs 边界和 benefit
-   report 解释逻辑。
-6. 最后再考虑 AI-aware isolation、explain/tune 自动化和高级扩展。
+1. `AegisAI_Runtime-2kz`：继续 Inference Tail Guard live guarded benefit proof，
+   保持 strict gate。
+2. `AegisAI_Runtime-79d`：继续 Tool Call Booster guarded latency benefit proof。
+3. `AegisAI_Runtime-51c`：扩展 helper 跨 kernel 可移植性验证。
+4. `AegisAI_Runtime-cqv`：补 production config profiles 和 schema validation。
+5. `AegisAI_Runtime-14r` / `AegisAI_Runtime-otk`：分别决定 WarmupExecutor side
+   effect 和 live cpuset/background isolation 边界。
+6. `AegisAI_Runtime-ufp`：生产 service packaging 和 installer。
+7. `AegisAI_Runtime-0ry`：dashboard、GPU、adaptive policy 等高级扩展规划。

@@ -100,9 +100,11 @@ Required boundaries for any hotspot split:
 Current disposition:
 
 - No P3-only refactor is planned.
-- `agent/actuator/src/backend.rs` has active attached work through
-  `AegisAI_Runtime-v2y` for CPU affinity planning.
+- `agent/actuator/src/backend.rs` already had attached work through
+  `AegisAI_Runtime-v2y`; CPU affinity planning now lives in
+  `agent/actuator/src/cpu_affinity.rs` and is covered by focused tests.
 - `agent/runtime_daemon/src/source.rs` is best handled through the P2 Linux
-  source/procfs edge-test work.
+  source/procfs edge-test pattern; edge tests are in place, but future source
+  behavior changes should remain issue-led.
 - `bench/scripts/inference_tail_guard_ollama_smoke.sh` should be split only
   when a benefit-proof or report-interpretation issue needs a script change.

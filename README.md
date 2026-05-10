@@ -735,26 +735,38 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 - `Result: FAIL`
 - 最新来源是 `docs/mvp_benefit_report.md`。
 - live action 有效：live guarded 已记录有效 host-level `taskset` 动作。
-- 稳定收益未过线：live guarded 没有达到稳定改善门槛。
+- 稳定收益未过线：live guarded 没有达到稳定改善门槛，当前 failure cause 是
+  `noisy_workload`。
 - dry-run/noop 的改善被视为闭环证据，不视为 MVP benefit proof。
 
-最新有效实验 artifact 索引：
+最新 Inference Tail Guard artifact 索引：
 
 | run id | CSV | live effective action count | FAIL 原因 |
 | --- | --- | --- | --- |
-| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_runs.csv` | `3` | live action 有效，但稳定收益未过线 |
-| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_aggregate.csv` | `3` | live action 有效，但稳定收益未过线 |
+| `live_guarded_phase4_calibrated_20260510T043859Z` | `.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_runs.csv` | `3` | noisy workload；稳定收益未证明 |
+| `live_guarded_phase4_calibrated_20260510T043859Z` | `.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_aggregate.csv` | `3` | noisy workload；稳定收益未证明 |
+
+最新 Tool Call Booster artifact 索引：
+
+| run id | artifact | contract verdict | benefit verdict |
+| --- | --- | --- | --- |
+| `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`：`live_guarded` 只有 `0/3` 可比较轮次达到 `5.0%` latency improvement |
+| `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 
 ## 已知问题和差距
 
 当前仍打开的 beads issue：
 
-- `AegisAI_Runtime-jtt`：用 controlled workload 验证 helper-backed real `offcpu_time` 和
-  `io_latency` 事件。
-- `AegisAI_Runtime-lql`：继续调优 live Inference Tail Guard affinity benefit；当前有效动作
-  已出现，但严格收益仍未过线。
-- `AegisAI_Runtime-94s`：运行 controlled Tool Call Booster live guarded benefit proof。
-- `AegisAI_Runtime-v2y`：把 live CPU affinity planning 从 actuator 大文件中模块化。
+- `AegisAI_Runtime-2kz`：继续 Inference Tail Guard MVP benefit proof；当前 live action
+  有效，但严格收益仍未过线。
+- `AegisAI_Runtime-79d`：继续 Tool Call Booster guarded latency benefit proof；当前
+  contract `PASS`，benefit `FAIL`。
+- `AegisAI_Runtime-cqv`：补 production config profiles 和 schema validation。
+- `AegisAI_Runtime-51c`：验证 helper-backed eBPF/bpftrace 路径跨 kernel 可移植性。
+- `AegisAI_Runtime-14r`：决定是否实现真实 `WarmupExecutor` side effect。
+- `AegisAI_Runtime-otk`：定义 live cpuset/background isolation 安全边界。
+- `AegisAI_Runtime-ufp`：生产 daemon/helper packaging 和 installer。
+- `AegisAI_Runtime-0ry`：规划 dashboard、GPU、adaptive policy 等延期扩展。
 
 源码和设计层面的限制：
 

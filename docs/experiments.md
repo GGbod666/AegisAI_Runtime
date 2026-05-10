@@ -14,6 +14,13 @@
 - A：无优化
 - B：启用策略
 
+当前报告约定更细：
+
+- `baseline`：无 daemon 干预或未观测的同轮参考
+- `noop_observation`：只证明识别、触发和生命周期观测
+- `dry_run`：证明命令规划、审计和 rollback 闭环
+- `live_guarded`：在显式确认和 PID allowlist 下执行真实受限动作
+
 要求尽量保持：
 
 - 同机器
@@ -111,3 +118,11 @@
 - 标签能稳定支撑策略路由
 
 尾延迟和稳定性优先于平均吞吐。
+
+但 MVP benefit 不能只靠价值判断声明。当前 strict gate 要求：
+
+- live guarded 发生 effective host-level actuator change
+- 至少三轮可比较结果
+- 至少三分之二可比较轮次改善
+- 平均改善达到报告配置阈值
+- noop/dry-run 改善不得计入 host-level benefit

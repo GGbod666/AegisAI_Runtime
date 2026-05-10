@@ -149,13 +149,14 @@ as `action_effectiveness`, `noisy_workload`, `insufficient_sample_size`, or
 - `PASS` 代表选中的每个档位都完成固定样本数，并且 observation/guarded 档捕获 runtime events、触发 `inference_tail_guard`、完成 rollback，且没有 action audit errors。
 - summary 中的 TTFT 来自 streaming request 的 `curl time_starttransfer`；P95/P99 和 jitter 来自 streaming request 的 total latency。
 - `mode_counts.csv` 和 `summary.csv` 中的 `cpu_migration_*`、`major_page_fault_*` 来自 Linux procfs fallback：`/proc/<pid>/sched` 的 `se.nr_migrations` delta 与 `/proc/<pid>/stat` 的 majflt delta，并额外记录策略窗口中的最大 per-second rate。它们是实机解释指标，0 也表示该轮没有观测到对应 delta。
-- `offcpu_time_events` 只作记录；`offcpu_time` 仍是 eBPF/后续增强项，不阻塞收益复验。
+- `offcpu_time_events` 只作记录；`offcpu_time` 可由 helper-backed eBPF/bpftrace
+  路径提供，但不阻塞收益复验。
 - `dry_run` 只预览 planned `renice/taskset` apply/rollback，不改系统状态。
-- 2R-0 中 `noop_observation` 只看策略识别和 rollback 生命周期，`dry_run` 额外看 action audit，`live_guarded` 只看 nice-only 真实执行/回滚；这些结论以 `mode_contract.csv` 分开记录。
-- 2R-2 中 `live_guarded` 额外检查 `actuator_quality_contract`：apply audit 要暴露原始状态与 `lease.*` 字段，rollback audit 要暴露恢复结果，cpuset 必须继续禁用。affinity 只有在 nice-only 连续 3 轮干净后才启用。
-- `live_guarded` 会实际执行并回滚系统命令，运行前要确认主机权限、PID allowlist 和实验窗口；2R-0 保持 `AEGISAI_ENABLE_LIVE_AFFINITY=0`，cpuset 继续禁用。
+- 2R-0 中 `noop_observation` 只看策略识别和 rollback 生命周期，`dry_run` 额外看 action audit，`live_guarded` 默认看 nice-only 真实执行/回滚；显式启用 affinity 时还会检查 `taskset`；这些结论以 `mode_contract.csv` 分开记录。
+- 2R-2 中 `live_guarded` 额外检查 `actuator_quality_contract`：apply audit 要暴露原始状态与 `lease.*` 字段，rollback audit 要暴露恢复结果，cpuset 必须继续禁用。
+- `live_guarded` 会实际执行并回滚系统命令，运行前要确认主机权限、PID allowlist 和实验窗口；默认 `AEGISAI_ENABLE_LIVE_AFFINITY=0`，显式设为 `1` 才允许 `taskset`，cpuset 继续禁用。
 - Phase 4 的 `live_effective_action_count` 来自 live daemon 审计：`renice` 的 old/new priority 真的变化，或 affinity 模式下 `taskset -pc` 输出的 current/new affinity CPU 集合真的不同，才计为有效 actuator 变化；只记录到命令但 affinity 没变不算收益证明。
-- 当前本机 live affinity 收敛点：VM 可能让 `/proc/<pid>/status` 暴露 configured CPU 范围（例如 `0-127`），而实际 online CPU 只有 `/sys/devices/system/cpu/online` 中的子集。live actuator 现在先把 `Cpus_allowed_list` 与 online CPU 取交集再规划 affinity，保证本机 `taskset` 能产生可观察的有效变化。后续 CPU 亲和力模块扩展时，应把 topology/online CPU/保留核策略抽成独立规划层。
+- 当前本机 live affinity 收敛点：VM 可能让 `/proc/<pid>/status` 暴露 configured CPU 范围（例如 `0-127`），而实际 online CPU 只有 `/sys/devices/system/cpu/online` 中的子集。live actuator 现在通过 `agent/actuator/src/cpu_affinity.rs` 先把 `Cpus_allowed_list` 与 online CPU 取交集再规划 affinity，保证本机 `taskset` 能产生可观察的有效变化。
 - 常见失败原因是 `ollama` 不在 PATH、`ollama serve` 未启动、`AEGISAI_OLLAMA_API_URL` 不可达，或者目标模型尚未在本机准备好。
 
 推荐顺序：

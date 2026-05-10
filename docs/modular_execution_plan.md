@@ -2,16 +2,19 @@
 
 Boundary: this is a historical staged implementation plan from the runnable mock
 control-loop era. Current execution order lives in `docs/next_stage.md`; active
-task detail lives in `docs/task_list.md`.
+task state lives in `bd`. `docs/task_list.md` records the accepted 19-task
+ledger.
 
-This plan defines the next implementation stages after the runnable mock
-control loop. The goal is to reach a Linux VM demo for:
+This plan defined the implementation stages after the runnable mock control
+loop. The original goal was to reach a Linux VM demo for:
 
 `AI Workload Awareness -> Inference Tail Guard`
 
 ## Stage 1: Preflight-Ready Runtime
 
 Goal: make the current runtime safe and diagnosable before real system effects.
+
+Status: complete.
 
 Modules:
 
@@ -30,6 +33,10 @@ Exit checks:
 ## Stage 2: Linux Signal Ingestion
 
 Goal: replace planning-only Linux source behavior with a real event stream.
+
+Status: complete for the current MVP signal set. Procfs supplies sched/fault
+signals, and helper-backed validation exists for `offcpu_time` and
+`io_latency`.
 
 Initial scope:
 
@@ -54,6 +61,9 @@ Exit checks:
 
 Goal: safely execute and roll back the minimum useful Linux actions.
 
+Status: complete for guarded `nice` and `taskset` experiments. Live cpuset
+writes remain deferred.
+
 Initial scope:
 
 - capture original nice value
@@ -77,6 +87,9 @@ Exit checks:
 ## Stage 4: Inference Tail Guard Demo
 
 Goal: prove the MVP path on a real runtime.
+
+Status: partially complete. Live guarded action is effective, but stable benefit
+is not proven; see `docs/mvp_benefit_report.md` and `AegisAI_Runtime-2kz`.
 
 Default target:
 
@@ -107,6 +120,9 @@ Exit checks:
 ## Stage 5: Tool Call Booster
 
 Goal: extend the same proven loop to tool calling once inference guard is stable.
+
+Status: partially complete. The real executor harness and guarded report exist;
+latest contract is `PASS`, benefit is `FAIL`; see `AegisAI_Runtime-79d`.
 
 Initial scope:
 

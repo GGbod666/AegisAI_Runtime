@@ -1,14 +1,15 @@
-﻿# Host Strategy
+# Host Strategy
 
 Boundary: this file records the host split rationale. Use
 `linux_vm_checklist.md` for executable Linux validation steps, `next_stage.md`
-for current stage gates, and `task_list.md` for active tasks.
+for current stage gates, and `bd` for active tasks.
 
 ## Development Host
 
-Primary development happens on Windows.
+Primary development can happen on Windows or any non-production development
+host.
 
-Windows is used for:
+Non-Linux development hosts are used for:
 
 - architecture work
 - crate integration
@@ -16,11 +17,11 @@ Windows is used for:
 - control-loop verification
 - configuration and documentation updates
 
-Windows is intentionally not treated as the final eBPF validation host.
+Non-Linux hosts are intentionally not treated as final eBPF validation hosts.
 
 ## Validation Host
 
-System-level validation happens later on a Linux VM.
+System-level validation happens on a Linux host or Linux VM.
 
 Linux is required for:
 
@@ -28,14 +29,14 @@ Linux is required for:
 - real `/proc` scheduler-state capture for actuator rollback safety
 - real probe-backed event ingestion
 - eBPF program loading and validation
-- runtime scheduling actions such as `nice` and `sched_setaffinity`
+- runtime scheduling actions such as `nice` and `sched_setaffinity` / `taskset`
 - benchmark data collection and final experiment results
 
 ## Phase Split
 
-### Phase A: Windows-first buildout
+### Phase A: Non-Linux Buildout
 
-Build and verify the runtime skeleton on Windows with:
+Build and verify the runtime skeleton with:
 
 - `MockEventSource`
 - `StaticMetadataProvider`
@@ -44,19 +45,32 @@ Build and verify the runtime skeleton on Windows with:
 - orchestrator integration tests
 - local daemon runs
 
-### Phase B: Linux system validation
+### Phase B: Linux System Validation
 
-Copy the project into the Linux VM and complete:
+Complete Linux-only work on a Linux host or VM:
 
 - dependency installation
 - kernel and eBPF prerequisites
-- `ProbeEventReader` wiring for the real probe stream
-- `LinuxActuatorBackend` syscall wiring and validation
+- helper-backed `offcpu_time` / `io_latency` stream validation
+- Linux state capture / restore validation
 - benchmark execution
 - final metrics collection
 
+Current disposition:
+
+- Helper-backed `offcpu_time` and `io_latency` have been validated on Linux host
+  `gg-vm`.
+- Live guarded Inference Tail Guard and Tool Call Booster experiments have run
+  on Linux and produced honest `FAIL` benefit verdicts rather than unproven
+  `PASS` claims.
+- Further Linux work is now about product evidence and portability, not first
+  contact with Linux.
+
 ## Current Rule
 
-When a feature can be validated with mock inputs and pure Rust integration, do it on Windows now.
+When a feature can be validated with mock inputs and pure Rust integration, use
+that path first.
 
-When a feature depends on kernel behavior, `/proc`, scheduling syscalls, or eBPF execution, design the interface now and defer the real validation to Linux.
+When a feature depends on kernel behavior, `/proc`, scheduling syscalls, or eBPF
+execution, validate it on Linux and record artifacts. Do not infer Linux benefit
+from mock, noop, or dry-run behavior.

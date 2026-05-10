@@ -15,38 +15,39 @@ For the Linux path, the backend is split one level further:
 - `LinuxSyscallApplier`: syscall-application hook for apply / rollback execution
 - `LinuxCapturedState`: typed placeholder for original nice / affinity / cpuset state
 - `LinuxRollbackReport`: typed audit report for restore, missing-state, and future failure paths
+- `CpuAffinityPlanner`: parses configured affinity, intersects it with online CPUs, selects apply targets, and formats deterministic rollback targets
 
 ## Current Backends
 
 - `NoopActuatorBackend`
-  Safe default for Windows-side development and integration testing.
+  Safe default for host-independent development and integration testing.
 
 - `RecordingActuatorBackend`
   Deterministic backend for backend-focused tests and operation tracing.
 
 - `LinuxActuatorBackend`
-  Linux integration skeleton reserved for the later VM validation phase.
-  It does not execute real syscalls yet; it builds syscall plans, captures placeholder restore state, and hands them to a planned-only executor.
+  Linux integration backend that can run as a skeleton/planned backend, a dry-run command backend, or a guarded live command backend depending on CLI selection and guard configuration.
 
 - `ProcfsLinuxProcessStateProvider`
   Linux-only state provider that captures original scheduler-facing state from `/proc` before real syscall wiring lands.
 
 - `PlannedLinuxSyscallApplier`
-  Default applier used during Windows-side development. It records what would be applied and rolled back without issuing real syscalls.
+  Default applier used during host-independent development. It records what would be applied and rolled back without issuing real syscalls.
 
 - `CommandLinuxSyscallApplier`
-  Linux-oriented preflight applier that maps action plans onto host commands such as `renice` and `taskset`. It bounds nice / affinity inputs, refuses uncaptured restore state and PID 0, and emits per-command audit details for VM validation.
+  Linux-oriented applier that maps action plans onto host commands such as `renice` and `taskset`. It bounds nice / affinity inputs, refuses uncaptured restore state and PID 0, and emits per-command audit details for validation.
 
 - `DryRunLinuxCommandRunner`
   Command runner for Linux VM preflight rehearsals. It builds the same command arguments as the host runner but returns auditable `dry_run:` details without invoking host commands.
 
 ## Why This Split Exists
 
-We need to keep Windows-side development productive without pretending that Windows is the final validation host for scheduling actions.
+We need to keep host-independent development productive without pretending that
+mock or dry-run paths are final validation for scheduling actions.
 
 This backend split lets us:
 
-- verify the control loop on Windows with a safe backend
-- preserve a stable interface for future Linux syscalls
+- verify the control loop with a safe backend before live host effects
+- preserve a stable interface for future Linux syscall or cgroup implementations
 - keep rollback behavior and lease timing inside one shared place
 - avoid hard-coding Linux execution details into the orchestrator

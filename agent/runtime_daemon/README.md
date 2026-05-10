@@ -13,13 +13,13 @@ It is responsible for:
 
 Current host strategy:
 
-- Windows: use `MockEventSource` and `StaticMetadataProvider` for development, integration, and control-loop verification
+- non-Linux development hosts: use `MockEventSource` and `StaticMetadataProvider` for development, integration, and control-loop verification
 - Linux: keep `runtime_daemon` rootless with `ProcfsMetadataProvider`; use
   `aegisai-ebpf-helper` as the narrow privileged source for real eBPF signals
 
 Current source modes:
 
-- `mock`: runnable today and intended for Windows-side development
+- `mock`: runnable today and intended for host-independent development
 - `linux`: minimal Linux ingestion path using procfs for run queue delay,
   CPU migration, and major page fault deltas, with preflight support still
   available in the source layer
@@ -37,8 +37,8 @@ Current Linux source behavior:
   experiments
 - plans the required probe set from `focus_signals`
 - separates kernel probe signals from runtime-only signals
-- exposes a `ProbeEventReader` hook for the later real probe reader
-- provides `LinuxProbeDriver` plus `DriverBackedProbeEventReader` as the attach / poll / stop seam for real Linux probe wiring
+- exposes a `ProbeEventReader` hook for driver-backed probe readers
+- provides `LinuxProbeDriver` plus `DriverBackedProbeEventReader` as the attach / poll / stop boundary for Linux probe wiring
 - now includes `PreflightLinuxProbeDriver`, which validates tracefs / tracepoint / kprobe prerequisites before real probe loading
 - carries a `ProbeReaderConfig` with startup policy and ring-buffer sizing hints
 - records reader startup and shutdown state so Linux integration can validate attach/drain behavior
@@ -76,10 +76,10 @@ Privilege rule:
 
 Current actuator backend modes:
 
-- `noop`: safe default for Windows-side development
-- `linux-skeleton`: integration placeholder for the later Linux validation phase
+- `noop`: safe default for host-independent development
+- `linux-skeleton`: planning/audit backend for Linux source validation without live host changes
 - `linux-command-dry-run`: command-backed audit path that records planned `renice` / `taskset` apply and rollback without changing host state
-- `linux-command`: guarded Linux-only live path. It requires `--confirm-live-actuator` plus a non-empty PID allowlist from `--live-pid-allowlist <pids>` or `[selection].pid_allowlist`. The live scope starts with `nice`; add `--enable-live-affinity` only after nice-only validation is stable. `cpuset` remains disabled.
+- `linux-command`: guarded Linux-only live path. It requires `--confirm-live-actuator` plus a non-empty PID allowlist from `--live-pid-allowlist <pids>` or `[selection].pid_allowlist`. The default live scope is `nice`; add `--enable-live-affinity` to allow `taskset` through the CPU affinity planner. `cpuset` remains disabled.
 
 Current mock source behavior:
 

@@ -79,6 +79,8 @@
 - 执行系统动作
 - 保证动作可撤销
 - 记录动作生命周期
+- 通过独立 CPU affinity planner 处理 online CPU、allowed CPU、目标 CPU 和 rollback
+  target 规划，避免 backend 热路径直接承载拓扑策略
 
 ### 4.6 Metrics / Explain Layer
 
@@ -138,6 +140,21 @@ flowchart TD
 5. 场景策略消费 label 和 feature
 6. actuator 执行带回退边界的动作
 7. metrics 评估收益与副作用
+
+当前 live affinity 设计边界：
+
+- `agent/actuator/src/cpu_affinity.rs` 负责解析 `Cpus_allowed_list`、读取 Linux
+  online CPU、求 allowed/online 交集、选择 reserved/low-contention target，并格式化
+  rollback target。
+- `linux-command` backend 只消费 planner 结果并执行受保护的 `taskset` apply/rollback。
+- 空交集不会回退到 offline/disallowed CPU；这种情况应作为 action effectiveness 风险记录。
+
+当前 Tool Call Booster 执行动作边界：
+
+- benefit proof 覆盖 guarded scheduler actions：`nice`，以及显式启用时的
+  `affinity`。
+- `WarmupExecutor` 仍是 plan/audit-only；当前 backend 记录 deferred apply 和 no-op
+  rollback，不代表真实 executor/cache warmup 已上线。
 
 ## 7. 仓库映射
 

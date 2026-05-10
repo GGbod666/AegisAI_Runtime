@@ -2,59 +2,85 @@
 
 _Last reviewed: 2026-05-10_
 
-This file is the concise factual status snapshot. The detailed prioritized work
-plan lives in `docs/task_list.md`; the task-state source of truth remains `bd`.
+This file is the concise factual status snapshot. `bd` remains the task-state
+source of truth; `docs/task_list.md` now records the accepted 19-task ledger and
+points at the remaining open product gaps.
 
 ## Audit Snapshot
 
-The repository currently has a runnable Rust workspace for the AegisAI Runtime control loop:
+The repository has a runnable Rust workspace for the AegisAI Runtime control
+loop:
 
 `collector -> classifier -> policy_engine -> actuator -> metrics`
 
-Implemented and verified capabilities:
+Implemented and accepted capabilities:
 
-- `runtime_daemon` can run the mock control-loop path and the Linux procfs preflight path.
-- Linux source fallback observes `run_queue_delay`, `cpu_migration`, and `major_page_fault` through procfs-derived signals.
-- Metadata enrichment supports procfs process name, cmdline, cgroup, parent fields, and demo/static metadata.
-- Actuator backends include safe `noop`, planning `linux-skeleton`, auditable `linux-command-dry-run`, and guarded `linux-command` behind explicit confirmation and PID allowlist.
-- `inference_tail_guard` and `tool_call_booster` both trigger in deterministic/mock or harnessed paths.
+- `runtime_daemon` can run the mock control-loop path and the Linux procfs
+  preflight path.
+- Linux source fallback observes `run_queue_delay`, `cpu_migration`, and
+  `major_page_fault` through procfs-derived signals.
 - Helper-backed `offcpu_time` and `io_latency` observations have controlled
-  workload validation through `aegisai-ebpf-helper`; see the helper validation
-  artifact index below.
-- Phase 4 benefit reporting now refuses to claim MVP benefit unless live guarded
+  workload validation through `aegisai-ebpf-helper`.
+- Metadata enrichment supports procfs process name, cmdline, cgroup, parent
+  fields, and demo/static metadata.
+- Actuator backends include safe `noop`, planning `linux-skeleton`, auditable
+  `linux-command-dry-run`, and guarded `linux-command` behind explicit
+  confirmation and PID allowlist.
+- Live CPU affinity planning is extracted to `agent/actuator/src/cpu_affinity.rs`
+  and covered by online/allowed CPU target tests.
+- `inference_tail_guard` and `tool_call_booster` both have repeated A/B report
+  paths with strict distinction between control evidence and host-level benefit.
+- Phase 4 benefit reporting refuses to claim MVP benefit unless live guarded
   actions produce effective host-level changes and repeated stable benefit.
-- Latest live benefit status: live action is effective, but stable benefit is
-  still below the acceptance threshold. `docs/mvp_benefit_report.md` is the
-  latest source for this result.
+
+Latest product-evidence status:
+
+- Inference Tail Guard: `FAIL`. Live guarded mode produced effective host-level
+  `taskset` changes, but the repeated stable benefit rule was not met.
+- Tool Call Booster: `FAIL`. The live guarded run passed contracts and audit
+  checks, but did not achieve the configured repeated latency improvement.
 
 ## Latest Verified Baseline
 
-Passed:
+Acceptance validation passed:
 
-- `bash bench/scripts/verify_workspace.sh`
-  - `cargo check --workspace`
-  - `cargo test --workspace`
-  - `cargo fmt --all -- --check`
-  - `cargo clippy --all-targets --all-features -- -D warnings`
-  - mock daemon smoke
-  - Linux source preflight smoke
+- `cargo fmt --all -- --check`
+- `cargo test --workspace`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py'`
+- `python3 -m unittest discover -s bench/scripts -p 'test_*.py'`
 - `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`
-- `bash bench/scripts/toolchain_preflight.sh`
-- `bash bench/scripts/inference_tail_guard_preflight.sh`
+- `AEGISAI_VERIFY_LOG=/tmp/aegisai_acceptance_verify_workspace.md bash bench/scripts/verify_workspace.sh`
+- `AEGISAI_VERIFY_LOG=/tmp/aegisai_acceptance_toolchain_preflight.md bash bench/scripts/toolchain_preflight.sh`
+- `AEGISAI_VERIFY_LOG=/tmp/aegisai_acceptance_inference_preflight.md bash bench/scripts/inference_tail_guard_preflight.sh`
 
 Notes:
 
-- The latest workspace verification produced `Overall result: PASS` in `docs/verification_log.md`.
-- The Linux source preflight is allowed to process zero live events; it validates startup/configuration safety, not real workload benefit.
+- The `/tmp` log override kept this acceptance pass from changing
+  `docs/verification_log.md`.
+- The Linux source preflight is allowed to process zero live events; it validates
+  startup/configuration safety, not real workload benefit.
 - The baseline verification above is not a live `ollama` A/B proof; live benefit
-  evidence is summarized in `docs/mvp_benefit_report.md`.
+  evidence is summarized in `docs/mvp_benefit_report.md` and the artifact index
+  below.
 
-## Latest Live Benefit Artifact Index
+## Latest Benefit Artifact Index
 
-| run id | CSV | live effective action count | FAIL reason |
+### Inference Tail Guard
+
+| run id | artifact | live effective action count | verdict |
 | --- | --- | --- | --- |
-| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_runs.csv` | `3` | live action is effective, but stable benefit is below threshold |
-| `live_affinity_online_fix_phase4_20260503T043809Z` | `.cache/aegisai/inference_tail_guard_phase4/live_affinity_online_fix_phase4_20260503T043809Z/phase4_aggregate.csv` | `3` | live action is effective, but stable benefit is below threshold |
+| `live_guarded_phase4_calibrated_20260510T043859Z` | `.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_runs.csv` | `3` | `FAIL`: noisy workload; stable benefit not proven |
+| `live_guarded_phase4_calibrated_20260510T043859Z` | `.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_aggregate.csv` | `3` | `FAIL`: noisy workload; stable benefit not proven |
+
+`docs/mvp_benefit_report.md` is the current human-readable report for this run.
+
+### Tool Call Booster
+
+| run id | artifact | contract verdict | benefit verdict |
+| --- | --- | --- | --- |
+| `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`: `live_guarded` improved `0/3` comparable rounds by at least `5.0%` |
+| `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 
 ## Helper Validation Artifact Index
 
@@ -78,71 +104,89 @@ Conclusion taxonomy for future helper runs:
   observations before the timeout.
 - `validated signal`: helper readiness passes, attach/stream succeeds, raw
   helper events are observed, and the daemon summary records normalized
-  `SourceEvent` observations for the target signal. Both 2026-05-10 `jtt`
-  runs reached this state.
+  `SourceEvent` observations for the target signal.
+
+Both 2026-05-10 `jtt` runs reached `validated signal`.
 
 ## Functional Completion
 
-Completed or standing:
+Accepted:
 
 - Core module boundaries and shared contracts.
-- Config loading from repo-root examples.
-- Awareness/classifier rules for process, cmdline, parent, cgroup, tag markers, and PID allowlist.
-- Inference Tail Guard policy path with cooldown, bounded action plans, metrics traces, and rollback lifecycle.
-- Tool Call Booster policy path and real executor lifecycle harness entrypoint.
-- Verification scripts and append-only verification log.
-- Helper-backed off-CPU and I/O latency real-signal validation for
-  `AegisAI_Runtime-jtt`.
+- Config loading from repo-root example files for local/demo use.
+- Awareness/classifier rules for process, cmdline, parent, cgroup, tag markers,
+  and PID allowlist.
+- Inference Tail Guard policy path with cooldown, bounded action plans, metrics
+  traces, benefit gate, and rollback lifecycle.
+- Tool Call Booster policy path, real executor lifecycle harness, audit
+  continuity, and repeated A/B benefit report.
+- Rootless daemon plus narrow helper-backed off-CPU and I/O latency ingestion.
+- Guarded Linux command backend with live nice/affinity controls, explicit
+  confirmation, PID allowlist, and rollback audit.
+- Hot-path tests around actuator rollback, Linux source/procfs edge cases, and
+  benefit report interpretation.
+- Production config profile and hotspot-split boundaries as design notes.
 
-Partially complete:
-
-- eBPF crate has probe descriptors, filters, registry, and event validation.
-  Linux runtime source now keeps the main daemon rootless, combines procfs-backed
-  sched/fault signals with `aegisai-ebpf-helper` for real `offcpu_time` and
-  `io_latency`, falls back cleanly when the helper is unavailable, and has
-  controlled-workload helper validation artifacts.
-- Live Linux command backend is guarded and auditable. The current benefit
-  report records effective host-level `taskset` actions, but the stable benefit
-  threshold is still not met.
-- Tool Call Booster has lifecycle detection and trigger proof, but not a repeated baseline-vs-guarded benefit report.
-- Explain/tune can build reports from metrics, but online tuning remains outside the current scope.
-
-Not complete:
+Still open:
 
 - Proven host-level MVP benefit from effective live guarded actions and stable
   repeated benefit.
-- Production daemon packaging/service management.
-- Dashboard, GPU coordination, adaptive policy learning, or background isolation.
+- Proven Tool Call Booster guarded latency benefit.
+- Production config profiles and schema validation.
+- Cross-kernel helper portability beyond the current validated host.
+- Real `WarmupExecutor` side effect, if the product requires one.
+- Live cpuset/background isolation safety boundary and implementation.
+- Production daemon/helper packaging, installer, dashboard, GPU coordination,
+  and online adaptive policy learning.
 
-## Active TODO Index
+## Open Issue Index
 
-Detailed task breakdown and dependencies are in `docs/task_list.md`.
-
-Current open product issues:
-
-- `AegisAI_Runtime-lql` — Tune live Inference Tail Guard affinity benefit.
-- `AegisAI_Runtime-94s` — Run controlled Tool Call Booster live guarded benefit proof.
-- `AegisAI_Runtime-v2y` — Modularize live CPU affinity planning.
+- `AegisAI_Runtime-2kz` — prove or reproducibly falsify Inference Tail Guard MVP
+  benefit after the noisy live run.
+- `AegisAI_Runtime-79d` — prove or reproducibly falsify Tool Call Booster guarded
+  latency benefit.
+- `AegisAI_Runtime-cqv` — add production config profiles and schema validation.
+- `AegisAI_Runtime-51c` — validate eBPF helper portability across Linux kernels.
+- `AegisAI_Runtime-14r` — decide and implement a real `WarmupExecutor` side
+  effect, if needed.
+- `AegisAI_Runtime-otk` — define live cpuset and background isolation boundary.
+- `AegisAI_Runtime-ufp` — package runtime daemon and helper for production
+  deployment.
+- `AegisAI_Runtime-0ry` — plan deferred dashboard, GPU, and adaptive policy
+  extensions.
 
 Use:
 
 ```bash
-bd show <issue-id>
 bd ready
+bd show <issue-id>
 ```
 
 ## Next Correct Stage
 
-The next major stage is not more scaffolding. It is evidence hardening:
+The next major stage is no longer task-list cleanup. It is product evidence:
 
-1. Continue from the latest run indexed above: `live_guarded` already produced effective host-level actuator changes.
-2. Keep the Phase 4 benefit gate strict: effective live action plus stable repeated benefit are both required.
-3. Promote Tool Call Booster from trigger/harness proof to repeated A/B benefit proof.
-4. Add targeted tests around the high-risk hot paths identified by the code graph: actuator rollback reports, Linux command apply/rollback failures, procfs sampling edge cases, runtime source behavior, and benefit report interpretation.
+1. Continue from `live_guarded_phase4_calibrated_20260510T043859Z`: live guarded
+   actions are effective, but the current run is classified as `noisy_workload`.
+2. Keep the Phase 4 benefit gate strict: effective live action plus stable
+   repeated benefit are both required.
+3. Continue Tool Call Booster guarded benefit proof from
+   `live_guarded_tcb_issue_94s_final_20260510T053527Z`, where contracts passed
+   but benefit did not.
+4. Keep productionization work behind explicit issues and do not broaden hotspot
+   refactors unless they are attached to active behavior work.
 
 ## Review Risks
 
-- Large files remain in `agent/runtime_daemon/src/source.rs`, `agent/actuator/src/backend.rs`, `agent/explain_tune/src/engine.rs`, and `agent/runtime_orchestrator/src/runtime_orchestrator.rs`; future changes should be narrow and test-led.
-- `linux-command` can change real process scheduler state. Keep `--confirm-live-actuator` and PID allowlist mandatory.
+- Large files remain in `agent/runtime_daemon/src/source.rs`,
+  `agent/actuator/src/backend.rs`, `agent/explain_tune/src/engine.rs`,
+  `agent/runtime_orchestrator/src/runtime_orchestrator.rs`,
+  `agent/policy_engine/src/engine.rs`, and
+  `bench/scripts/inference_tail_guard_ollama_smoke.sh`; future changes should be
+  narrow and test-led.
+- `linux-command` can change real process scheduler state. Keep
+  `--confirm-live-actuator` and PID allowlist mandatory.
 - The current `docs/mvp_benefit_report.md` is intentionally a `FAIL`: it records
   effective live actions, but the stable improvement threshold was not met.
+- The Tool Call Booster live guarded report is also intentionally a `FAIL`:
+  contracts and audit passed, but repeated latency benefit did not.

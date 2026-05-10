@@ -60,9 +60,9 @@ bash bench/scripts/inference_tail_guard_ollama_smoke.sh
 - 本地 `ollama serve` 已启动，且默认 API 地址 `http://127.0.0.1:11434` 可达
 - 目标模型已经在本机准备好，至少能通过 `ollama show <model>` 成功返回
 - `cargo`、`curl`、`python3`、`stress-ng` 在 PATH 中
-- `live_guarded` 会调用真实 `renice`，需要当前主机权限和实验窗口允许
+- `live_guarded` 会调用真实 `renice`，并在显式启用 affinity 时调用真实 `taskset`；需要当前主机权限和实验窗口允许
 - `live_guarded` 必须设置 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1` 和 `AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>`；默认 scope 是 nice-only
-- 等 nice-only 稳定后，再设置 `AEGISAI_ENABLE_LIVE_AFFINITY=1` 推进 `taskset`；`cpuset` 继续禁用
+- `AEGISAI_ENABLE_LIVE_AFFINITY=1` 会启用 `taskset`，当前 planner 会先求 `/proc/<pid>/status` allowed CPU 与 `/sys/devices/system/cpu/online` 的交集；`cpuset` 继续禁用
 
 `bench/scripts/inference_tail_guard_preflight.sh` 仍然是推荐前置，但不是这个 harness 的内建 gate。
 
@@ -111,7 +111,8 @@ AEGISAI_LIVE_PID_ALLOWLIST=1234 \
 `major_page_faults_per_sec_max`。这些值来自目标进程/线程的
 `/proc/<pid>/sched` 与 `/proc/<pid>/stat` delta，用于解释实机实验中的调度迁移
 和 major fault 压力；值为 0 表示该轮没有观测到对应 delta，不会被当作采样失败。
-`offcpu_time_events` 只作为后续 eBPF 增强项的占位记录，不阻塞收益复验。
+`offcpu_time_events` 可由 helper-backed eBPF/bpftrace 路径提供；它仍是解释性观测，
+不阻塞收益复验。
 
 ## Phase 2R-0 固定验收基线
 
@@ -127,7 +128,7 @@ AEGISAI_LIVE_PID_ALLOWLIST=1234 \
 
 - `noop_observation`：只验收 runtime event 捕获、`inference_tail_guard` 触发和 rollback 生命周期，不验收系统命令权限。
 - `dry_run`：验收同一策略识别闭环，加上 `linux-command-dry-run` action audit 无错误；它仍不证明主机层收益。
-- `live_guarded`：只验收 nice-only live 闭环，要求 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1`、`AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>`、`AEGISAI_ENABLE_LIVE_AFFINITY=0`，再看真实 `renice` apply/rollback 是否有 action audit 错误。
+- `live_guarded`：验收 guarded live 闭环，要求 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1` 和 `AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>`；默认只覆盖 nice，设置 `AEGISAI_ENABLE_LIVE_AFFINITY=1` 时同时验收 `taskset` apply/rollback 是否有 action audit 错误。
 
 ## Phase 2R-2 actuator 质量收敛
 
@@ -169,7 +170,7 @@ eBPF 已完成，而是把它们变成实机实验可解释指标：
 - daemon summary 输出 `feature_window_maxima`：策略窗口里观察到的最大 `cpu_migrations_per_sec` 与 `major_page_faults_per_sec`
 - harness 把这些值写入 `mode_counts.csv`、`summary.csv` 和验证日志摘录
 - `mode_contract.csv` 增加 `observation_signal_contract`，只要求这些观测字段可解析；不要求每轮必须出现非零迁移或 major fault
-- `offcpu_time` 保持 eBPF/后续增强项，不阻塞 2R-3 和后续收益复验
+- `offcpu_time` 可由 helper-backed 路径提供，但不阻塞 2R-3 和后续收益复验
 
 建议把三类验收拆开跑，且显式复用同一组控制项：
 
@@ -262,4 +263,4 @@ independently.
 
 阶段 4 成功条件比单次 harness 更严格：只有当 `live_guarded` 的 TTFT P95/P99、latency P95/P99 或 jitter 在至少三分之二可比较轮次里相对 baseline 改善，平均改善不低于 5%，并且 live daemon 审计显示至少一次有效主机级 actuator 变化，才算看到稳定收益趋势。`noop_observation` 与 `dry_run` 可以证明识别、触发、审计和 rollback 闭环；真实收益仍需要 live guarded actuator 在当前主机权限下有效执行并出现同样趋势。如果 live `renice` 被权限限制为 no-op，报告必须标记为收益未证明，而不是把闭环或 dry-run 结果当成收益。
 
-本机 affinity 收敛标记：当前 VM 上 `/proc/<pid>/status` 可能暴露 configured CPU 范围，而 online CPU 只有 `/sys/devices/system/cpu/online` 中的子集；live actuator 会先取交集再规划 `taskset` 目标，Phase 4 也只在 `taskset -pc` 的 current/new affinity CPU 集合真的不同时计入 `live_effective_action_count`。后续 CPU 亲和力模块扩展应把 topology/online CPU/保留核选择从 actuator 中抽出，形成独立策略规划层。
+本机 affinity 收敛标记：当前 VM 上 `/proc/<pid>/status` 可能暴露 configured CPU 范围，而 online CPU 只有 `/sys/devices/system/cpu/online` 中的子集；live actuator 会先通过 `agent/actuator/src/cpu_affinity.rs` 取交集再规划 `taskset` 目标，Phase 4 也只在 `taskset -pc` 的 current/new affinity CPU 集合真的不同时计入 `live_effective_action_count`。
