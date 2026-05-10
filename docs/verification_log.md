@@ -15372,3 +15372,38 @@ qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from
 - Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
 - Harness aggregate exit status: `0`
 - Benefit verdict: `FAIL`
+
+### 2026-05-10T05:14:52+00:00 - Phase 4 MVP benefit report run
+
+- Scope: multi-round CPU interference and optional I/O perturbation benefit report.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z`
+- Report path: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Run ID: `live_guarded_phase4_calibrated_20260510T043859Z`
+- Reuse existing artifacts: `1`
+- Tuned variable: `affinity_nice_interaction`
+- Tuned variable detail: `Reused calibrated live artifacts for affinity-enabled live_guarded versus the prior nice-only validation; CPU stress shape, sample count, concurrency, model, and runtime request shape are recorded as controls.`
+- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds and live_guarded records effective host-level actuator changes.
+
+#### Phase 4 reused round: CPU interference / 1
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/cpu/round_1`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU interference / 2
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/cpu/round_2`
+- Reused existing summary: `yes`
+
+#### Phase 4 reused round: CPU interference / 3
+
+- Artifact directory: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/cpu/round_3`
+- Reused existing summary: `yes`
+
+#### Phase 4 MVP benefit report summary
+
+- Detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_runs.csv`
+- Aggregate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_aggregate.csv`
+- Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
+- Harness aggregate exit status: `0`
+- Benefit verdict: `FAIL`

@@ -116,6 +116,16 @@ AEGISAI_PHASE4_SCENARIOS=cpu,cpu_io \
   bash bench/scripts/inference_tail_guard_phase4_report.sh
 ```
 
+Phase 4 tuning runs must set `AEGISAI_PHASE4_TUNED_VARIABLE` to exactly one of
+`none_control`, `cpu_selection`, `stress_shape`, `sample_sizing`,
+`model_runtime`, or `affinity_nice_interaction`. Use
+`AEGISAI_PHASE4_TUNED_VARIABLE_DETAIL` for the concrete delta, such as changed
+CPU workers, changed sample count, changed Ollama request shape, or changed
+nice/affinity scope. The detail CSV, aggregate CSV, report, and verification
+log all record the changed variable. Failed reports classify the primary cause
+as `action_effectiveness`, `noisy_workload`, `insufficient_sample_size`, or
+`no_measurable_benefit`.
+
 阶段 4 判定更严格：只有当 `live_guarded` 档在至少三分之二可比较轮次里改善，平均改善不低于 5%，指标属于 TTFT P95/P99、latency P95/P99 或 jitter，并且 live daemon 审计显示至少一次有效主机级 actuator 变化时，报告才会给出 `PASS`。`noop_observation` 和 `dry_run` 能证明闭环触发与回滚，但不会单独证明真实主机收益；若 live `renice` 被权限限制为 no-op，报告必须标为收益未证明。
 
 结果文件：

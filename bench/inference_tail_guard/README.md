@@ -240,6 +240,26 @@ bash bench/scripts/inference_tail_guard_phase4_report.sh
 - 报告：`docs/mvp_benefit_report.md`
 - 汇总：`.cache/aegisai/inference_tail_guard_phase4/<run_id>/phase4_aggregate.csv`
 
+Phase 4 tuning runs must declare exactly one changed variable with
+`AEGISAI_PHASE4_TUNED_VARIABLE`. Allowed values are `none_control`,
+`cpu_selection`, `stress_shape`, `sample_sizing`, `model_runtime`, and
+`affinity_nice_interaction`. Add `AEGISAI_PHASE4_TUNED_VARIABLE_DETAIL` to record
+the concrete change, for example:
+
+```bash
+AEGISAI_PHASE4_TUNED_VARIABLE=stress_shape \
+AEGISAI_PHASE4_TUNED_VARIABLE_DETAIL="Changed CPU workers from 1 to 2; model, samples, runtime, and live policy unchanged" \
+  bash bench/scripts/inference_tail_guard_phase4_report.sh
+```
+
+The report writes the changed variable into `phase4_runs.csv`,
+`phase4_aggregate.csv`, `docs/mvp_benefit_report.md`, and
+`docs/verification_log.md`. A failed report classifies the primary cause as
+`action_effectiveness`, `noisy_workload`, `insufficient_sample_size`, or
+`no_measurable_benefit` so CPU selection, stress shape, sample sizing,
+model/runtime behavior, and affinity/nice interaction can be evaluated
+independently.
+
 阶段 4 成功条件比单次 harness 更严格：只有当 `live_guarded` 的 TTFT P95/P99、latency P95/P99 或 jitter 在至少三分之二可比较轮次里相对 baseline 改善，平均改善不低于 5%，并且 live daemon 审计显示至少一次有效主机级 actuator 变化，才算看到稳定收益趋势。`noop_observation` 与 `dry_run` 可以证明识别、触发、审计和 rollback 闭环；真实收益仍需要 live guarded actuator 在当前主机权限下有效执行并出现同样趋势。如果 live `renice` 被权限限制为 no-op，报告必须标记为收益未证明，而不是把闭环或 dry-run 结果当成收益。
 
 本机 affinity 收敛标记：当前 VM 上 `/proc/<pid>/status` 可能暴露 configured CPU 范围，而 online CPU 只有 `/sys/devices/system/cpu/online` 中的子集；live actuator 会先取交集再规划 `taskset` 目标，Phase 4 也只在 `taskset -pc` 的 current/new affinity CPU 集合真的不同时计入 `live_effective_action_count`。后续 CPU 亲和力模块扩展应把 topology/online CPU/保留核选择从 actuator 中抽出，形成独立策略规划层。

@@ -23,13 +23,13 @@ def write_csv(path: pathlib.Path, fieldnames: list[str], rows: list[dict[str, st
         writer.writerows(rows)
 
 
-def summary_row(mode: str, metric_ms: float) -> dict[str, str]:
+def summary_row(mode: str, metric_ms: float, samples: int = 1) -> dict[str, str]:
     baseline = mode == "baseline"
     return {
         "mode": mode,
         "backend": "none" if baseline else mode,
-        "samples_ok": "1",
-        "samples_total": "1",
+        "samples_ok": str(samples),
+        "samples_total": str(samples),
         "ttft_p95_ms": f"{metric_ms:.3f}",
         "ttft_p99_ms": f"{metric_ms:.3f}",
         "latency_p95_ms": f"{metric_ms:.3f}",
@@ -67,19 +67,27 @@ class Phase4ReportGateTests(unittest.TestCase):
         control_metric_ms: float,
         live_metric_ms: float,
         effective_live_actions: bool,
+        samples: int = 3,
+        rounds: int = 3,
+        live_metrics_by_round: list[float] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         artifact_dir = root / "artifacts"
         modes = ["baseline", "noop_observation", "dry_run", "live_guarded"]
-        for round_no in range(1, 4):
+        for round_no in range(1, rounds + 1):
             round_dir = artifact_dir / "cpu" / f"round_{round_no}"
+            current_live_metric_ms = (
+                live_metrics_by_round[round_no - 1]
+                if live_metrics_by_round is not None
+                else live_metric_ms
+            )
             write_csv(
                 round_dir / "summary.csv",
                 list(summary_row("baseline", 100.0).keys()),
                 [
-                    summary_row("baseline", 100.0),
-                    summary_row("noop_observation", control_metric_ms),
-                    summary_row("dry_run", control_metric_ms),
-                    summary_row("live_guarded", live_metric_ms),
+                    summary_row("baseline", 100.0, samples),
+                    summary_row("noop_observation", control_metric_ms, samples),
+                    summary_row("dry_run", control_metric_ms, samples),
+                    summary_row("live_guarded", current_live_metric_ms, samples),
                 ],
             )
             write_csv(
@@ -115,9 +123,11 @@ class Phase4ReportGateTests(unittest.TestCase):
                 "AEGISAI_PHASE4_RUN_ID": "phase4_gate_unit",
                 "AEGISAI_PHASE4_SCENARIOS": "cpu",
                 "AEGISAI_PHASE4_MODES": ",".join(modes),
-                "AEGISAI_PHASE4_ROUNDS": "3",
-                "AEGISAI_AB_SAMPLES": "1",
+                "AEGISAI_PHASE4_ROUNDS": str(rounds),
+                "AEGISAI_AB_SAMPLES": str(samples),
                 "AEGISAI_AB_CONCURRENCY": "1",
+                "AEGISAI_PHASE4_TUNED_VARIABLE": "stress_shape",
+                "AEGISAI_PHASE4_TUNED_VARIABLE_DETAIL": "Changed CPU workers from 1 to 2; all other controls held constant.",
             }
         )
         return subprocess.run(
@@ -146,6 +156,11 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertIn("Selected mode contracts: `PASS`", report)
             self.assertIn("Live effective host-level actuator changes: `3`", report)
             self.assertIn("Interference shape: `cpu_workers=2; io_workers=1; hdd_workers=1; hdd_bytes=128M`", report)
+            self.assertIn("Changed variable: `stress_shape`", report)
+            self.assertIn("Failure cause: `no_measurable_benefit`", report)
+            aggregate = (root / "artifacts" / "phase4_aggregate.csv").read_text(encoding="utf-8")
+            self.assertIn("changed_variable", aggregate)
+            self.assertIn("stress_shape", aggregate)
 
     def test_live_trend_without_effective_live_action_does_not_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -161,6 +176,7 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Result: `FAIL`", report)
             self.assertIn("no effective live actuator changes were observed", report)
+            self.assertIn("Failure cause: `action_effectiveness`", report)
 
     def test_live_trend_with_effective_live_action_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -178,6 +194,39 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertIn("stable improvement trend with effective host-level actuator changes", report)
             self.assertIn("Selected mode contracts: `PASS`", report)
             self.assertIn("Live effective host-level actuator changes: `3`", report)
+            self.assertIn("Failure cause: `none`", report)
+
+    def test_intermittent_live_improvement_is_classified_as_noisy_workload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=100.0,
+                effective_live_actions=True,
+                live_metrics_by_round=[120.0, 80.0, 120.0],
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertIn("Failure cause: `noisy_workload`", report)
+
+    def test_live_trend_with_too_few_samples_is_classified_as_insufficient_sample_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                effective_live_actions=True,
+                samples=1,
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertIn("Failure cause: `insufficient_sample_size`", report)
 
 
 if __name__ == "__main__":

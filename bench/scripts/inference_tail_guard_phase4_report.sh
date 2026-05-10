@@ -22,6 +22,8 @@ HDD_WORKERS="${AEGISAI_PHASE4_HDD:-1}"
 HDD_BYTES="${AEGISAI_PHASE4_HDD_BYTES:-128M}"
 MODE_COOLDOWN="${AEGISAI_PHASE4_COOLDOWN:-2}"
 REUSE_ARTIFACTS="${AEGISAI_PHASE4_REUSE_ARTIFACTS:-0}"
+TUNED_VARIABLE="${AEGISAI_PHASE4_TUNED_VARIABLE:-none_control}"
+TUNED_VARIABLE_DETAIL="${AEGISAI_PHASE4_TUNED_VARIABLE_DETAIL:-}"
 
 DETAIL_CSV="${ARTIFACT_DIR}/phase4_runs.csv"
 AGGREGATE_CSV="${ARTIFACT_DIR}/phase4_aggregate.csv"
@@ -36,6 +38,29 @@ append_log() {
 
 is_positive_uint() {
   [[ "${1:-}" =~ ^[0-9]+$ ]] && [[ "$1" -gt 0 ]]
+}
+
+tuned_variable_detail_default() {
+  case "$1" in
+    none_control)
+      printf 'No tuning variable changed from the caller-defined control run.'
+      ;;
+    cpu_selection)
+      printf 'CPU selection changed; stress shape, sample sizing, model/runtime, and affinity/nice policy should stay fixed.'
+      ;;
+    stress_shape)
+      printf 'Stress shape changed; CPU selection, sample sizing, model/runtime, and affinity/nice policy should stay fixed.'
+      ;;
+    sample_sizing)
+      printf 'Sample sizing changed; CPU selection, stress shape, model/runtime, and affinity/nice policy should stay fixed.'
+      ;;
+    model_runtime)
+      printf 'Model/runtime behavior changed; CPU selection, stress shape, sample sizing, and affinity/nice policy should stay fixed.'
+      ;;
+    affinity_nice_interaction)
+      printf 'Affinity/nice interaction changed; CPU selection, stress shape, sample sizing, and model/runtime should stay fixed.'
+      ;;
+  esac
 }
 
 scenario_label() {
@@ -96,19 +121,19 @@ append_round_detail() {
   local run_dir="$5"
 
   if [[ ! -s "${run_dir}/summary.csv" ]]; then
-    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-      "${scenario}" "${label}" "${round}" "${run_status}" "missing" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "0" "0" "${run_dir}" \
+    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+      "${scenario}" "${label}" "${round}" "${run_status}" "${TUNED_VARIABLE}" "missing" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "0" "0" "${run_dir}" \
       >>"${DETAIL_CSV}"
     return 0
   fi
 
-  python3 - "${scenario}" "${label}" "${round}" "${run_status}" "${run_dir}" "${run_dir}/summary.csv" "${run_dir}/mode_counts.csv" >>"${DETAIL_CSV}" <<'PY'
+  python3 - "${scenario}" "${label}" "${round}" "${run_status}" "${run_dir}" "${run_dir}/summary.csv" "${run_dir}/mode_counts.csv" "${TUNED_VARIABLE}" >>"${DETAIL_CSV}" <<'PY'
 import csv
 import os
 import re
 import sys
 
-scenario, label, round_id, harness_status, run_dir, summary_path, counts_path = sys.argv[1:8]
+scenario, label, round_id, harness_status, run_dir, summary_path, counts_path, changed_variable = sys.argv[1:9]
 
 counts = {}
 try:
@@ -206,6 +231,7 @@ with open(summary_path, newline="", encoding="utf-8") as handle:
             label,
             round_id,
             status,
+            changed_variable,
             row["mode"],
             row["backend"],
             row["samples_ok"],
@@ -316,6 +342,18 @@ if [[ "${REUSE_ARTIFACTS}" != "0" && "${REUSE_ARTIFACTS}" != "1" ]]; then
   printf 'AEGISAI_PHASE4_REUSE_ARTIFACTS must be 0 or 1.\n' >&2
   exit 1
 fi
+case "${TUNED_VARIABLE}" in
+  none_control|cpu_selection|stress_shape|sample_sizing|model_runtime|affinity_nice_interaction)
+    ;;
+  *)
+    printf 'AEGISAI_PHASE4_TUNED_VARIABLE must be exactly one of: none_control, cpu_selection, stress_shape, sample_sizing, model_runtime, affinity_nice_interaction.\n' >&2
+    exit 1
+    ;;
+esac
+if [[ -z "${TUNED_VARIABLE_DETAIL}" ]]; then
+  TUNED_VARIABLE_DETAIL="$(tuned_variable_detail_default "${TUNED_VARIABLE}")"
+fi
+TUNED_VARIABLE_DETAIL="${TUNED_VARIABLE_DETAIL//$'\n'/ }"
 
 timestamp="$(date -Iseconds)"
 
@@ -328,9 +366,11 @@ append_log "- Artifact directory: \`${ARTIFACT_DIR}\`"
 append_log "- Report path: \`${REPORT_MD}\`"
 append_log "- Run ID: \`${RUN_ID}\`"
 append_log "- Reuse existing artifacts: \`${REUSE_ARTIFACTS}\`"
+append_log "- Tuned variable: \`${TUNED_VARIABLE}\`"
+append_log "- Tuned variable detail: \`${TUNED_VARIABLE_DETAIL}\`"
 append_log "- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds and live_guarded records effective host-level actuator changes."
 
-printf 'scenario,scenario_label,round,run_status,mode,backend,samples_ok,samples_total,ttft_p95_ms,ttft_p99_ms,latency_p95_ms,latency_p99_ms,jitter_ms,trigger_count,rollback_count,action_error_count,cpu_migration_total,cpu_migrations_per_sec_max,major_page_fault_total,major_page_faults_per_sec_max,offcpu_time_events,live_effective_action_count,live_priority_limited_count,artifact_dir\n' >"${DETAIL_CSV}"
+printf 'scenario,scenario_label,round,run_status,changed_variable,mode,backend,samples_ok,samples_total,ttft_p95_ms,ttft_p99_ms,latency_p95_ms,latency_p99_ms,jitter_ms,trigger_count,rollback_count,action_error_count,cpu_migration_total,cpu_migrations_per_sec_max,major_page_fault_total,major_page_faults_per_sec_max,offcpu_time_events,live_effective_action_count,live_priority_limited_count,artifact_dir\n' >"${DETAIL_CSV}"
 
 overall_status=0
 for scenario in ${SCENARIOS//,/ }; do
@@ -345,7 +385,7 @@ for scenario in ${SCENARIOS//,/ }; do
   done
 done
 
-python3 - "${DETAIL_CSV}" "${AGGREGATE_CSV}" "${SUMMARY_MD}" "${RUN_ID}" "${ROUNDS}" "${SAMPLES}" "${CONCURRENCY}" "${MODES}" "${MODEL}" "${NUM_PREDICT}" "${SCENARIOS}" "${CPU_WORKERS}" "${IO_WORKERS}" "${HDD_WORKERS}" "${HDD_BYTES}" "${AEGISAI_CONFIRM_LIVE_ACTUATOR:-0}" "${AEGISAI_LIVE_PID_ALLOWLIST:-}" "${AEGISAI_ENABLE_LIVE_AFFINITY:-0}" <<'PY'
+python3 - "${DETAIL_CSV}" "${AGGREGATE_CSV}" "${SUMMARY_MD}" "${RUN_ID}" "${ROUNDS}" "${SAMPLES}" "${CONCURRENCY}" "${MODES}" "${MODEL}" "${NUM_PREDICT}" "${SCENARIOS}" "${CPU_WORKERS}" "${IO_WORKERS}" "${HDD_WORKERS}" "${HDD_BYTES}" "${AEGISAI_CONFIRM_LIVE_ACTUATOR:-0}" "${AEGISAI_LIVE_PID_ALLOWLIST:-}" "${AEGISAI_ENABLE_LIVE_AFFINITY:-0}" "${TUNED_VARIABLE}" "${TUNED_VARIABLE_DETAIL}" <<'PY'
 import csv
 import math
 import statistics
@@ -371,7 +411,9 @@ from collections import defaultdict
     live_confirm,
     live_pid_allowlist,
     live_enable_affinity,
-) = sys.argv[1:19]
+    tuned_variable,
+    tuned_variable_detail,
+) = sys.argv[1:21]
 
 METRICS = [
     ("ttft_p95_ms", "TTFT P95"),
@@ -399,6 +441,12 @@ def pct_fmt(value):
         return "n/a"
     return f"{value:.2f}"
 
+def parse_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
 with open(detail_path, newline="", encoding="utf-8") as handle:
     rows = list(csv.DictReader(handle))
 
@@ -417,6 +465,7 @@ for (scenario, mode), mode_rows in sorted(by_key.items()):
     agg = {
         "scenario": scenario,
         "scenario_label": scenario_labels.get(scenario, scenario),
+        "changed_variable": tuned_variable,
         "mode": mode,
         "rounds_ok": str(sum(1 for row in mode_rows if row["run_status"] == "0")),
         "rounds_total": str(len(mode_rows)),
@@ -459,6 +508,7 @@ for row in aggregate_rows:
 fieldnames = [
     "scenario",
     "scenario_label",
+    "changed_variable",
     "mode",
     "rounds_ok",
     "rounds_total",
@@ -493,7 +543,18 @@ with open(aggregate_path, "w", newline="", encoding="utf-8") as handle:
 
 stable_improvements = []
 live_stable_improvements = []
+live_metric_stats = []
 trend_notes = []
+sample_size_sufficient = parse_int(rounds) >= 3 and parse_int(samples) >= 3
+live_min_samples_total = min(
+    (
+        parse_int(row["samples_total"])
+        for row in rows
+        if row["mode"] == "live_guarded" and row["run_status"] == "0"
+    ),
+    default=0,
+)
+sample_size_sufficient = sample_size_sufficient and live_min_samples_total >= 3
 for scenario in sorted(scenario_labels):
     baseline_rows = [row for row in rows if row["scenario"] == scenario and row["mode"] == "baseline" and row["run_status"] == "0"]
     if not baseline_rows:
@@ -523,7 +584,23 @@ for scenario in sorted(scenario_labels):
             if comparisons == 0:
                 continue
             mean_delta = statistics.mean(deltas)
-            stable = wins >= max(2, math.ceil(comparisons * 2 / 3)) and mean_delta >= 5.0
+            stable = (
+                sample_size_sufficient
+                and comparisons >= 3
+                and wins >= max(2, math.ceil(comparisons * 2 / 3))
+                and mean_delta >= 5.0
+            )
+            if mode == "live_guarded":
+                live_metric_stats.append(
+                    {
+                        "scenario_label": scenario_labels[scenario],
+                        "metric_label": label,
+                        "wins": wins,
+                        "comparisons": comparisons,
+                        "mean_delta": mean_delta,
+                        "positive_delta": any(delta > 0 for delta in deltas),
+                    }
+                )
             if stable:
                 stable_improvements.append((scenario_labels[scenario], mode, label, wins, comparisons, mean_delta))
                 if mode == "live_guarded":
@@ -544,20 +621,56 @@ mode_contracts_pass = all(
     row["mode"] == "missing" or row["run_status"] == "0"
     for row in rows
 )
+live_action_contract_failed = any(
+    row["mode"] == "live_guarded"
+    and (
+        row["run_status"] != "0"
+        or parse_int(row["trigger_count"]) <= 0
+        or parse_int(row["rollback_count"]) <= 0
+        or parse_int(row["action_error_count"]) > 0
+    )
+    for row in rows
+)
+live_max_comparisons = max((stat["comparisons"] for stat in live_metric_stats), default=0)
+live_has_any_positive_delta = any(stat["positive_delta"] for stat in live_metric_stats)
 
-if live_stable_improvements and live_host_effective:
+if live_host_effective and not live_action_contract_failed and sample_size_sufficient:
+    if live_stable_improvements:
+        failure_cause = "none"
+        failure_cause_detail = "Live guarded met the stable trend rule with effective host-level actuator changes."
+    elif live_has_any_positive_delta:
+        failure_cause = "noisy_workload"
+        failure_cause_detail = "Live guarded produced intermittent improvements, but they were not stable across at least two thirds of comparable rounds."
+    else:
+        failure_cause = "no_measurable_benefit"
+        failure_cause_detail = "Live guarded had effective actions and enough configured samples, but no live metric showed measurable improvement versus baseline."
+elif not live_host_effective or live_action_contract_failed:
+    failure_cause = "action_effectiveness"
+    failure_cause_detail = "Live guarded did not prove effective host-level action, trigger, rollback, and clean action audit behavior."
+elif not sample_size_sufficient or live_max_comparisons < 3:
+    failure_cause = "insufficient_sample_size"
+    failure_cause_detail = "The run did not provide at least three rounds and at least three samples per mode for the stable trend gate."
+else:
+    failure_cause = "no_measurable_benefit"
+    failure_cause_detail = "Live guarded did not show a measurable benefit versus baseline."
+
+if live_stable_improvements and live_host_effective and sample_size_sufficient:
     mvp_result = "PASS"
     verdict = "MVP benefit observed: live_guarded shows a stable improvement trend with effective host-level actuator changes."
 elif live_stable_improvements:
     mvp_result = "FAIL"
-    verdict = "MVP benefit not proven: live_guarded trend was observed, but live actuator changes were priority-limited or no-op."
+    if not sample_size_sufficient:
+        verdict = "MVP benefit not proven: live_guarded trend was observed, but sample sizing was insufficient for the strict gate."
+    else:
+        verdict = "MVP benefit not proven: live_guarded trend was observed, but live actuator changes were priority-limited or no-op."
 else:
     mvp_result = "FAIL"
-    verdict = "MVP benefit not proven: no live guarded mode met the stable improvement threshold."
+    verdict = f"MVP benefit not proven: {failure_cause_detail}"
 
 detail_headers = [
     "scenario",
     "round",
+    "changed variable",
     "status",
     "mode",
     "ok/total",
@@ -582,6 +695,7 @@ for row in rows:
     detail_lines.append("| " + " | ".join([
         row["scenario_label"],
         row["round"],
+        row["changed_variable"],
         row["run_status"],
         row["mode"],
         f'{row["samples_ok"]}/{row["samples_total"]}',
@@ -601,6 +715,7 @@ for row in rows:
 
 agg_headers = [
     "scenario",
+    "changed variable",
     "mode",
     "rounds",
     "samples",
@@ -626,6 +741,7 @@ agg_lines = [
 for row in aggregate_rows:
     agg_lines.append("| " + " | ".join([
         row["scenario_label"],
+        row["changed_variable"],
         row["mode"],
         f'{row["rounds_ok"]}/{row["rounds_total"]}',
         f'{row["samples_ok_total"]}/{row["samples_total"]}',
@@ -650,7 +766,7 @@ if stable_improvements:
     for scenario_label, mode, label, wins, comparisons, mean_delta in stable_improvements:
         stable_lines.append(f"- {scenario_label} / {mode} / {label}: {wins}/{comparisons} rounds improved, mean delta {mean_delta:.2f}%.")
 else:
-    stable_lines.append("- No metric crossed the stable trend rule: at least two thirds of comparable rounds improved and mean improvement was at least 5%.")
+    stable_lines.append("- No metric crossed the stable trend rule: at least three comparable rounds, at least two thirds of comparable rounds improved, and mean improvement was at least 5%.")
 if stable_improvements and not live_stable_improvements:
     stable_lines.append("- Apparent improvements were limited to observation or dry-run modes, so they are treated as non-proof for MVP benefit.")
 if live_stable_improvements and not live_host_effective:
@@ -680,6 +796,14 @@ failure_lines.append(f"- Live priority-limited/no-op nice applications: `{live_p
 if not live_host_effective:
     failure_lines.append(f"- Live guarded recorded no effective host-level actuator changes; priority-limited no-op nice applications: {live_priority_limited_count}.")
 
+diagnosis_lines = [
+    f"- Failure cause: `{failure_cause}`.",
+    f"- Evidence: {failure_cause_detail}",
+    f"- Comparable live guarded rounds per metric: `{live_max_comparisons}`.",
+    f"- Minimum observed live guarded samples per successful round: `{live_min_samples_total}`.",
+    f"- Configured minimum for benefit proof: `rounds>=3; samples_per_mode>=3`; observed live guarded samples must also be at least 3.",
+]
+
 content = [
     "# MVP Benefit Report",
     "",
@@ -688,9 +812,12 @@ content = [
     f"- Result: `{mvp_result}`",
     f"- Conclusion: {verdict}",
     f"- Run ID: `{run_id}`",
+    f"- Changed variable: `{tuned_variable}`",
     "",
     "## Controls",
     "",
+    f"- Tuned variable: `{tuned_variable}`",
+    f"- Tuned variable detail: `{tuned_variable_detail}`",
     f"- Model: `{model}`",
     f"- Num predict: `{num_predict}`",
     f"- Rounds per scenario: `{rounds}`",
@@ -714,6 +841,10 @@ content = [
     "## Stable Trend Check",
     "",
     *stable_lines,
+    "",
+    "## Failure Diagnosis",
+    "",
+    *diagnosis_lines,
     "",
     "## Live Guarded Contract",
     "",
