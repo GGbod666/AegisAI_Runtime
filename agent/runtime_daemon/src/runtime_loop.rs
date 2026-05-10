@@ -103,6 +103,7 @@ pub struct ToolCallLifecycleSummary {
     pub ended_at_ms: u64,
     pub stages: BTreeMap<String, u64>,
     pub boosted_actions: u64,
+    pub rollback_actions: u64,
     pub background_events: u64,
     pub isolation_events: u64,
     pub target_pids: BTreeSet<u32>,
@@ -175,6 +176,7 @@ impl RuntimeLoop {
                         while next_tick <= raw_event.timestamp_ms {
                             let rollbacks = orchestrator.tick(next_tick);
                             summary.tick_rollbacks += rollbacks.len() as u64;
+                            lifecycle_tracker.observe_actions(&rollbacks);
                             collect_audit_highlights(&mut audit_highlights, &rollbacks);
                             next_tick = next_tick.saturating_add(self.config.tick_interval_ms);
                         }
@@ -228,6 +230,7 @@ impl RuntimeLoop {
             let rollbacks = orchestrator
                 .tick(last_timestamp_ms.saturating_add(self.config.drain_after_source_ms));
             summary.tick_rollbacks += rollbacks.len() as u64;
+            lifecycle_tracker.observe_actions(&rollbacks);
             collect_audit_highlights(&mut audit_highlights, &rollbacks);
         }
 
@@ -342,6 +345,9 @@ impl ToolCallLifecycleTracker {
 
             if action.state == runtime_orchestrator::AppliedActionState::Applied {
                 entry.boosted_actions += action.actions.len() as u64;
+            }
+            if action.state == runtime_orchestrator::AppliedActionState::RolledBack {
+                entry.rollback_actions += action.actions.len() as u64;
             }
             if action
                 .audit_fields
@@ -555,6 +561,7 @@ mod tests {
         assert_eq!(lifecycle.stages.get("rerank"), Some(&1));
         assert_eq!(lifecycle.background_events, 1);
         assert!(lifecycle.boosted_actions >= 3);
+        assert!(lifecycle.rollback_actions >= 3);
         assert!(lifecycle.isolation_events >= 3);
     }
 

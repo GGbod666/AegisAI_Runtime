@@ -191,14 +191,8 @@ impl RuntimeOrchestrator {
     pub fn tick(&mut self, now_ms: u64) -> Vec<AppliedAction> {
         let rollbacks = self.actuator.expire(now_ms);
         for rollback in &rollbacks {
-            self.metrics.record(
-                RecordInput::new(
-                    now_ms,
-                    rollback.target_pid,
-                    rollback.target_process_name.clone(),
-                )
-                .with_rollback_count(1)
-                .with_traces([MetricTrace::new(
+            let rollback_trace = with_action_audit_fields(
+                MetricTrace::new(
                     rollback.expires_at_ms,
                     rollback.target_pid,
                     rollback.target_process_name.clone(),
@@ -207,7 +201,17 @@ impl RuntimeOrchestrator {
                 )
                 .with_scenario(rollback.scenario.as_str())
                 .with_field("actions", action_names(&rollback.actions).join(","))
-                .with_field("rolled_back", "true")])
+                .with_field("rolled_back", "true"),
+                rollback,
+            );
+            self.metrics.record(
+                RecordInput::new(
+                    now_ms,
+                    rollback.target_pid,
+                    rollback.target_process_name.clone(),
+                )
+                .with_rollback_count(1)
+                .with_traces([rollback_trace])
                 .with_notes([format!("rollback:{}", rollback.scenario.as_str())]),
             );
         }
@@ -538,14 +542,18 @@ fn action_traces(
 }
 
 fn with_action_audit_fields(mut trace: MetricTrace, action: &AppliedAction) -> MetricTrace {
-    const TRACE_AUDIT_FIELDS: [&str; 7] = [
+    const TRACE_AUDIT_FIELDS: [&str; 11] = [
         "tool_call_id",
         "tool_call_stage",
         "tool_call_focus",
         "tool_call_subchain",
+        "duration_ratio",
+        "duration_ms",
+        "action_plan",
         "isolation_mode",
         "isolation_scope",
         "background_isolation",
+        "warmup_executor_skipped",
     ];
 
     for field in TRACE_AUDIT_FIELDS {
@@ -805,10 +813,54 @@ mod tests {
             trace.fields.get("tool_call_subchain"),
             Some(&"retrieval_io".to_string())
         );
+        assert_eq!(trace.fields.get("duration_ratio"), Some(&"3/4".to_string()));
+        assert_eq!(trace.fields.get("duration_ms"), Some(&"600".to_string()));
+        assert!(trace
+            .fields
+            .get("action_plan")
+            .is_some_and(|plan| plan.contains("warmup_executor")));
         assert_eq!(
             trace.fields.get("background_isolation"),
             Some(&"blocked_by_safety".to_string())
         );
+    }
+
+    #[test]
+    fn tick_rollback_traces_preserve_tool_call_audit_fields() {
+        let mut orchestrator =
+            RuntimeOrchestrator::from_repo_root(repo_root()).expect("config should load");
+
+        orchestrator.process_event(
+            Event::new(9_000, 5152, "python", SignalKind::QueueWait, 2_500)
+                .with_cmdline("python tool-executor rerank-worker --tool-call-id tc-010"),
+        );
+        let rollbacks = orchestrator.tick(9_500);
+        assert_eq!(rollbacks.len(), 1);
+
+        let trace = orchestrator
+            .traces()
+            .iter()
+            .rev()
+            .find(|trace| {
+                trace.kind == TraceKind::ActionRolledBack
+                    && trace.scenario.as_deref() == Some("tool_call_booster")
+            })
+            .expect("tool call rollback trace should be recorded");
+
+        assert_eq!(
+            trace.fields.get("tool_call_id"),
+            Some(&"tc-010".to_string())
+        );
+        assert_eq!(
+            trace.fields.get("tool_call_stage"),
+            Some(&"rerank".to_string())
+        );
+        assert_eq!(trace.fields.get("duration_ratio"), Some(&"1/2".to_string()));
+        assert!(trace
+            .fields
+            .get("action_plan")
+            .is_some_and(|plan| plan.contains("raise_nice:-3")));
+        assert_eq!(trace.fields.get("rolled_back"), Some(&"true".to_string()));
     }
 
     #[test]

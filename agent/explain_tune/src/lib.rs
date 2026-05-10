@@ -217,6 +217,9 @@ mod tests {
                 .with_field("tool_call_id", "tc-001")
                 .with_field("tool_call_stage", "retrieval")
                 .with_field("tool_call_subchain", "retrieval_io")
+                .with_field("duration_ratio", "3/4")
+                .with_field("duration_ms", "600")
+                .with_field("action_plan", "raise_nice:-3,warmup_executor")
                 .with_field("isolation_mode", "retrieval_affinity_only")
                 .with_field("background_isolation", "blocked_by_safety")])
                 .with_notes(["tool_call_booster:queue_wait_us:2600>=2000".to_string()]),
@@ -238,6 +241,9 @@ mod tests {
                 .with_field("tool_call_id", "tc-001")
                 .with_field("tool_call_stage", "rerank")
                 .with_field("tool_call_subchain", "rerank_queue")
+                .with_field("duration_ratio", "1/2")
+                .with_field("duration_ms", "400")
+                .with_field("action_plan", "raise_nice:-3")
                 .with_field("isolation_mode", "rerank_affinity_only")
                 .with_field("background_isolation", "blocked_by_safety")]),
         );
@@ -254,6 +260,9 @@ mod tests {
             chain.isolation_modes.get("retrieval_affinity_only"),
             Some(&1)
         );
+        assert_eq!(chain.duration_ratios.get("3/4"), Some(&1));
+        assert_eq!(chain.duration_ratios.get("1/2"), Some(&1));
+        assert_eq!(chain.action_plans.get("raise_nice:-3"), Some(&1));
         assert_eq!(
             chain.background_isolation.get("blocked_by_safety"),
             Some(&2)
@@ -265,6 +274,12 @@ mod tests {
             explanation
                 .rationale
                 .contains(&"tool_call_subchain:retrieval_io".to_string())
+                && explanation
+                    .rationale
+                    .contains(&"duration_ratio:3/4".to_string())
+                && explanation
+                    .rationale
+                    .contains(&"action_plan:raise_nice:-3,warmup_executor".to_string())
         }));
     }
 

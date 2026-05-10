@@ -148,6 +148,7 @@ def parse_lifecycle(text: str, tool_call_id: str) -> dict[str, Any]:
     pattern = re.compile(
         rf"^\s+{re.escape(tool_call_id)}:\s+duration_ms=([0-9.]+)\s+"
         r"stages=([^ ]+)\s+boosted_actions=([0-9]+)\s+"
+        r"(?:rollback_actions=([0-9]+)\s+)?"
         r"background_events=([0-9]+)\s+isolation_events=([0-9]+)\s+pids=(.*)$",
         re.MULTILINE,
     )
@@ -158,9 +159,10 @@ def parse_lifecycle(text: str, tool_call_id: str) -> dict[str, Any]:
         "daemon_lifecycle_ms": as_float(match.group(1)),
         "stages": match.group(2),
         "boosted_actions": int(match.group(3)),
-        "background_events": int(match.group(4)),
-        "isolation_events": int(match.group(5)),
-        "pids": match.group(6),
+        "rollback_actions": int(match.group(4) or 0),
+        "background_events": int(match.group(5)),
+        "isolation_events": int(match.group(6)),
+        "pids": match.group(7),
     }
 
 

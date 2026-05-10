@@ -119,6 +119,9 @@ impl ExplainTuneEngine {
                 "tool_call_id",
                 "tool_call_stage",
                 "tool_call_subchain",
+                "duration_ratio",
+                "duration_ms",
+                "action_plan",
                 "isolation_mode",
                 "background_isolation",
             ] {
@@ -539,6 +542,15 @@ impl ExplainTuneEngine {
             if let Some(subchain) = trace.fields.get("tool_call_subchain") {
                 entry.evidence.push(format!("subchain:{subchain}"));
             }
+            if let Some(duration_ratio) = trace.fields.get("duration_ratio") {
+                *entry
+                    .duration_ratios
+                    .entry(duration_ratio.clone())
+                    .or_default() += 1;
+            }
+            if let Some(action_plan) = trace.fields.get("action_plan") {
+                *entry.action_plans.entry(action_plan.clone()).or_default() += 1;
+            }
             if let Some(mode) = trace.fields.get("isolation_mode") {
                 *entry.isolation_modes.entry(mode.clone()).or_default() += 1;
             }
@@ -657,6 +669,8 @@ struct ToolCallChainAccumulator {
     stages: BTreeMap<String, usize>,
     trigger_count: usize,
     rollback_count: usize,
+    duration_ratios: BTreeMap<String, usize>,
+    action_plans: BTreeMap<String, usize>,
     isolation_modes: BTreeMap<String, usize>,
     background_isolation: BTreeMap<String, usize>,
     target_pids: BTreeSet<u32>,
@@ -670,6 +684,8 @@ impl ToolCallChainAccumulator {
             stages: self.stages,
             trigger_count: self.trigger_count,
             rollback_count: self.rollback_count,
+            duration_ratios: self.duration_ratios,
+            action_plans: self.action_plans,
             isolation_modes: self.isolation_modes,
             background_isolation: self.background_isolation,
             target_pids: self.target_pids.into_iter().collect(),

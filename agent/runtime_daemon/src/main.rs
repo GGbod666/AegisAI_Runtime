@@ -379,11 +379,12 @@ fn append_summary_to_log(
         for lifecycle in &summary.tool_call_lifecycles {
             writeln!(
                 file,
-                "  - `{}`: duration_ms={}, stages={}, boosted_actions={}, background_events={}, isolation_events={}, pids={}",
+                "  - `{}`: duration_ms={}, stages={}, boosted_actions={}, rollback_actions={}, background_events={}, isolation_events={}, pids={}",
                 lifecycle.lifecycle_id,
                 lifecycle.duration_ms(),
                 format_stage_counts(&lifecycle.stages),
                 lifecycle.boosted_actions,
+                lifecycle.rollback_actions,
                 lifecycle.background_events,
                 lifecycle.isolation_events,
                 format_pids(&lifecycle.target_pids)
@@ -448,11 +449,12 @@ fn print_summary(summary: &aegisai_runtime_daemon::RuntimeRunSummary) {
         println!("tool_call_lifecycles:");
         for lifecycle in &summary.tool_call_lifecycles {
             println!(
-                "  {}: duration_ms={} stages={} boosted_actions={} background_events={} isolation_events={} pids={}",
+                "  {}: duration_ms={} stages={} boosted_actions={} rollback_actions={} background_events={} isolation_events={} pids={}",
                 lifecycle.lifecycle_id,
                 lifecycle.duration_ms(),
                 format_stage_counts(&lifecycle.stages),
                 lifecycle.boosted_actions,
+                lifecycle.rollback_actions,
                 lifecycle.background_events,
                 lifecycle.isolation_events,
                 format_pids(&lifecycle.target_pids)
@@ -986,6 +988,7 @@ mod tests {
                     ("rerank".to_string(), 1),
                 ]),
                 boosted_actions: 7,
+                rollback_actions: 7,
                 background_events: 1,
                 isolation_events: 3,
                 target_pids: BTreeSet::from([6_100, 6_101, 6_102]),
@@ -1000,6 +1003,7 @@ mod tests {
         assert!(contents.contains("- Tool call lifecycles:"));
         assert!(contents.contains("tc-001"));
         assert!(contents.contains("stages=executor:1,rerank:1,retrieval:2"));
+        assert!(contents.contains("rollback_actions=7"));
         assert!(contents.contains("isolation_events=3"));
     }
 

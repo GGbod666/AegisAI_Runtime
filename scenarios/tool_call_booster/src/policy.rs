@@ -30,6 +30,7 @@ pub(crate) fn evaluate(
     if duration_ms == 0 {
         return None;
     }
+    let (duration_ratio_numerator, duration_ratio_denominator) = stage.duration_ratio();
 
     audit_fields.insert(
         "scenario".to_string(),
@@ -59,6 +60,12 @@ pub(crate) fn evaluate(
         "background_isolation".to_string(),
         background_isolation_label(safety).to_string(),
     );
+    audit_fields.insert(
+        "duration_ratio".to_string(),
+        format!("{duration_ratio_numerator}/{duration_ratio_denominator}"),
+    );
+    audit_fields.insert("duration_ms".to_string(), duration_ms.to_string());
+    audit_fields.insert("action_plan".to_string(), action_plan_label(&actions));
     if let Some(tool_call_id) = tool_call_id(&context.audit_fields, &context.profile) {
         audit_fields.insert("tool_call_id".to_string(), tool_call_id);
     }
@@ -351,6 +358,22 @@ fn clamp_priority_delta(delta: i32, max_priority_delta: i32) -> i32 {
     }
 }
 
+fn action_plan_label(actions: &[Action]) -> String {
+    actions
+        .iter()
+        .map(|action| match action {
+            Action::RaiseNice { delta } => format!("raise_nice:{delta}"),
+            Action::SetAffinity {
+                strategy,
+                max_cpu_ratio,
+            } => format!("set_affinity:{}:{max_cpu_ratio}", strategy.as_str()),
+            Action::UseCpuset { enabled } => format!("use_cpuset:{enabled}"),
+            Action::WarmupExecutor => "warmup_executor".to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -402,6 +425,18 @@ mod tests {
             executor.audit_fields.get("background_isolation"),
             Some(&"blocked_by_safety".to_string())
         );
+        assert_eq!(
+            executor.audit_fields.get("duration_ratio"),
+            Some(&"1/1".to_string())
+        );
+        assert_eq!(
+            executor.audit_fields.get("duration_ms"),
+            Some(&"800".to_string())
+        );
+        assert!(executor
+            .audit_fields
+            .get("action_plan")
+            .is_some_and(|plan| plan.contains("warmup_executor")));
 
         let retrieval = evaluate(
             &policy,
@@ -430,6 +465,10 @@ mod tests {
             retrieval.audit_fields.get("isolation_scope"),
             Some(&"retrieval_worker".to_string())
         );
+        assert_eq!(
+            retrieval.audit_fields.get("duration_ratio"),
+            Some(&"3/4".to_string())
+        );
         assert!(retrieval.actions.contains(&Action::WarmupExecutor));
 
         let rerank = evaluate(
@@ -455,6 +494,14 @@ mod tests {
             rerank.audit_fields.get("isolation_mode"),
             Some(&"rerank_affinity_only".to_string())
         );
+        assert_eq!(
+            rerank.audit_fields.get("duration_ratio"),
+            Some(&"1/2".to_string())
+        );
+        assert!(rerank
+            .audit_fields
+            .get("action_plan")
+            .is_some_and(|plan| !plan.contains("warmup_executor")));
         assert!(!rerank.actions.contains(&Action::WarmupExecutor));
         assert_eq!(
             rerank.audit_fields.get("warmup_executor_skipped"),

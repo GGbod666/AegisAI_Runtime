@@ -28,6 +28,8 @@ pub struct ToolCallChainReport {
     pub stages: BTreeMap<String, usize>,
     pub trigger_count: usize,
     pub rollback_count: usize,
+    pub duration_ratios: BTreeMap<String, usize>,
+    pub action_plans: BTreeMap<String, usize>,
     pub isolation_modes: BTreeMap<String, usize>,
     pub background_isolation: BTreeMap<String, usize>,
     pub target_pids: Vec<u32>,
