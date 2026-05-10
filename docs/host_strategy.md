@@ -1,5 +1,9 @@
 ﻿# Host Strategy
 
+Boundary: this file records the host split rationale. Use
+`linux_vm_checklist.md` for executable Linux validation steps, `next_stage.md`
+for current stage gates, and `task_list.md` for active tasks.
+
 ## Development Host
 
 Primary development happens on Windows.

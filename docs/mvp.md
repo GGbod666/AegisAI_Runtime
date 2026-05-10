@@ -1,13 +1,13 @@
 ﻿# MVP 说明
 
-_Updated: 2026-05-03_
+_Updated: 2026-05-10_
 
 ## 当前审查结论
 
 当前仓库已经具备最小可运行 AI-aware 控制闭环，并通过 workspace 验证。
-但 MVP 收益尚未被证明：最新 `docs/mvp_benefit_report.md` 记录了
-`live_guarded` 趋势信号，同时也记录了 live actuator change 为无效或 no-op，
-因此报告正确给出 `FAIL`。
+但 MVP 收益尚未被证明：最新 `docs/mvp_benefit_report.md` 记录了 effective
+live host-level `taskset` action，但稳定收益趋势没有达到门槛，因此报告正确给出
+`FAIL`。
 
 后续 MVP 判断必须继续保持这条硬规则：
 
@@ -15,7 +15,7 @@ _Updated: 2026-05-03_
 - 只有 effective live host-level actuator change 加重复 A/B 收益趋势，才能证明
   MVP 性能收益。
 
-当前状态和待办索引见 `docs/current_status.md`。
+当前状态见 `docs/current_status.md`；细化待办和依赖见 `docs/task_list.md`。
 
 ## 1. MVP 重新定义
 
@@ -123,10 +123,12 @@ MVP 要证明两件事：
 
 剩余收益 DoD：
 
-- `AegisAI_Runtime-s6f` 关闭：有效 live Inference Tail Guard actuator benefit 被证明
-- `AegisAI_Runtime-dym` / `AegisAI_Runtime-jtt` 关闭：真实 eBPF off-CPU /
-  I/O latency 信号通过 privileged helper 进入 rootless runtime loop 并完成受控验证
-- `AegisAI_Runtime-bx1` 关闭：Tool Call Booster 有 repeated A/B benefit proof
+- `AegisAI_Runtime-jtt` 关闭：真实 eBPF off-CPU / I/O latency 信号通过
+  privileged helper 进入 rootless runtime loop 并完成受控验证
+- `AegisAI_Runtime-v2y` 关闭：live CPU affinity planning 已模块化并有目标选择测试
+- `AegisAI_Runtime-lql` 关闭：有效 live Inference Tail Guard actuator benefit 被证明，
+  或报告明确给出可复现的失败原因
+- `AegisAI_Runtime-94s` 关闭：Tool Call Booster 有 live guarded benefit proof
 
 ## 8. 建议先锁的技术选择
 

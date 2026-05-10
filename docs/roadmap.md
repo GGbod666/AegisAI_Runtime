@@ -1,6 +1,6 @@
 ﻿# Roadmap
 
-_Updated: 2026-05-03_
+_Updated: 2026-05-10_
 
 ## Current Position
 
@@ -14,6 +14,7 @@ work. The active phase is evidence hardening:
 - harden tests around the actuator/runtime hot paths
 
 See `docs/current_status.md` for the current state and beads issue IDs.
+See `docs/task_list.md` for detailed active tasks.
 
 ## Phase 0：Framework Reset
 
@@ -69,8 +70,8 @@ See `docs/current_status.md` for the current state and beads issue IDs.
 当前状态：
 
 - 控制闭环、dry-run 审计和 Phase 4 报告路径已经具备。
-- 最新 `docs/mvp_benefit_report.md` 正确给出 `FAIL`：有趋势信号，但没有
-  effective live actuator change，因此不能声明 MVP 收益成立。
+- 最新 `docs/mvp_benefit_report.md` 正确给出 `FAIL`：已经记录 effective live
+  `taskset` action，但稳定收益趋势没有达到门槛，因此不能声明 MVP 收益成立。
 
 ## Phase 3：Tool Calling Booster
 
@@ -138,11 +139,13 @@ See `docs/current_status.md` for the current state and beads issue IDs.
 
 ## 推荐推进顺序
 
-1. 先完成 `AegisAI_Runtime-s6f`：有效 live actuator 的 Inference Tail Guard
-   收益证明。
-2. 并行或随后完成 `AegisAI_Runtime-dym` / `AegisAI_Runtime-jtt`：以
-   rootless main + privileged helper 路线补齐并验证 off-CPU / I/O latency 的
-   真实 eBPF 信号。
-3. 再推进 `AegisAI_Runtime-bx1`：Tool Call Booster repeated A/B benefit proof。
-4. 穿插完成 `AegisAI_Runtime-azv`：actuator 和 runtime 热路径测试加固。
-5. 最后再考虑 AI-aware isolation、explain/tune 自动化和高级扩展。
+1. 完成 `AegisAI_Runtime-jtt`：用 controlled workload 验证 helper-backed
+   off-CPU / I/O latency 真实信号。
+2. 完成 `AegisAI_Runtime-v2y`：把 live CPU affinity planning 从 actuator 大文件中
+   模块化，降低后续 live 调参风险。
+3. 完成 `AegisAI_Runtime-lql`：继续调优 Inference Tail Guard live affinity
+   benefit，保持严格 Phase 4 gate。
+4. 完成 `AegisAI_Runtime-94s`：Tool Call Booster live guarded benefit proof。
+5. 穿插完成热路径测试加固：actuator rollback、Linux source/procfs 边界和 benefit
+   report 解释逻辑。
+6. 最后再考虑 AI-aware isolation、explain/tune 自动化和高级扩展。

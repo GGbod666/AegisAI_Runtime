@@ -1,6 +1,6 @@
 # Next Stage Plan
 
-_Updated: 2026-05-03_
+_Updated: 2026-05-10_
 
 ## Current Conclusion
 
@@ -20,7 +20,8 @@ The correct next phase is therefore not additional scaffolding. It is evidence
 hardening: prove that the guarded Linux actuator can create effective host-level
 changes and that those changes produce repeatable latency benefit.
 
-For a compact status and TODO index, see `docs/current_status.md`.
+For compact status, see `docs/current_status.md`. For detailed tasks and
+dependencies, see `docs/task_list.md`.
 
 ## Next Major Stage: Evidence-Hardened MVP
 
@@ -29,56 +30,72 @@ Primary objective:
 Prove or falsify the MVP benefit claim under controlled Linux conditions.
 
 The current `docs/mvp_benefit_report.md` intentionally reports `FAIL`: live
-guarded trends were visible, but the latest run recorded no effective host-level
-actuator changes. That is the right gate. The project should not claim a runtime
-performance win until the live actuator is effective and the repeated A/B report
-passes the strict rule.
+guarded mode recorded effective host-level `taskset` actions, but the repeated
+A/B result did not meet the stable improvement threshold. That is the right
+gate. The project should not claim a runtime performance win until both live
+action effectiveness and repeated benefit are proven.
 
 ## Required Work
 
-### 1. Effective Live Inference Tail Guard
+### 1. Real eBPF Signal Validation
 
-Beads issue: `AegisAI_Runtime-s6f`
-
-Goal:
-
-- run `live_guarded` in a controlled Linux window where `renice` or affinity can
-  actually change the target process state
-- keep PID allowlist and explicit confirmation mandatory
-- regenerate the Phase 4 report with the strict effective-action gate
-
-Exit checks:
-
-- at least one live guarded run records effective host-level actuator changes
-- Phase 4 report compares baseline, noop observation, dry-run, and live guarded
-  modes across repeated rounds
-- report verdict is `PASS` only if the strict trend and effective-action rules
-  are both satisfied
-
-### 2. Real eBPF Signal Coverage
-
-Beads issue: `AegisAI_Runtime-dym`, then `AegisAI_Runtime-jtt`
+Beads issue: `AegisAI_Runtime-jtt`
 
 Goal:
 
-- keep the existing source abstraction
-- keep the main runtime daemon rootless
-- wire real eBPF-backed `offcpu_time` and `io_latency` through the narrow
-  privileged `aegisai-ebpf-helper`
-- preserve procfs fallback for `run_queue_delay`, `cpu_migration`, and
-  `major_page_fault` while the probe path matures
+- validate helper-backed `offcpu_time` and `io_latency` observations with
+  controlled workloads
+- keep the main daemon rootless and the helper as the narrow privileged boundary
+- record helper readiness, tracepoint compatibility, event counts, and fallback
+  behavior
 
 Exit checks:
 
 - Linux source emits normalized off-CPU and I/O latency `SourceEvent` records
   from controlled workloads through the helper
-- verification summaries identify attached probes, event counts, and shutdown
-  state
-- targeted source tests plus workspace verification pass
+- failures distinguish helper absence, permission failure, tracepoint mismatch,
+  and no workload events
 
-### 3. Tool Call Booster Benefit Proof
+### 2. Live CPU Affinity Reliability
 
-Beads issue: `AegisAI_Runtime-bx1`
+Beads issue: `AegisAI_Runtime-v2y`
+
+Goal:
+
+- extract CPU topology discovery, online CPU filtering, allowed CPU
+  intersection, and target selection out of the actuator backend hot file
+- keep rollback semantics explicit
+- preserve the strict Phase 4 benefit gate
+
+Exit checks:
+
+- dedicated planner tests cover configured vs online CPU mismatch and effective
+  `taskset` targets
+- Inference Tail Guard live affinity uses the planner without weakening report
+  rules
+
+### 3. Effective Live Inference Tail Guard
+
+Beads issue: `AegisAI_Runtime-lql`
+
+Goal:
+
+- tune strategy parameters, CPU selection, stress shape, sample sizing, and
+  runtime behavior
+- keep PID allowlist and explicit confirmation mandatory
+- regenerate the Phase 4 report from real artifacts
+
+Exit checks:
+
+- live guarded mode records effective host-level actuator changes
+- Phase 4 report compares baseline, noop observation, dry-run, and live guarded
+  modes across repeated rounds
+- report verdict is `PASS` only if the strict trend and effective-action rules
+  are both satisfied
+
+### 4. Tool Call Booster Benefit Proof
+
+Beads issue: `AegisAI_Runtime-94s`
 
 Goal:
 
@@ -95,9 +112,7 @@ Exit checks:
   explicit PASS/FAIL verdict
 - dry-run and noop are treated as closed-loop evidence, not host benefit proof
 
-### 4. Hot-Path Test Hardening
-
-Beads issue: `AegisAI_Runtime-azv`
+### 5. Hot-Path Test Hardening
 
 Goal:
 

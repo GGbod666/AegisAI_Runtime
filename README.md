@@ -772,7 +772,9 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 
 ## 阅读路线
 
-- `docs/current_status.md`：当前状态和 TODO 索引。
+- `docs/README.md`：docs 目录职责边界和阅读顺序。
+- `docs/current_status.md`：当前状态快照。
+- `docs/task_list.md`：精细待办清单、依赖和验收条件。
 - `docs/mvp.md`：MVP 定义和严格收益规则。
 - `docs/mvp_benefit_report.md`：最新收益证据和当前 FAIL 结论。
 - `docs/next_stage.md`：证据强化阶段计划。

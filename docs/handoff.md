@@ -1,6 +1,6 @@
 # Handoff
 
-_Updated: 2026-05-03_
+_Updated: 2026-05-10_
 
 ## Current State
 
@@ -22,8 +22,8 @@ Current runtime capabilities:
 - `inference_tail_guard` and `tool_call_booster` both have working trigger
   paths; only Inference Tail Guard currently has a Phase 4 benefit report.
 
-Use `docs/current_status.md` as the compact source for current status, active
-TODO issue IDs, and next-stage direction.
+Use `docs/current_status.md` for compact status, `docs/task_list.md` for active
+tasks, and `docs/next_stage.md` for stage direction.
 
 ## Latest Audit Verification
 
@@ -73,8 +73,8 @@ Bounded evidence:
   is still pending.
 - `linux-command-dry-run` proves command planning and rollback audit shape
   without changing host state.
-- The latest Phase 4 report shows live guarded trends but deliberately reports
-  `FAIL` because no effective live host-level actuator changes were recorded.
+- The latest Phase 4 report deliberately reports `FAIL`: effective live
+  host-level `taskset` actions were recorded, but stable benefit was not proven.
 
 Not proven:
 
@@ -84,14 +84,10 @@ Not proven:
 
 ## Active Follow-Up Issues
 
-- `AegisAI_Runtime-s6f` — Prove effective live Inference Tail Guard actuator
-  benefit.
-- `AegisAI_Runtime-dym` — Split eBPF off-CPU/I/O ingestion into privileged helper.
 - `AegisAI_Runtime-jtt` — Validate real off-CPU and I/O eBPF signals through the helper.
-- `AegisAI_Runtime-bx1` — Turn Tool Call Booster harness into repeated A/B
-  benefit proof.
-- `AegisAI_Runtime-azv` — Harden audit coverage for actuator and runtime hot
-  paths.
+- `AegisAI_Runtime-lql` — Tune live Inference Tail Guard affinity benefit.
+- `AegisAI_Runtime-94s` — Run controlled Tool Call Booster live guarded benefit proof.
+- `AegisAI_Runtime-v2y` — Modularize live CPU affinity planning.
 
 Use:
 
@@ -153,9 +149,9 @@ clean.
 
 If a future session needs a direct restart prompt:
 
-> Continue from the 2026-05-03 evidence-hardening state in
+> Continue from the 2026-05-10 evidence-hardening state in
 > `/home/gg/AegisAI_Runtime`. Read `docs/current_status.md`,
-> `docs/handoff.md`, `docs/next_stage.md`, and the latest entries in
-> `docs/verification_log.md`. Preserve the strict Phase 4 benefit gate: no
-> effective live actuator action means no MVP benefit claim. Use beads for task
-> tracking and start from the active issues listed in `docs/current_status.md`.
+> `docs/task_list.md`, `docs/next_stage.md`, and the latest entries in
+> `docs/verification_log.md`. Preserve the strict Phase 4 benefit gate:
+> effective live action and stable repeated benefit are both required. Use beads
+> for task tracking and start from the active issues listed in `bd ready`.

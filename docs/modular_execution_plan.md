@@ -1,5 +1,9 @@
 # Modular Execution Plan
 
+Boundary: this is a historical staged implementation plan from the runnable mock
+control-loop era. Current execution order lives in `docs/next_stage.md`; active
+task detail lives in `docs/task_list.md`.
+
 This plan defines the next implementation stages after the runnable mock
 control loop. The goal is to reach a Linux VM demo for:
 
