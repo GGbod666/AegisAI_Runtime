@@ -17508,3 +17508,335 @@ round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrie
 3,live_guarded,linux-command,PASS,tc-real-001-r3-live_guarded,2696.627,2696.627,2658.762,2664.072,2653.518,1265.000,64,18,3,18,4,"background:12,executor:19,rerank:15,retrieval:18",0,12,6,"executor:2,rerank:2,retrieval:2",0,2,2,6,"nice,affinity",round3.live_guarded,ok
 ```
 - Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_stage_effectiveness_gate_20260511T132616Z/tool_call_booster_benefit_report.md`
+
+### 2026-05-11T13:43:28Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_fixed_work_probe_20260511T134324Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_probe_20260511T134324Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `3`
+- Modes: `baseline,live_guarded`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=FAIL
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,scheduler_command_count_total,effective_scheduler_action_count_total,warmup_side_effect_count_total,warmup_deferred_count_total,warmup_rollback_noop_count_total,guarded_noop_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,3,3,266.011,261.313,266.011,0,0,,,0,0,0,0,0,0,0,0,0,BASELINE,BASELINE,baseline reference
+live_guarded,linux-command,FAIL,3,0,,,266.011,0,0,,,25,9,22,27,9,0,6,6,18,FAIL,FAIL,mode contract failed
+```
+- Stage effectiveness:
+```text
+mode,stage,rounds,contract_pass_rounds,stage_latency_median_ms,stage_latency_avg_ms,baseline_stage_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,effective_scheduler_action_count_total,stage_effectiveness
+baseline,executor,3,3,266.011,261.313,266.011,0,0,,,0,0,BASELINE
+baseline,retrieval,3,3,204.193,204.303,204.193,0,0,,,0,0,BASELINE
+baseline,rerank,3,3,208.428,215.496,208.428,0,0,,,0,0,BASELINE
+live_guarded,executor,3,0,,,266.011,0,0,,,0,3,LATENCY_NOT_IMPROVED
+live_guarded,retrieval,3,0,,,204.193,0,0,,,34,3,LATENCY_NOT_IMPROVED
+live_guarded,rerank,3,0,,,208.428,0,0,,,46,3,LATENCY_NOT_IMPROVED
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,scheduler_command_count,effective_scheduler_action_count,stage_effective_scheduler_actions,warmup_side_effect_count,warmup_deferred_count,warmup_rollback_noop_count,guarded_noop_count,live_guard_scope,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,251.193,251.193,204.193,208.428,261.932,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round1.baseline,ok
+1,live_guarded,linux-command,FAIL,tc-real-001-r1-live_guarded,369.274,369.274,337.895,237.243,359.211,820.000,60,7,3,7,4,"background:30,rerank:19,retrieval:11",6,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round1.live_guarded,missing_executor_stage;action_audit_errors
+2,baseline,none,PASS,tc-real-001-r2-baseline,266.011,266.011,208.943,203.334,211.474,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round2.baseline,ok
+2,live_guarded,linux-command,FAIL,tc-real-001-r2-live_guarded,450.243,450.243,360.399,385.588,394.839,722.000,60,9,3,9,4,"background:30,rerank:16,retrieval:14",6,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round2.live_guarded,missing_executor_stage;action_audit_errors
+3,baseline,none,PASS,tc-real-001-r3-baseline,266.736,266.736,199.774,234.726,212.129,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round3.baseline,ok
+3,live_guarded,linux-command,FAIL,tc-real-001-r3-live_guarded,395.965,395.965,267.056,362.129,349.019,741.000,44,9,3,9,4,"background:24,rerank:11,retrieval:9",10,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round3.live_guarded,missing_executor_stage;action_audit_errors
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_probe_20260511T134324Z/tool_call_booster_benefit_report.md`
+
+### 2026-05-11T13:43:54Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_fixed_work_probe2_20260511T134349Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_probe2_20260511T134349Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `3`
+- Modes: `baseline,live_guarded`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=FAIL
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,scheduler_command_count_total,effective_scheduler_action_count_total,warmup_side_effect_count_total,warmup_deferred_count_total,warmup_rollback_noop_count_total,guarded_noop_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,3,3,812.508,808.251,812.508,0,0,,,0,0,0,0,0,0,0,0,0,BASELINE,BASELINE,baseline reference
+live_guarded,linux-command,FAIL,3,0,,,812.508,0,0,,,23,6,0,15,5,0,4,4,10,FAIL,FAIL,mode contract failed
+```
+- Stage effectiveness:
+```text
+mode,stage,rounds,contract_pass_rounds,stage_latency_median_ms,stage_latency_avg_ms,baseline_stage_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,effective_scheduler_action_count_total,stage_effectiveness
+baseline,executor,3,3,812.508,808.251,812.508,0,0,,,0,0,BASELINE
+baseline,retrieval,3,3,742.671,751.100,742.671,0,0,,,0,0,BASELINE
+baseline,rerank,3,3,768.261,767.317,768.261,0,0,,,0,0,BASELINE
+live_guarded,executor,3,0,,,812.508,0,0,,,0,3,LATENCY_NOT_IMPROVED
+live_guarded,retrieval,3,0,,,742.671,0,0,,,14,1,LATENCY_NOT_IMPROVED
+live_guarded,rerank,3,0,,,768.261,0,0,,,6,1,LATENCY_NOT_IMPROVED
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,scheduler_command_count,effective_scheduler_action_count,stage_effective_scheduler_actions,warmup_side_effect_count,warmup_deferred_count,warmup_rollback_noop_count,guarded_noop_count,live_guard_scope,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,826.256,826.256,769.030,768.261,784.371,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round1.baseline,ok
+1,live_guarded,linux-command,FAIL,tc-real-001-r1-live_guarded,842.024,842.024,801.885,782.056,788.851,963.000,9,4,1,4,4,background:9,0,3,1,executor:1,0,1,1,2,"nice,affinity",round1.live_guarded,missing_executor_stage;missing_retrieval_stage;missing_rerank_stage
+2,baseline,none,PASS,tc-real-001-r2-baseline,812.508,812.508,741.600,778.990,731.880,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round2.baseline,ok
+2,live_guarded,linux-command,FAIL,tc-real-001-r2-live_guarded,1114.126,1114.126,1070.796,768.091,730.576,1198.000,33,15,4,15,4,"background:13,rerank:6,retrieval:14",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round2.live_guarded,missing_executor_stage
+3,baseline,none,PASS,tc-real-001-r3-baseline,785.988,785.988,742.671,754.700,767.232,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round3.baseline,ok
+3,live_guarded,linux-command,FAIL,tc-real-001-r3-live_guarded,856.379,856.379,819.403,761.194,768.566,984.000,10,4,1,4,4,background:10,0,3,1,executor:1,0,1,1,2,"nice,affinity",round3.live_guarded,missing_executor_stage;missing_retrieval_stage;missing_rerank_stage
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_probe2_20260511T134349Z/tool_call_booster_benefit_report.md`
+
+### 2026-05-11T13:46:12Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_fixed_work_pass_attempt_20260511T134558Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_attempt_20260511T134558Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `3`
+- Modes: `baseline,live_guarded`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=FAIL
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,scheduler_command_count_total,effective_scheduler_action_count_total,warmup_side_effect_count_total,warmup_deferred_count_total,warmup_rollback_noop_count_total,guarded_noop_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,3,3,2648.483,2594.091,2648.483,0,0,,,0,0,0,0,0,0,0,0,0,BASELINE,BASELINE,baseline reference
+live_guarded,linux-command,FAIL,3,0,,,2648.483,0,0,,,58,8,0,24,8,0,6,6,16,FAIL,FAIL,mode contract failed
+```
+- Stage effectiveness:
+```text
+mode,stage,rounds,contract_pass_rounds,stage_latency_median_ms,stage_latency_avg_ms,baseline_stage_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,effective_scheduler_action_count_total,stage_effectiveness
+baseline,executor,3,3,2648.483,2594.091,2648.483,0,0,,,0,0,BASELINE
+baseline,retrieval,3,3,1560.480,1865.942,1560.480,0,0,,,0,0,BASELINE
+baseline,rerank,3,3,2374.152,2412.261,2374.152,0,0,,,0,0,BASELINE
+live_guarded,executor,3,0,,,2648.483,0,0,,,0,3,LATENCY_NOT_IMPROVED
+live_guarded,retrieval,3,0,,,1560.480,0,0,,,68,3,LATENCY_NOT_IMPROVED
+live_guarded,rerank,3,0,,,2374.152,0,0,,,60,2,LATENCY_NOT_IMPROVED
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,scheduler_command_count,effective_scheduler_action_count,stage_effective_scheduler_actions,warmup_side_effect_count,warmup_deferred_count,warmup_rollback_noop_count,guarded_noop_count,live_guard_scope,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,2675.922,2675.922,1560.480,2583.407,2584.530,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round1.baseline,ok
+1,live_guarded,linux-command,FAIL,tc-real-001-r1-live_guarded,1593.624,1593.624,1516.690,1563.711,1524.232,1393.000,34,12,2,12,4,"background:18,retrieval:16",0,6,2,"executor:1,retrieval:1",0,2,2,4,"nice,affinity",round1.live_guarded,missing_executor_stage;missing_rerank_stage
+2,baseline,none,PASS,tc-real-001-r2-baseline,2648.483,2648.483,2592.176,2279.224,2594.511,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round2.baseline,ok
+2,live_guarded,linux-command,FAIL,tc-real-001-r2-live_guarded,1888.957,1888.957,1860.063,1856.063,1507.358,1559.000,160,23,3,23,4,"background:81,rerank:46,retrieval:33",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round2.live_guarded,missing_executor_stage
+3,baseline,none,PASS,tc-real-001-r3-baseline,2457.869,2457.869,1445.171,2374.152,2746.605,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round3.baseline,ok
+3,live_guarded,linux-command,FAIL,tc-real-001-r3-live_guarded,1887.111,1887.111,1857.529,1817.184,1654.314,1456.000,53,23,3,23,4,"background:20,rerank:14,retrieval:19",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round3.live_guarded,missing_executor_stage
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_attempt_20260511T134558Z/tool_call_booster_benefit_report.md`
+
+### 2026-05-11T13:47:40Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_fixed_work_pass_attempt2_20260511T134725Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_attempt2_20260511T134725Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `3`
+- Modes: `baseline,live_guarded`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=FAIL
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,scheduler_command_count_total,effective_scheduler_action_count_total,warmup_side_effect_count_total,warmup_deferred_count_total,warmup_rollback_noop_count_total,guarded_noop_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,3,3,2817.673,2830.037,2817.673,0,0,,,0,0,0,0,0,0,0,0,0,BASELINE,BASELINE,baseline reference
+live_guarded,linux-command,FAIL,3,1,2319.341,2319.341,2817.673,1,1,-18.761,-18.761,33,6,0,16,6,0,5,5,10,FAIL,FAIL,mode contract failed
+```
+- Stage effectiveness:
+```text
+mode,stage,rounds,contract_pass_rounds,stage_latency_median_ms,stage_latency_avg_ms,baseline_stage_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,effective_scheduler_action_count_total,stage_effectiveness
+baseline,executor,3,3,2817.673,2830.037,2817.673,0,0,,,0,0,BASELINE
+baseline,retrieval,3,3,2788.185,2780.965,2788.185,0,0,,,0,0,BASELINE
+baseline,rerank,3,3,2733.911,2606.550,2733.911,0,0,,,0,0,BASELINE
+live_guarded,executor,3,1,2319.341,2319.341,2817.673,1,1,-18.761,-18.761,0,3,PASS
+live_guarded,retrieval,3,1,1803.358,1803.358,2788.185,1,1,-35.615,-35.615,18,2,PASS
+live_guarded,rerank,3,1,2286.419,2286.419,2733.911,1,1,-16.368,-16.368,30,1,PASS
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,scheduler_command_count,effective_scheduler_action_count,stage_effective_scheduler_actions,warmup_side_effect_count,warmup_deferred_count,warmup_rollback_noop_count,guarded_noop_count,live_guard_scope,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,2854.976,2854.976,2800.919,2733.911,2116.965,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round1.baseline,ok
+1,live_guarded,linux-command,PASS,tc-real-001-r1-live_guarded,2319.341,2319.341,1803.358,2286.419,1816.088,1795.000,92,29,3,29,4,"background:45,rerank:30,retrieval:17",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round1.live_guarded,ok
+2,baseline,none,PASS,tc-real-001-r2-baseline,2817.673,2817.673,2788.185,2335.783,2826.832,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round2.baseline,ok
+2,live_guarded,linux-command,FAIL,tc-real-001-r2-live_guarded,1860.745,1860.745,1797.570,1829.322,1789.427,500.000,8,2,2,2,4,"background:7,retrieval:1",0,4,2,"executor:1,retrieval:1",0,2,2,2,"nice,affinity",round2.live_guarded,missing_rerank_stage
+3,baseline,none,PASS,tc-real-001-r3-baseline,2817.461,2817.461,2753.792,2749.956,2131.060,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round3.baseline,ok
+3,live_guarded,linux-command,FAIL,tc-real-001-r3-live_guarded,1796.701,1796.701,1758.845,1764.725,1803.342,616.000,3,2,1,2,4,background:3,0,3,1,executor:1,0,1,1,2,"nice,affinity",round3.live_guarded,missing_retrieval_stage;missing_rerank_stage
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_attempt2_20260511T134725Z/tool_call_booster_benefit_report.md`
+
+### 2026-05-11T13:48:23Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_fixed_work_pass_attempt3_20260511T134758Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_attempt3_20260511T134758Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `5`
+- Modes: `baseline,live_guarded`
+- Executor roles observed: `40`
+- Report verdict:
+```text
+overall_contract_verdict=FAIL
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,scheduler_command_count_total,effective_scheduler_action_count_total,warmup_side_effect_count_total,warmup_deferred_count_total,warmup_rollback_noop_count_total,guarded_noop_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,5,5,2841.180,2906.945,2841.180,0,0,,,0,0,0,0,0,0,0,0,0,BASELINE,BASELINE,baseline reference
+live_guarded,linux-command,FAIL,5,0,,,2841.180,0,0,,,10,5,0,12,5,0,5,5,7,FAIL,FAIL,mode contract failed
+```
+- Stage effectiveness:
+```text
+mode,stage,rounds,contract_pass_rounds,stage_latency_median_ms,stage_latency_avg_ms,baseline_stage_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,effective_scheduler_action_count_total,stage_effectiveness
+baseline,executor,5,5,2841.180,2906.945,2841.180,0,0,,,0,0,BASELINE
+baseline,retrieval,5,5,2607.139,2532.150,2607.139,0,0,,,0,0,BASELINE
+baseline,rerank,5,5,2783.969,2660.901,2783.969,0,0,,,0,0,BASELINE
+live_guarded,executor,5,0,,,2841.180,0,0,,,0,5,LATENCY_NOT_IMPROVED
+live_guarded,retrieval,5,0,,,2607.139,0,0,,,0,0,NO_EFFECTIVE_ACTION
+live_guarded,rerank,5,0,,,2783.969,0,0,,,0,0,NO_EFFECTIVE_ACTION
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,scheduler_command_count,effective_scheduler_action_count,stage_effective_scheduler_actions,warmup_side_effect_count,warmup_deferred_count,warmup_rollback_noop_count,guarded_noop_count,live_guard_scope,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,2841.180,2841.180,2799.187,2286.126,2796.016,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round1.baseline,ok
+1,live_guarded,linux-command,FAIL,tc-real-001-r1-live_guarded,1891.165,1891.165,1860.963,1860.389,1864.397,620.000,4,2,1,2,4,background:4,0,3,1,executor:1,0,1,1,2,"nice,affinity",round1.live_guarded,missing_retrieval_stage;missing_rerank_stage
+2,baseline,none,PASS,tc-real-001-r2-baseline,2967.673,2967.673,2323.336,2926.285,2909.276,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round2.baseline,ok
+2,live_guarded,linux-command,FAIL,tc-real-001-r2-live_guarded,1921.002,1921.002,1889.973,1870.921,1889.978,500.000,3,1,1,1,4,background:3,0,2,1,executor:1,0,1,1,1,"nice,affinity",round2.live_guarded,missing_retrieval_stage;missing_rerank_stage
+3,baseline,none,PASS,tc-real-001-r3-baseline,2832.111,2832.111,2139.610,2783.969,2802.485,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round3.baseline,ok
+3,live_guarded,linux-command,FAIL,tc-real-001-r3-live_guarded,1914.172,1914.172,1862.118,1876.466,1970.873,500.000,1,1,1,1,4,background:1,0,2,1,executor:1,0,1,1,1,"nice,affinity",round3.live_guarded,missing_retrieval_stage;missing_rerank_stage
+4,baseline,none,PASS,tc-real-001-r4-baseline,2834.589,2834.589,2791.477,2291.582,2798.524,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round4.baseline,ok
+4,live_guarded,linux-command,FAIL,tc-real-001-r4-live_guarded,1894.043,1894.043,1863.533,1846.856,1830.526,500.000,3,1,1,1,4,background:3,0,2,1,executor:1,0,1,1,1,"nice,affinity",round4.live_guarded,missing_retrieval_stage;missing_rerank_stage
+5,baseline,none,PASS,tc-real-001-r5-baseline,3059.170,3059.170,2607.139,3016.542,3002.181,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round5.baseline,ok
+5,live_guarded,linux-command,FAIL,tc-real-001-r5-live_guarded,1925.257,1925.257,1891.586,1883.684,1927.324,1013.000,11,5,1,5,4,background:11,0,3,1,executor:1,0,1,1,2,"nice,affinity",round5.live_guarded,missing_retrieval_stage;missing_rerank_stage
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_attempt3_20260511T134758Z/tool_call_booster_benefit_report.md`
+
+### 2026-05-11T13:49:06Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_fixed_work_pass_attempt4_20260511T134840Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_attempt4_20260511T134840Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `3`
+- Modes: `baseline,live_guarded`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=FAIL
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,scheduler_command_count_total,effective_scheduler_action_count_total,warmup_side_effect_count_total,warmup_deferred_count_total,warmup_rollback_noop_count_total,guarded_noop_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,3,3,5217.911,5254.813,5217.911,0,0,,,0,0,0,0,0,0,0,0,0,BASELINE,BASELINE,baseline reference
+live_guarded,linux-command,FAIL,3,1,3982.079,3982.079,5217.911,1,1,-23.684,-23.684,116,7,2,18,6,0,5,5,12,FAIL,FAIL,mode contract failed
+```
+- Stage effectiveness:
+```text
+mode,stage,rounds,contract_pass_rounds,stage_latency_median_ms,stage_latency_avg_ms,baseline_stage_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,effective_scheduler_action_count_total,stage_effectiveness
+baseline,executor,3,3,5217.911,5254.813,5217.911,0,0,,,0,0,BASELINE
+baseline,retrieval,3,3,5165.632,4441.484,5165.632,0,0,,,0,0,BASELINE
+baseline,rerank,3,3,4753.392,4817.172,4753.392,0,0,,,0,0,BASELINE
+live_guarded,executor,3,1,3982.079,3982.079,5217.911,1,1,-23.684,-23.684,0,3,PASS
+live_guarded,retrieval,3,1,3951.920,3951.920,5165.632,1,1,-23.496,-23.496,155,2,PASS
+live_guarded,rerank,3,1,3719.161,3719.161,4753.392,1,1,-18.549,-18.549,94,1,PASS
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,scheduler_command_count,effective_scheduler_action_count,stage_effective_scheduler_actions,warmup_side_effect_count,warmup_deferred_count,warmup_rollback_noop_count,guarded_noop_count,live_guard_scope,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,5217.911,5217.911,5165.632,4566.119,5151.061,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round1.baseline,ok
+1,live_guarded,linux-command,PASS,tc-real-001-r1-live_guarded,3982.079,3982.079,3951.920,3719.161,2935.562,3562.000,318,69,3,69,4,"background:149,rerank:94,retrieval:75",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round1.live_guarded,ok
+2,baseline,none,PASS,tc-real-001-r2-baseline,5335.306,5335.306,5287.604,4753.392,5261.448,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round2.baseline,ok
+2,live_guarded,linux-command,FAIL,tc-real-001-r2-live_guarded,3081.804,3081.804,3050.839,2963.908,3123.626,2299.000,37,12,1,12,4,background:37,0,3,1,executor:1,0,1,1,2,"nice,affinity",round2.live_guarded,missing_retrieval_stage;missing_rerank_stage
+3,baseline,none,PASS,tc-real-001-r3-baseline,5211.222,5211.222,2871.217,5132.005,5117.862,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round3.baseline,ok
+3,live_guarded,linux-command,FAIL,tc-real-001-r3-live_guarded,3217.520,3217.520,3008.369,3188.067,3054.861,3533.000,148,35,3,35,4,"background:68,retrieval:80",2,6,2,"executor:1,retrieval:1",0,2,2,4,"nice,affinity",round3.live_guarded,missing_rerank_stage;action_audit_errors
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_attempt4_20260511T134840Z/tool_call_booster_benefit_report.md`
+
+### 2026-05-11T13:50:46Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_fixed_work_pass_final_20260511T135015Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_final_20260511T135015Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `3`
+- Modes: `baseline,live_guarded`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=FAIL
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,scheduler_command_count_total,effective_scheduler_action_count_total,warmup_side_effect_count_total,warmup_deferred_count_total,warmup_rollback_noop_count_total,guarded_noop_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,3,3,5263.861,5242.494,5263.861,0,0,,,0,0,0,0,0,0,0,0,0,BASELINE,BASELINE,baseline reference
+live_guarded,linux-command,FAIL,3,2,4829.540,4829.540,5263.861,2,1,-8.314,-8.314,193,15,2,27,9,0,6,6,18,FAIL,FAIL,mode contract failed
+```
+- Stage effectiveness:
+```text
+mode,stage,rounds,contract_pass_rounds,stage_latency_median_ms,stage_latency_avg_ms,baseline_stage_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,effective_scheduler_action_count_total,stage_effectiveness
+baseline,executor,3,3,5263.861,5242.494,5263.861,0,0,,,0,0,BASELINE
+baseline,retrieval,3,3,5211.556,5193.033,5211.556,0,0,,,0,0,BASELINE
+baseline,rerank,3,3,4557.827,4563.430,4557.827,0,0,,,0,0,BASELINE
+live_guarded,executor,3,2,4829.540,4829.540,5263.861,2,1,-8.314,-8.314,0,3,LATENCY_NOT_IMPROVED
+live_guarded,retrieval,3,2,3841.387,3841.387,5211.556,2,2,-26.407,-26.407,195,3,PASS
+live_guarded,rerank,3,2,4794.287,4794.287,4557.827,2,0,4.991,4.991,240,3,LATENCY_NOT_IMPROVED
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,scheduler_command_count,effective_scheduler_action_count,stage_effective_scheduler_actions,warmup_side_effect_count,warmup_deferred_count,warmup_rollback_noop_count,guarded_noop_count,live_guard_scope,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,5263.861,5263.861,5211.556,4576.505,5242.309,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round1.baseline,ok
+1,live_guarded,linux-command,PASS,tc-real-001-r1-live_guarded,4439.760,4439.760,3788.630,4405.180,3015.113,3497.000,387,66,4,66,4,"background:182,rerank:125,retrieval:80",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round1.live_guarded,ok
+2,baseline,none,PASS,tc-real-001-r2-baseline,5270.599,5270.599,5227.771,4557.827,5192.963,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round2.baseline,ok
+2,live_guarded,linux-command,PASS,tc-real-001-r2-live_guarded,5219.319,5219.319,3894.145,5183.393,2976.456,3534.000,215,57,7,57,4,"background:106,rerank:45,retrieval:64",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round2.live_guarded,ok
+3,baseline,none,PASS,tc-real-001-r3-baseline,5193.021,5193.021,5139.771,4555.959,5122.070,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round3.baseline,ok
+3,live_guarded,linux-command,FAIL,tc-real-001-r3-live_guarded,4301.660,4301.660,3208.301,4271.660,2973.492,3817.000,225,70,4,70,4,"background:104,rerank:70,retrieval:51",2,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round3.live_guarded,action_audit_errors
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_pass_final_20260511T135015Z/tool_call_booster_benefit_report.md`
+
+### 2026-05-11T13:52:41Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `3`
+- Modes: `baseline,live_guarded`
+- Executor roles observed: `24`
+- Report verdict:
+```text
+overall_contract_verdict=PASS
+overall_benefit_verdict=PASS
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,scheduler_command_count_total,effective_scheduler_action_count_total,warmup_side_effect_count_total,warmup_deferred_count_total,warmup_rollback_noop_count_total,guarded_noop_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,3,3,5222.951,5237.335,5222.951,0,0,,,0,0,0,0,0,0,0,0,0,BASELINE,BASELINE,baseline reference
+live_guarded,linux-command,PASS,3,3,4064.470,4111.358,5222.951,3,3,-21.495,-23.040,191,14,0,27,9,0,6,6,18,PASS,PASS,scheduler-side guarded mode met repeated latency improvement gate; executor warmup is reported separately
+```
+- Stage effectiveness:
+```text
+mode,stage,rounds,contract_pass_rounds,stage_latency_median_ms,stage_latency_avg_ms,baseline_stage_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,effective_scheduler_action_count_total,stage_effectiveness
+baseline,executor,3,3,5222.951,5237.335,5222.951,0,0,,,0,0,BASELINE
+baseline,retrieval,3,3,5154.403,4730.973,5154.403,0,0,,,0,0,BASELINE
+baseline,rerank,3,3,4574.042,4198.723,4574.042,0,0,,,0,0,BASELINE
+live_guarded,executor,3,3,4064.470,4111.358,5222.951,3,3,-21.495,-23.040,0,3,PASS
+live_guarded,retrieval,3,3,4026.162,4078.628,5154.403,3,2,-11.718,-22.346,232,3,PASS
+live_guarded,rerank,3,3,3646.402,3523.647,4574.042,3,2,-10.018,-19.887,228,3,PASS
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,scheduler_command_count,effective_scheduler_action_count,stage_effective_scheduler_actions,warmup_side_effect_count,warmup_deferred_count,warmup_rollback_noop_count,guarded_noop_count,live_guard_scope,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,5281.252,5281.252,5184.776,2885.655,5147.856,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round1.baseline,ok
+1,live_guarded,linux-command,PASS,tc-real-001-r1-live_guarded,4064.470,4064.470,4026.162,3646.402,3006.710,3447.000,237,55,5,55,4,"background:78,rerank:78,retrieval:81",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round1.live_guarded,ok
+2,baseline,none,PASS,tc-real-001-r2-baseline,5222.951,5222.951,3853.740,5136.473,5062.305,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round2.baseline,ok
+2,live_guarded,linux-command,PASS,tc-real-001-r2-live_guarded,4292.104,4292.104,4263.390,3260.121,3226.621,3359.000,264,63,6,63,4,"background:142,rerank:58,retrieval:64",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round2.live_guarded,ok
+3,baseline,none,PASS,tc-real-001-r3-baseline,5207.802,5207.802,5154.403,4574.042,5143.547,,0,0,0,0,4,none,0,0,0,none,0,0,0,0,none,round3.baseline,ok
+3,live_guarded,linux-command,PASS,tc-real-001-r3-live_guarded,3977.501,3977.501,3946.331,3664.419,2903.378,3750.000,298,73,3,73,4,"background:119,rerank:92,retrieval:87",0,9,3,"executor:1,rerank:1,retrieval:1",0,2,2,6,"nice,affinity",round3.live_guarded,ok
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z/tool_call_booster_benefit_report.md`

@@ -43,7 +43,16 @@ impl Actuator {
         } else {
             now_ms
         };
-        let backend_apply = self.backend.apply(&plan, now_ms);
+        let active_key = (plan.target_pid, plan.scenario.clone());
+        let previous_lease = self
+            .active_actions
+            .get(&active_key)
+            .and_then(|lease| lease.backend_lease.as_ref());
+        let backend_apply = if previous_lease.is_some() {
+            self.backend.refresh(&plan, previous_lease, now_ms)
+        } else {
+            self.backend.apply(&plan, now_ms)
+        };
         let mut audit_fields = plan.audit_fields.clone();
         merge_prefixed_fields(
             &mut audit_fields,
@@ -75,7 +84,7 @@ impl Actuator {
 
         if require_revert {
             self.active_actions.insert(
-                (plan.target_pid, plan.scenario),
+                active_key,
                 ActionLease {
                     target_process_name: plan.target_process_name,
                     actions: plan.actions,

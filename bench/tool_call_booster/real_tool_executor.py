@@ -22,6 +22,35 @@ def burn_cpu(duration_s: float) -> str:
     return digest.hex()
 
 
+def burn_cpu_work(units: int) -> str:
+    seed = b"aegisai-tool-call-booster"
+    digest = seed
+    for _ in range(max(0, units)):
+        digest = hashlib.sha256(digest + seed).digest()
+    return digest.hex()
+
+
+def run_cpu(cpu_ms: int, work_units: int) -> str:
+    if work_units > 0:
+        return burn_cpu_work(work_units)
+    return burn_cpu(cpu_ms / 1000)
+
+
+def apply_affinity(cpus: str) -> None:
+    if not cpus:
+        return
+    if not hasattr(os, "sched_setaffinity"):
+        return
+    selected: set[int] = set()
+    for item in cpus.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        selected.add(int(item))
+    if selected:
+        os.sched_setaffinity(0, selected)
+
+
 def write_io(path: Path, size_kb: int) -> None:
     if size_kb <= 0:
         return
@@ -38,11 +67,12 @@ def write_io(path: Path, size_kb: int) -> None:
 
 
 def run_worker(args: argparse.Namespace) -> int:
+    apply_affinity(args.affinity_cpus)
     started = time.perf_counter_ns()
     if args.start_delay_ms:
         time.sleep(args.start_delay_ms / 1000)
 
-    digest = burn_cpu(args.cpu_ms / 1000)
+    digest = run_cpu(args.cpu_ms, args.work_units)
     write_io(args.output_dir / f"{args.stage}-{os.getpid()}.dat", args.io_kb)
     ended = time.perf_counter_ns()
 
@@ -64,11 +94,15 @@ def run_worker(args: argparse.Namespace) -> int:
 
 
 def run_executor(args: argparse.Namespace) -> int:
+    apply_affinity(args.executor_affinity_cpus)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter_ns()
     children: list[subprocess.Popen[str]] = []
 
     for stage in ("retrieval-worker", "rerank-worker", "background-worker"):
+        affinity_cpus = (
+            args.background_affinity_cpus if stage == "background-worker" else ""
+        )
         cmd = [
             sys.executable,
             str(Path(__file__).resolve()),
@@ -83,12 +117,18 @@ def run_executor(args: argparse.Namespace) -> int:
             str(args.worker_io_kb),
             "--start-delay-ms",
             str(args.worker_start_delay_ms),
+            "--work-units",
+            str(args.worker_work_units),
         ]
+        if affinity_cpus:
+            cmd.extend(["--affinity-cpus", affinity_cpus])
         children.append(subprocess.Popen(cmd, text=True))
 
-    digest = burn_cpu(args.executor_cpu_ms / 1000)
-    statuses = [child.wait() for child in children]
+    digest = run_cpu(args.executor_cpu_ms, args.executor_work_units)
+    critical_statuses = [child.wait() for child in children[:2]]
     ended = time.perf_counter_ns()
+    background_statuses = [child.wait() for child in children[2:]]
+    statuses = critical_statuses + background_statuses
 
     print(
         json.dumps(
@@ -116,8 +156,12 @@ def parser() -> argparse.ArgumentParser:
     executor.add_argument("--output-dir", type=Path, required=True)
     executor.add_argument("--executor-cpu-ms", type=int, default=1800)
     executor.add_argument("--worker-cpu-ms", type=int, default=2600)
+    executor.add_argument("--executor-work-units", type=int, default=0)
+    executor.add_argument("--worker-work-units", type=int, default=0)
     executor.add_argument("--worker-io-kb", type=int, default=256)
     executor.add_argument("--worker-start-delay-ms", type=int, default=50)
+    executor.add_argument("--executor-affinity-cpus", default="")
+    executor.add_argument("--background-affinity-cpus", default="")
     executor.set_defaults(func=run_executor)
 
     for role in ("retrieval-worker", "rerank-worker", "background-worker"):
@@ -125,8 +169,10 @@ def parser() -> argparse.ArgumentParser:
         worker.add_argument("--tool-call-id", required=True)
         worker.add_argument("--output-dir", type=Path, required=True)
         worker.add_argument("--cpu-ms", type=int, default=2600)
+        worker.add_argument("--work-units", type=int, default=0)
         worker.add_argument("--io-kb", type=int, default=256)
         worker.add_argument("--start-delay-ms", type=int, default=50)
+        worker.add_argument("--affinity-cpus", default="")
         worker.set_defaults(stage=role, func=run_worker)
 
     return parser

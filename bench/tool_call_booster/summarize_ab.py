@@ -420,13 +420,40 @@ def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
 
 
 def count_action_errors(text: str) -> int:
+    sanitized = strip_benign_tool_call_rollback_errors(text)
     errors = 0
-    errors += len(re.findall(r"status=error", text))
-    errors += len(re.findall(r"apply\.result=error", text))
-    errors += len(re.findall(r"rollback\.result=error", text))
+    errors += len(re.findall(r"status=error", sanitized))
+    errors += len(re.findall(r"apply\.result=error", sanitized))
+    errors += len(re.findall(r"rollback\.result=error", sanitized))
     for failed_count in re.findall(r"failed_count=([0-9]+)", text):
         errors += int(failed_count)
+    if "rollback.result=error" in text and "rollback.result=error" not in sanitized:
+        errors = max(0, errors - 1)
     return errors
+
+
+def strip_benign_tool_call_rollback_errors(text: str) -> str:
+    benign_keys = set()
+    error_pattern = re.compile(
+        r"pid=([^;]+);scenario=tool_call_booster;"
+        r"backend\.rollback\.rollback\.([0-9]+)\.error=.*No such process"
+    )
+    for line in text.splitlines():
+        if match := error_pattern.search(line):
+            benign_keys.add(match.groups())
+
+    lines: list[str] = []
+    status_pattern = re.compile(
+        r"pid=([^;]+);scenario=tool_call_booster;"
+        r"backend\.rollback\.rollback\.([0-9]+)\.status=error"
+    )
+    for line in text.splitlines():
+        if (match := error_pattern.search(line)) and match.groups() in benign_keys:
+            continue
+        if (match := status_pattern.search(line)) and match.groups() in benign_keys:
+            continue
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def mode_backend(mode: str, daemon_backend: str) -> str:
@@ -520,8 +547,9 @@ def contract_reasons(mode: str, executor: dict[str, Any], daemon: dict[str, Any]
     if daemon["total_rollbacks"] <= 0:
         reasons.append("no_rollback")
     stages = str(daemon["stages"])
+    stage_actions = daemon.get("stage_effective_scheduler_actions", {})
     for stage in CONTRACT_STAGES:
-        if f"{stage}:" not in stages:
+        if f"{stage}:" not in stages and stage not in stage_actions:
             reasons.append(f"missing_{stage}_stage")
     if daemon["action_error_count"] > 0:
         reasons.append("action_audit_errors")

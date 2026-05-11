@@ -9,14 +9,21 @@ ARTIFACT_DIR="${AEGISAI_TCB_ARTIFACT_DIR:-${REPO_ROOT}/.cache/aegisai/tool_call_
 BASE_TOOL_CALL_ID="${AEGISAI_TCB_TOOL_CALL_ID:-tc-real-001}"
 EXECUTOR_CPU_MS="${AEGISAI_TCB_EXECUTOR_CPU_MS:-1800}"
 WORKER_CPU_MS="${AEGISAI_TCB_WORKER_CPU_MS:-2600}"
+EXECUTOR_WORK_UNITS="${AEGISAI_TCB_EXECUTOR_WORK_UNITS:-0}"
+WORKER_WORK_UNITS="${AEGISAI_TCB_WORKER_WORK_UNITS:-0}"
 WORKER_IO_KB="${AEGISAI_TCB_WORKER_IO_KB:-256}"
 WORKER_START_DELAY_MS="${AEGISAI_TCB_WORKER_START_DELAY_MS:-50}"
+EXECUTOR_AFFINITY_CPUS="${AEGISAI_TCB_EXECUTOR_AFFINITY_CPUS:-}"
+BACKGROUND_AFFINITY_CPUS="${AEGISAI_TCB_BACKGROUND_AFFINITY_CPUS:-}"
+BASELINE_EXECUTOR_AFFINITY_CPUS="${AEGISAI_TCB_BASELINE_EXECUTOR_AFFINITY_CPUS:-${EXECUTOR_AFFINITY_CPUS}}"
+BASELINE_BACKGROUND_AFFINITY_CPUS="${AEGISAI_TCB_BASELINE_BACKGROUND_AFFINITY_CPUS:-${BACKGROUND_AFFINITY_CPUS}}"
 DAEMON_START_DELAY="${AEGISAI_TCB_DAEMON_START_DELAY:-0.5}"
 DAEMON_POLL_TIMEOUT_MS="${AEGISAI_TCB_DAEMON_POLL_TIMEOUT_MS:-100}"
 DAEMON_BATCH_SIZE="${AEGISAI_TCB_DAEMON_BATCH_SIZE:-16}"
 DAEMON_MAX_EVENTS="${AEGISAI_TCB_DAEMON_MAX_EVENTS:-64}"
 DAEMON_DRAIN_MS="${AEGISAI_TCB_DAEMON_DRAIN_MS:-1200}"
 DAEMON_TICK_MS="${AEGISAI_TCB_DAEMON_TICK_MS:-100}"
+LIVE_PID_DERIVE_TIMEOUT_MS="${AEGISAI_TCB_LIVE_PID_DERIVE_TIMEOUT_MS:-1000}"
 ACTUATOR_BACKEND="${AEGISAI_TCB_ACTUATOR_BACKEND:-noop}"
 LIVE_CONFIRM="${AEGISAI_CONFIRM_LIVE_ACTUATOR:-0}"
 LIVE_PID_ALLOWLIST="${AEGISAI_LIVE_PID_ALLOWLIST:-}"
@@ -70,7 +77,13 @@ Common overrides:
   AEGISAI_TCB_MODES=baseline,noop,dry_run
   AEGISAI_TCB_EXECUTOR_CPU_MS=1800
   AEGISAI_TCB_WORKER_CPU_MS=2600
+  AEGISAI_TCB_EXECUTOR_WORK_UNITS=0
+  AEGISAI_TCB_WORKER_WORK_UNITS=0
   AEGISAI_TCB_WORKER_IO_KB=256
+  AEGISAI_TCB_EXECUTOR_AFFINITY_CPUS=
+  AEGISAI_TCB_BACKGROUND_AFFINITY_CPUS=
+  AEGISAI_TCB_BASELINE_EXECUTOR_AFFINITY_CPUS=
+  AEGISAI_TCB_BASELINE_BACKGROUND_AFFINITY_CPUS=
   AEGISAI_TCB_ACTUATOR_BACKEND=noop
   AEGISAI_TCB_MIN_BENEFIT_PCT=5
   AEGISAI_TCB_REQUIRE_BENEFIT=0
@@ -80,6 +93,7 @@ Common overrides:
   AEGISAI_TCB_WARMUP_EXECUTOR_ARGS='--cache /tmp/cache'
   AEGISAI_TCB_WARMUP_EXECUTOR_TIMEOUT_MS=250
   AEGISAI_TCB_ARTIFACT_DIR=/path/to/results
+  AEGISAI_TCB_LIVE_PID_DERIVE_TIMEOUT_MS=1000
 USAGE
 }
 
@@ -301,10 +315,17 @@ write_run_env() {
     printf 'artifact_dir=%s\n' "${ARTIFACT_DIR}"
     printf 'executor_cpu_ms=%s\n' "${EXECUTOR_CPU_MS}"
     printf 'worker_cpu_ms=%s\n' "${WORKER_CPU_MS}"
+    printf 'executor_work_units=%s\n' "${EXECUTOR_WORK_UNITS}"
+    printf 'worker_work_units=%s\n' "${WORKER_WORK_UNITS}"
     printf 'worker_io_kb=%s\n' "${WORKER_IO_KB}"
     printf 'worker_start_delay_ms=%s\n' "${WORKER_START_DELAY_MS}"
+    printf 'executor_affinity_cpus=%s\n' "${EXECUTOR_AFFINITY_CPUS}"
+    printf 'background_affinity_cpus=%s\n' "${BACKGROUND_AFFINITY_CPUS}"
+    printf 'baseline_executor_affinity_cpus=%s\n' "${BASELINE_EXECUTOR_AFFINITY_CPUS}"
+    printf 'baseline_background_affinity_cpus=%s\n' "${BASELINE_BACKGROUND_AFFINITY_CPUS}"
     printf 'daemon_poll_timeout_ms=%s\n' "${DAEMON_POLL_TIMEOUT_MS}"
     printf 'daemon_max_events=%s\n' "${DAEMON_MAX_EVENTS}"
+    printf 'live_pid_derive_timeout_ms=%s\n' "${LIVE_PID_DERIVE_TIMEOUT_MS}"
     printf 'actuator_backend=%s\n' "${ACTUATOR_BACKEND}"
     printf 'live_confirm=%s\n' "${LIVE_CONFIRM}"
     printf 'live_pid_allowlist=%s\n' "${LIVE_PID_ALLOWLIST}"
@@ -324,6 +345,8 @@ start_executor() {
   local tool_call_id="$1"
   local stdout="$2"
   local stderr="$3"
+  local executor_affinity_cpus="$4"
+  local background_affinity_cpus="$5"
 
   python3 "${REPO_ROOT}/bench/tool_call_booster/real_tool_executor.py" \
     tool-executor \
@@ -331,8 +354,12 @@ start_executor() {
     --output-dir "${ARTIFACT_DIR}/executor-work" \
     --executor-cpu-ms "${EXECUTOR_CPU_MS}" \
     --worker-cpu-ms "${WORKER_CPU_MS}" \
+    --executor-work-units "${EXECUTOR_WORK_UNITS}" \
+    --worker-work-units "${WORKER_WORK_UNITS}" \
     --worker-io-kb "${WORKER_IO_KB}" \
     --worker-start-delay-ms "${WORKER_START_DELAY_MS}" \
+    --executor-affinity-cpus "${executor_affinity_cpus}" \
+    --background-affinity-cpus "${background_affinity_cpus}" \
     >"${stdout}" 2>"${stderr}" &
   executor_pid="$!"
 }
@@ -386,8 +413,10 @@ run_daemon() {
 }
 
 derive_live_pid_allowlist() {
-  local pids=()
+  local deadline
+  local child_count=0
   local child_pid
+  local pids=()
 
   if [[ -n "${LIVE_PID_ALLOWLIST}" ]]; then
     printf '%s\n' "${LIVE_PID_ALLOWLIST}"
@@ -403,6 +432,18 @@ derive_live_pid_allowlist() {
     printf 'pgrep is required to derive live_guarded child PID allowlist\n' >&2
     return 1
   fi
+
+  deadline=$(( $(date +%s%3N) + LIVE_PID_DERIVE_TIMEOUT_MS ))
+  while kill -0 "${executor_pid}" >/dev/null 2>&1; do
+    child_count="$(pgrep -P "${executor_pid}" 2>/dev/null | wc -l | tr -d '[:space:]')"
+    if [[ "${child_count}" -ge 3 ]]; then
+      break
+    fi
+    if [[ "$(date +%s%3N)" -ge "${deadline}" ]]; then
+      break
+    fi
+    sleep 0.02
+  done
 
   while IFS= read -r child_pid; do
     if [[ -n "${child_pid}" ]]; then
@@ -453,9 +494,21 @@ run_round_mode() {
   local executor_stderr="${ARTIFACT_DIR}/executor.${prefix}.stderr"
   local daemon_stdout="${ARTIFACT_DIR}/daemon.${prefix}.stdout"
   local daemon_stderr="${ARTIFACT_DIR}/daemon.${prefix}.stderr"
+  local executor_affinity_cpus="${EXECUTOR_AFFINITY_CPUS}"
+  local background_affinity_cpus="${BACKGROUND_AFFINITY_CPUS}"
   local live_pid_allowlist=""
 
-  start_executor "${tool_call_id}" "${executor_stdout}" "${executor_stderr}"
+  if [[ "${mode}" == "baseline" ]]; then
+    executor_affinity_cpus="${BASELINE_EXECUTOR_AFFINITY_CPUS}"
+    background_affinity_cpus="${BASELINE_BACKGROUND_AFFINITY_CPUS}"
+  fi
+
+  start_executor \
+    "${tool_call_id}" \
+    "${executor_stdout}" \
+    "${executor_stderr}" \
+    "${executor_affinity_cpus}" \
+    "${background_affinity_cpus}"
   if [[ "${mode}" != "baseline" ]]; then
     sleep "${DAEMON_START_DELAY}"
     if is_live_mode "${mode}"; then
@@ -505,9 +558,12 @@ require_command cargo
 require_command python3
 validate_uint_env AEGISAI_TCB_EXECUTOR_CPU_MS "${EXECUTOR_CPU_MS}"
 validate_uint_env AEGISAI_TCB_WORKER_CPU_MS "${WORKER_CPU_MS}"
+validate_uint_env AEGISAI_TCB_EXECUTOR_WORK_UNITS "${EXECUTOR_WORK_UNITS}"
+validate_uint_env AEGISAI_TCB_WORKER_WORK_UNITS "${WORKER_WORK_UNITS}"
 validate_uint_env AEGISAI_TCB_WORKER_IO_KB "${WORKER_IO_KB}"
 validate_uint_env AEGISAI_TCB_WORKER_START_DELAY_MS "${WORKER_START_DELAY_MS}"
 validate_uint_env AEGISAI_TCB_DAEMON_MAX_EVENTS "${DAEMON_MAX_EVENTS}"
+validate_uint_env AEGISAI_TCB_LIVE_PID_DERIVE_TIMEOUT_MS "${LIVE_PID_DERIVE_TIMEOUT_MS}"
 validate_uint_env AEGISAI_TCB_WARMUP_EXECUTOR_TIMEOUT_MS "${WARMUP_EXECUTOR_TIMEOUT_MS}"
 validate_uint_env AEGISAI_TCB_ROUNDS "${ROUNDS}"
 validate_number_env AEGISAI_TCB_MIN_BENEFIT_PCT "${MIN_BENEFIT_PCT}"

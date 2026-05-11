@@ -727,6 +727,29 @@ mod tests {
     }
 
     #[test]
+    fn command_applier_refresh_reuses_original_affinity_capture() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let applier =
+            CommandLinuxSyscallApplier::with_runner(FakeCommandRunner::new(calls.clone()));
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            applier,
+        );
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_executor(executor));
+
+        actuator.apply(sample_plan(), 5_000, true);
+        actuator.apply(sample_plan(), 5_100, true);
+        let rollbacks = actuator.expire(5_900);
+        assert_eq!(rollbacks.len(), 1);
+
+        let commands = calls.borrow();
+        assert_eq!(commands.len(), 6);
+        assert_eq!(commands[1], "taskset -pc 0,2 42");
+        assert_eq!(commands[3], "taskset -pc 0,2 42");
+        assert_eq!(commands[5], "taskset -pc 0,2,4 42");
+    }
+
+    #[test]
     fn command_applier_audits_dry_run_command_details() {
         let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
             FakeLinuxProcessStateProvider,

@@ -1074,6 +1074,16 @@ pub trait LinuxSyscallExecutor {
 
     fn execute_apply(&mut self, plan: &LinuxSyscallPlan, now_ms: u64) -> BackendApplyResult;
 
+    fn execute_apply_with_lease(
+        &mut self,
+        plan: &LinuxSyscallPlan,
+        previous_lease: Option<&BackendLease>,
+        now_ms: u64,
+    ) -> BackendApplyResult {
+        let _ = previous_lease;
+        self.execute_apply(plan, now_ms)
+    }
+
     fn execute_rollback(
         &mut self,
         plan: &LinuxSyscallPlan,
@@ -1086,6 +1096,16 @@ pub trait ActuatorBackend {
     fn backend_name(&self) -> &str;
 
     fn apply(&mut self, plan: &ActionPlan, now_ms: u64) -> BackendApplyResult;
+
+    fn refresh(
+        &mut self,
+        plan: &ActionPlan,
+        previous_lease: Option<&BackendLease>,
+        now_ms: u64,
+    ) -> BackendApplyResult {
+        let _ = previous_lease;
+        self.apply(plan, now_ms)
+    }
 
     fn rollback(
         &mut self,
@@ -1264,6 +1284,33 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
     }
 
     fn execute_apply(&mut self, plan: &LinuxSyscallPlan, now_ms: u64) -> BackendApplyResult {
+        self.execute_apply_with_captured_state(
+            plan,
+            capture_linux_state(plan, self.state_provider.as_ref()),
+            now_ms,
+        )
+    }
+
+    fn execute_apply_with_lease(
+        &mut self,
+        plan: &LinuxSyscallPlan,
+        previous_lease: Option<&BackendLease>,
+        now_ms: u64,
+    ) -> BackendApplyResult {
+        let captured_state = previous_lease
+            .map(|lease| LinuxCapturedState::from_lease(Some(lease)))
+            .filter(|state| captured_state_covers_plan(state, plan))
+            .unwrap_or_else(|| capture_linux_state(plan, self.state_provider.as_ref()));
+        self.execute_apply_with_captured_state(plan, captured_state, now_ms)
+    }
+
+    fn execute_rollback(
+        &mut self,
+        plan: &LinuxSyscallPlan,
+        lease: Option<&BackendLease>,
+        now_ms: u64,
+    ) -> BackendExecution {
+        let captured_state = LinuxCapturedState::from_lease(lease);
         let mut execution = BackendExecution::default()
             .with_field("executor", self.executor_name())
             .with_field("mode", "planned_only")
@@ -1279,7 +1326,46 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
             );
         }
 
-        let captured_state = capture_linux_state(plan, self.state_provider.as_ref());
+        if let Some(lease) = lease {
+            for (key, value) in &lease.captured_state {
+                execution = execution.with_field(format!("lease.{key}"), value.clone());
+            }
+        }
+
+        execution = execution.with_field("applier", self.applier.applier_name());
+        execute_linux_rollbacks(
+            &mut *self.applier,
+            execution,
+            plan,
+            &captured_state,
+            now_ms,
+            self.live_guard.as_ref(),
+        )
+    }
+}
+
+impl PlannedOnlyLinuxSyscallExecutor {
+    fn execute_apply_with_captured_state(
+        &mut self,
+        plan: &LinuxSyscallPlan,
+        captured_state: LinuxCapturedState,
+        now_ms: u64,
+    ) -> BackendApplyResult {
+        let mut execution = BackendExecution::default()
+            .with_field("executor", self.executor_name())
+            .with_field("mode", "planned_only")
+            .with_field("phase", phase_name(plan.phase))
+            .with_field("timestamp_ms", now_ms.to_string())
+            .with_field("target_pid", plan.target_pid.to_string());
+        execution = annotate_live_guard(execution, plan.target_pid, self.live_guard.as_ref());
+
+        for (index, operation) in plan.operations.iter().enumerate() {
+            execution = execution.with_field(
+                format!("syscall.{index}"),
+                linux_syscall_descriptor(operation),
+            );
+        }
+
         execution = annotate_captured_state(
             execution,
             self.state_provider.provider_name(),
@@ -1395,45 +1481,6 @@ impl LinuxSyscallExecutor for PlannedOnlyLinuxSyscallExecutor {
             lease: Some(lease),
         }
     }
-
-    fn execute_rollback(
-        &mut self,
-        plan: &LinuxSyscallPlan,
-        lease: Option<&BackendLease>,
-        now_ms: u64,
-    ) -> BackendExecution {
-        let captured_state = LinuxCapturedState::from_lease(lease);
-        let mut execution = BackendExecution::default()
-            .with_field("executor", self.executor_name())
-            .with_field("mode", "planned_only")
-            .with_field("phase", phase_name(plan.phase))
-            .with_field("timestamp_ms", now_ms.to_string())
-            .with_field("target_pid", plan.target_pid.to_string());
-        execution = annotate_live_guard(execution, plan.target_pid, self.live_guard.as_ref());
-
-        for (index, operation) in plan.operations.iter().enumerate() {
-            execution = execution.with_field(
-                format!("syscall.{index}"),
-                linux_syscall_descriptor(operation),
-            );
-        }
-
-        if let Some(lease) = lease {
-            for (key, value) in &lease.captured_state {
-                execution = execution.with_field(format!("lease.{key}"), value.clone());
-            }
-        }
-
-        execution = execution.with_field("applier", self.applier.applier_name());
-        execute_linux_rollbacks(
-            &mut *self.applier,
-            execution,
-            plan,
-            &captured_state,
-            now_ms,
-            self.live_guard.as_ref(),
-        )
-    }
 }
 
 pub struct LinuxActuatorBackend {
@@ -1474,6 +1521,23 @@ impl ActuatorBackend for LinuxActuatorBackend {
     fn apply(&mut self, plan: &ActionPlan, now_ms: u64) -> BackendApplyResult {
         let syscall_plan = build_linux_apply_plan(plan);
         let mut result = self.executor.execute_apply(&syscall_plan, now_ms);
+        result.execution = result
+            .execution
+            .with_field("backend", self.backend_name())
+            .with_field("syscall_executor", self.executor.executor_name());
+        result
+    }
+
+    fn refresh(
+        &mut self,
+        plan: &ActionPlan,
+        previous_lease: Option<&BackendLease>,
+        now_ms: u64,
+    ) -> BackendApplyResult {
+        let syscall_plan = build_linux_apply_plan(plan);
+        let mut result =
+            self.executor
+                .execute_apply_with_lease(&syscall_plan, previous_lease, now_ms);
         result.execution = result
             .execution
             .with_field("backend", self.backend_name())
@@ -1579,6 +1643,20 @@ fn capture_linux_state(
     }
 
     state
+}
+
+fn captured_state_covers_plan(state: &LinuxCapturedState, plan: &LinuxSyscallPlan) -> bool {
+    plan.operations.iter().all(|operation| match operation {
+        LinuxSyscallOperation::SetNice { .. } => state.nice.is_some(),
+        LinuxSyscallOperation::SetAffinity { .. } => state.affinity.is_some(),
+        LinuxSyscallOperation::UseCpuset { enabled: true } => state.cpuset.is_some(),
+        LinuxSyscallOperation::UseCpuset { enabled: false }
+        | LinuxSyscallOperation::WarmupExecutor
+        | LinuxSyscallOperation::RestoreNice
+        | LinuxSyscallOperation::RestoreAffinity
+        | LinuxSyscallOperation::RestoreCpuset
+        | LinuxSyscallOperation::NoopWarmupRollback => true,
+    })
 }
 
 fn annotate_captured_state(

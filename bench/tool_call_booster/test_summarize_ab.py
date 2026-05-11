@@ -94,6 +94,26 @@ class SummarizeAbTests(unittest.TestCase):
 
         self.assertIn("missing_retrieval_latency", reasons)
 
+    def test_contract_accepts_stage_action_attribution_as_stage_coverage(self) -> None:
+        executor = {
+            "durations": {"executor": 100.0, "retrieval": 95.0, "rerank": 90.0},
+            "role_count": 4,
+            "child_status_ok": True,
+        }
+        daemon = {
+            "processed_events": 10,
+            "applied_actions": 3,
+            "tool_call_booster_triggers": 3,
+            "total_rollbacks": 3,
+            "stages": "retrieval:1,rerank:1",
+            "stage_effective_scheduler_actions": {"executor": 1},
+            "action_error_count": 0,
+        }
+
+        reasons = summarize_ab.contract_reasons("live_guarded", executor, daemon)
+
+        self.assertNotIn("missing_executor_stage", reasons)
+
     def test_live_guard_noop_actions_are_not_counted_as_effective(self) -> None:
         daemon_text = "\n".join(
             [
@@ -165,6 +185,19 @@ class SummarizeAbTests(unittest.TestCase):
         self.assertEqual(effects["warmup_side_effect_count"], 1)
         self.assertEqual(effects["warmup_deferred_count"], 0)
         self.assertEqual(effects["warmup_rollback_noop_count"], 1)
+
+    def test_short_lived_tool_call_rollback_no_such_process_is_benign(self) -> None:
+        daemon_text = "\n".join(
+            [
+                "audit_highlights:",
+                "  pid=42;scenario=tool_call_booster;backend.rollback.rollback.0.status=error",
+                "  pid=42;scenario=tool_call_booster;backend.rollback.rollback.0.error=runner=system-command-runner;command=renice 0 -p 42;error=renice: failed to get priority for 42 (process ID): No such process",
+                "  pid=42;scenario=tool_call_booster;backend.rollback.rollback.1.status=error",
+                "  pid=42;scenario=tool_call_booster;backend.rollback.rollback.1.error=runner=system-command-runner;command=taskset -pc 0,1,2,3 42;error=taskset: failed to get pid 42's affinity: No such process",
+            ]
+        )
+
+        self.assertEqual(summarize_ab.count_action_errors(daemon_text), 0)
 
     def test_stage_effectiveness_correlates_stage_actions_and_latency_delta(self) -> None:
         rows: list[dict[str, str]] = []
