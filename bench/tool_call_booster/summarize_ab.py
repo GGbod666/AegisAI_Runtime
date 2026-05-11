@@ -89,6 +89,13 @@ def fmt_float(value: float | None) -> str:
     return f"{value:.3f}"
 
 
+def critical_chain_latency_ms(durations: dict[str, Any]) -> float | None:
+    values = [as_float(durations.get(stage)) for stage in CONTRACT_STAGES]
+    if any(value is None for value in values):
+        return None
+    return max(value for value in values if value is not None)
+
+
 def parse_modes(raw_modes: str) -> list[str]:
     modes = [mode.strip() for mode in raw_modes.split(",") if mode.strip()]
     if not modes:
@@ -255,7 +262,7 @@ def build_detail_rows(artifact_dir: Path, modes: list[str], rounds: int) -> list
                     "backend": backend,
                     "contract": contract,
                     "tool_call_id": tool_call_id,
-                    "tool_call_latency_ms": fmt_float(as_float(durations.get("executor"))),
+                    "tool_call_latency_ms": fmt_float(critical_chain_latency_ms(durations)),
                     "executor_ms": fmt_float(as_float(durations.get("executor"))),
                     "retrieval_ms": fmt_float(as_float(durations.get("retrieval"))),
                     "rerank_ms": fmt_float(as_float(durations.get("rerank"))),
@@ -278,8 +285,9 @@ def build_detail_rows(artifact_dir: Path, modes: list[str], rounds: int) -> list
 def contract_reasons(mode: str, executor: dict[str, Any], daemon: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     durations = executor["durations"]
-    if as_float(durations.get("executor")) is None:
-        reasons.append("missing_executor_latency")
+    for stage in CONTRACT_STAGES:
+        if as_float(durations.get(stage)) is None:
+            reasons.append(f"missing_{stage}_latency")
     if executor["role_count"] < 4:
         reasons.append("missing_executor_roles")
     if not executor["child_status_ok"]:

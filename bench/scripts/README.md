@@ -27,6 +27,8 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 `tool_call_booster_detail.csv`、`tool_call_booster_summary.csv` 和
 `tool_call_booster_benefit_report.md`。harness `PASS` 表示每个选中档位完成
 可比较样本采集；报告中的 `benefit_verdict` 才是收益是否证明的明确结论。
+报告使用 executor / retrieval / rerank 三段 critical chain latency；缺任一关键
+子链路 latency 都会使该轮 contract FAIL，background worker 只作为干扰观测。
 `noop` / `dry_run` 只证明识别、触发、审计和 rollback 闭环，不单独证明真实
 host-level latency benefit。显式加入 `live_guarded` 时必须设置
 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1`。可设置

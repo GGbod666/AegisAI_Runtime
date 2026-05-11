@@ -28,8 +28,10 @@ stdout/stderr 到 `.cache/aegisai/tool_call_booster/<run_id>/`。
 
 当前验收口径：
 
-- baseline 记录未观测 executor 的端到端 latency，作为同轮对照
+- baseline 记录未观测 executor / retrieval / rerank critical chain latency，
+  作为同轮对照；background worker 耗时只作为干扰观测，不计入收益 latency
 - executor stdout 至少出现 4 个真实角色
+- executor / retrieval / rerank 三段都必须产出 latency，否则该轮 contract FAIL
 - noop / dry_run / guarded 档 daemon summary 捕获 `tool_call_lifecycles`
 - lifecycle stages 覆盖 executor / retrieval / rerank
 - `tool_call_booster` 至少触发一次 action，并完成可回滚链路

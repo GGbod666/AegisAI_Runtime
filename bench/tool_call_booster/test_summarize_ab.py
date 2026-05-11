@@ -44,6 +44,45 @@ def detail_row(round_no: int, mode: str, latency_ms: float) -> dict[str, str]:
 
 
 class SummarizeAbTests(unittest.TestCase):
+    def test_detail_latency_uses_critical_chain_not_background(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_dir = pathlib.Path(tmp)
+            (artifact_dir / "executor.round1.baseline.stdout").write_text(
+                "\n".join(
+                    [
+                        '{"duration_ms": 150.0, "role": "retrieval-worker", "tool_call_id": "tc-001"}',
+                        '{"duration_ms": 120.0, "role": "rerank-worker", "tool_call_id": "tc-001"}',
+                        '{"duration_ms": 170.0, "role": "background-worker", "tool_call_id": "tc-001"}',
+                        '{"child_statuses": [0, 0, 0], "duration_ms": 100.0, "role": "tool-executor", "tool_call_id": "tc-001"}',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            rows = summarize_ab.build_detail_rows(artifact_dir, ["baseline"], rounds=1)
+
+        self.assertEqual(rows[0]["contract"], "PASS")
+        self.assertEqual(rows[0]["tool_call_latency_ms"], "150.000")
+
+    def test_contract_requires_critical_stage_latencies(self) -> None:
+        executor = {
+            "durations": {"executor": 100.0, "rerank": 95.0},
+            "role_count": 4,
+            "child_status_ok": True,
+        }
+        daemon = {
+            "processed_events": 10,
+            "applied_actions": 3,
+            "tool_call_booster_triggers": 3,
+            "total_rollbacks": 3,
+            "stages": "executor:1,retrieval:1,rerank:1",
+            "action_error_count": 0,
+        }
+
+        reasons = summarize_ab.contract_reasons("live_guarded", executor, daemon)
+
+        self.assertIn("missing_retrieval_latency", reasons)
+
     def test_only_guarded_repeated_improvement_counts_as_benefit(self) -> None:
         rows: list[dict[str, str]] = []
         for round_no in range(1, 4):

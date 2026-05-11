@@ -283,7 +283,8 @@ fn build_actions(
     let mut actions = Vec::new();
 
     if let Some(delta) = policy.actions.raise_nice {
-        let bounded_delta = clamp_priority_delta(delta, safety.max_priority_delta);
+        let max_priority_delta = safety.max_priority_delta.max(0);
+        let bounded_delta = clamp_priority_delta(delta, max_priority_delta);
         if bounded_delta != 0 {
             if bounded_delta != delta {
                 audit_fields.insert(
@@ -295,22 +296,38 @@ fn build_actions(
             actions.push(Action::RaiseNice {
                 delta: bounded_delta,
             });
+        } else if delta != 0 {
+            audit_fields.insert("priority_delta_clamped".to_string(), format!("{delta}->0"));
         }
     }
 
     if let Some(strategy) = &policy.actions.pin_strategy {
-        let max_cpu_ratio = safety.max_affinity_change_ratio.clamp(0.0, 1.0);
-        if (max_cpu_ratio - safety.max_affinity_change_ratio).abs() > f32::EPSILON {
+        let requested_cpu_ratio = safety.max_affinity_change_ratio;
+        let max_cpu_ratio = if requested_cpu_ratio.is_finite() {
+            requested_cpu_ratio.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        if !requested_cpu_ratio.is_finite()
+            || (max_cpu_ratio - requested_cpu_ratio).abs() > f32::EPSILON
+        {
             audit_fields.insert(
                 "affinity_ratio_clamped".to_string(),
-                format!("{}->{max_cpu_ratio}", safety.max_affinity_change_ratio),
+                format!("{requested_cpu_ratio}->{max_cpu_ratio}"),
             );
         }
 
-        actions.push(Action::SetAffinity {
-            strategy: strategy.clone(),
-            max_cpu_ratio,
-        });
+        if max_cpu_ratio > 0.0 {
+            actions.push(Action::SetAffinity {
+                strategy: strategy.clone(),
+                max_cpu_ratio,
+            });
+        } else {
+            audit_fields.insert(
+                "affinity_action_skipped".to_string(),
+                "max_cpu_ratio_zero".to_string(),
+            );
+        }
     }
 
     if let Some(use_cpuset) = policy.actions.use_cpuset {
@@ -612,6 +629,56 @@ mod tests {
         assert_eq!(
             plan.audit_fields.get("duration_scaled_by_stage"),
             Some(&"600ms".to_string())
+        );
+    }
+
+    #[test]
+    fn invalid_safety_caps_do_not_reverse_or_poison_actions() {
+        let mut policy = policy();
+        policy.actions.raise_nice = Some(-3);
+        policy.actions.pin_strategy = Some(PinStrategy::PreferLowContentionCores);
+
+        let plan = evaluate(
+            &policy,
+            &SafetyConfig {
+                require_revert: true,
+                allow_background_throttle: false,
+                max_priority_delta: -2,
+                max_boost_duration_ms: 800,
+                max_affinity_change_ratio: f32::NAN,
+            },
+            &context(
+                [WorkloadTag::ToolCall, WorkloadTag::RetrievalStage],
+                FeatureWindow {
+                    pid: 42,
+                    queue_wait_us_max: 2_500,
+                    ended_at_ms: 1_000,
+                    ..FeatureWindow::empty(42, 1_000)
+                },
+            ),
+        )
+        .expect("retrieval stage should trigger with warmup-only fallback");
+
+        assert!(!plan
+            .actions
+            .iter()
+            .any(|action| matches!(action, Action::RaiseNice { .. })));
+        assert!(!plan
+            .actions
+            .iter()
+            .any(|action| matches!(action, Action::SetAffinity { .. })));
+        assert!(plan.actions.contains(&Action::WarmupExecutor));
+        assert_eq!(
+            plan.audit_fields.get("priority_delta_clamped"),
+            Some(&"-3->0".to_string())
+        );
+        assert_eq!(
+            plan.audit_fields.get("affinity_ratio_clamped"),
+            Some(&"NaN->0".to_string())
+        );
+        assert_eq!(
+            plan.audit_fields.get("affinity_action_skipped"),
+            Some(&"max_cpu_ratio_zero".to_string())
         );
     }
 

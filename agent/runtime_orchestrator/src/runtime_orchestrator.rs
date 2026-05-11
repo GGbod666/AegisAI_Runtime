@@ -542,7 +542,7 @@ fn action_traces(
 }
 
 fn with_action_audit_fields(mut trace: MetricTrace, action: &AppliedAction) -> MetricTrace {
-    const TRACE_AUDIT_FIELDS: [&str; 11] = [
+    const TRACE_AUDIT_FIELDS: [&str; 14] = [
         "tool_call_id",
         "tool_call_stage",
         "tool_call_focus",
@@ -554,6 +554,9 @@ fn with_action_audit_fields(mut trace: MetricTrace, action: &AppliedAction) -> M
         "isolation_scope",
         "background_isolation",
         "warmup_executor_skipped",
+        "priority_delta_clamped",
+        "affinity_ratio_clamped",
+        "affinity_action_skipped",
     ];
 
     for field in TRACE_AUDIT_FIELDS {
@@ -822,6 +825,47 @@ mod tests {
         assert_eq!(
             trace.fields.get("background_isolation"),
             Some(&"blocked_by_safety".to_string())
+        );
+        assert!(!trace.fields.contains_key("priority_delta_clamped"));
+    }
+
+    #[test]
+    fn tool_call_trace_preserves_safety_clamp_audit_fields() {
+        let mut config = RuntimeOrchestratorConfig::load_from_repo_root(repo_root())
+            .expect("config should load");
+        config.safety.max_priority_delta = -2;
+        config.safety.max_affinity_change_ratio = f32::NAN;
+        let mut orchestrator = RuntimeOrchestrator::new(config).expect("config should initialize");
+
+        orchestrator.process_event(
+            Event::new(9_000, 5153, "python", SignalKind::QueueWait, 2_500)
+                .with_cmdline("python tool-executor retrieval-worker --tool-call-id tc-011"),
+        );
+
+        let trace = orchestrator
+            .traces()
+            .iter()
+            .find(|trace| {
+                trace.kind == TraceKind::ActionApplied
+                    && trace.scenario.as_deref() == Some("tool_call_booster")
+            })
+            .expect("tool call action trace should be recorded");
+
+        assert_eq!(
+            trace.fields.get("priority_delta_clamped"),
+            Some(&"-3->0".to_string())
+        );
+        assert_eq!(
+            trace.fields.get("affinity_ratio_clamped"),
+            Some(&"NaN->0".to_string())
+        );
+        assert_eq!(
+            trace.fields.get("affinity_action_skipped"),
+            Some(&"max_cpu_ratio_zero".to_string())
+        );
+        assert_eq!(
+            trace.fields.get("action_plan"),
+            Some(&"warmup_executor".to_string())
         );
     }
 
