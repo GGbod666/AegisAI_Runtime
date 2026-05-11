@@ -1,6 +1,6 @@
 # Current Status
 
-_Last reviewed: 2026-05-10_
+_Last reviewed: 2026-05-11_
 
 This is the compact factual snapshot. Active task state lives in `bd`; accepted
 task history lives in `docs/acceptance_ledger.md`; stage rules live in
@@ -34,8 +34,10 @@ Implemented and accepted capabilities:
 
 Latest product-evidence status:
 
-- Inference Tail Guard: `FAIL`. Live guarded mode produced effective host-level
-  `taskset` changes, but repeated stable benefit was not met.
+- Inference Tail Guard: `PASS`. The controlled sample-sizing follow-up kept
+  model, prompt, stress shape, concurrency, and live affinity/nice pairing
+  fixed, increased samples per mode from `4` to `8`, and produced stable
+  live-guarded jitter benefit with effective host-level actions.
 - Tool Call Booster: `FAIL`. The live guarded run passed contracts and audit
   checks, but did not achieve the configured repeated latency improvement.
 
@@ -62,6 +64,8 @@ Inference Tail Guard:
 
 | run id | artifact | live effective action count | verdict |
 | --- | --- | --- | --- |
+| `live_guarded_phase4_sample_sizing_20260511T000000Z` | `.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_sample_sizing_20260511T000000Z/phase4_runs.csv` | `3` | `PASS`: live guarded jitter improved `2/3` comparable rounds, mean delta `5.89%` |
+| `live_guarded_phase4_sample_sizing_20260511T000000Z` | `.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_sample_sizing_20260511T000000Z/phase4_aggregate.csv` | `3` | `PASS`: stable live guarded benefit with effective actions |
 | `live_guarded_phase4_calibrated_20260510T043859Z` | `.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_runs.csv` | `3` | `FAIL`: noisy workload; stable benefit not proven |
 | `live_guarded_phase4_calibrated_20260510T043859Z` | `.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_calibrated_20260510T043859Z/phase4_aggregate.csv` | `3` | `FAIL`: noisy workload; stable benefit not proven |
 
@@ -86,8 +90,6 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-2kz` — prove or reproducibly falsify Inference Tail Guard MVP
-  benefit after the noisy live run.
 - `AegisAI_Runtime-79d` — prove or reproducibly falsify Tool Call Booster guarded
   latency benefit.
 - `AegisAI_Runtime-cqv` — add production config profiles and schema validation.
@@ -125,7 +127,7 @@ action and stable repeated benefit are both required.
   narrow and test-led.
 - `linux-command` can change real process scheduler state. Keep
   `--confirm-live-actuator` and PID allowlist mandatory.
-- `docs/mvp_benefit_report.md` is intentionally a `FAIL`: it records effective
-  live actions, but the stable improvement threshold was not met.
+- `docs/mvp_benefit_report.md` is a generated `PASS` from a live guarded run;
+  keep `PASS` restricted to effective live action plus stable repeated benefit.
 - The Tool Call Booster live guarded report is also intentionally a `FAIL`:
   contracts and audit passed, but repeated latency benefit did not.

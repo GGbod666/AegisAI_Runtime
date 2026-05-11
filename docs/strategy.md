@@ -1,6 +1,6 @@
 # Strategy And Evidence Rules
 
-_Updated: 2026-05-10_
+_Updated: 2026-05-11_
 
 This file owns product strategy, MVP definition, experiment rules, and long-run
 roadmap. It does not track active task state; use `bd` for that.
@@ -8,10 +8,11 @@ roadmap. It does not track active task state; use `bd` for that.
 ## Current Stage
 
 The project is past the runnable control-loop setup and 19-task
-evidence-hardening pass. The active stage is product evidence:
+evidence-hardening pass. The active stage is product evidence and production
+readiness:
 
-- prove or reproducibly falsify effective live `inference_tail_guard` benefit
-  under the strict Phase 4 gate
+- preserve the effective live `inference_tail_guard` benefit proof under the
+  strict Phase 4 gate
 - prove or reproducibly falsify Tool Call Booster guarded latency benefit
 - keep helper portability, production config, packaging, cpuset/background
   isolation, WarmupExecutor side effects, dashboard, GPU, and adaptive policy
@@ -32,8 +33,9 @@ The MVP is the smallest runnable AI-aware optimization loop:
 - record before/after TTFT, P95/P99 latency, jitter, trigger count, rollback
   count, and side effects
 
-The basic closed-loop MVP is accepted. The performance-benefit MVP is not
-proven yet.
+The basic closed-loop MVP is accepted. Inference Tail Guard performance benefit
+is proven for the latest controlled CPU-interference run shape; Tool Call
+Booster performance benefit is not proven yet.
 
 ## Strict Benefit Gate
 
@@ -53,21 +55,24 @@ Repeated benefit means:
   for TTFT P95/P99, latency P95/P99, or jitter
 - no live guarded action audit errors
 
-The current `docs/mvp_benefit_report.md` correctly reports `FAIL`: effective
-live actions occurred, but stable repeated benefit was not met.
+The current `docs/mvp_benefit_report.md` reports `PASS`: a controlled
+sample-sizing follow-up kept model, prompt, stress shape, concurrency, and live
+affinity/nice pairing fixed, increased samples per mode from `4` to `8`, and
+showed stable live-guarded jitter benefit with effective host-level actions.
 
 ## Current Required Work
 
 ### Inference Tail Guard Benefit
 
-Issue: `AegisAI_Runtime-2kz`
+Latest proof run: `live_guarded_phase4_sample_sizing_20260511T000000Z`
 
-Goal:
+Disposition:
 
-- continue from `live_guarded_phase4_calibrated_20260510T043859Z`
-- reduce workload noise or produce a reproducible failure diagnosis
-- keep PID allowlist, explicit live confirmation, and strict trend rules
-  mandatory
+- product benefit proof observed for the current CPU interference run shape
+- strict rules remain mandatory: PID allowlist, explicit live confirmation,
+  effective live action, clean mode contracts, and stable repeated benefit
+- future changes to this path should preserve the generated report contract and
+  rerun the same exit checks before changing the benefit claim
 
 Exit checks:
 
@@ -162,7 +167,7 @@ AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
 | --- | --- | --- |
 | 0. Framework reset | project definition, dual-axis skeleton, config and safety boundaries | complete |
 | 1. Awareness foundation | stable AI workload labels for scenario policies | basic loop complete |
-| 2. Inference Tail Guard MVP | prove or falsify live guarded tail-latency benefit | active: `AegisAI_Runtime-2kz` |
+| 2. Inference Tail Guard MVP | prove or falsify live guarded tail-latency benefit | latest controlled run `PASS` |
 | 3. Tool Calling Booster | prove or falsify guarded tool-call latency benefit | active: `AegisAI_Runtime-79d`; `WarmupExecutor` remains plan/audit-only |
 | 4. AI-aware isolation | define live cpuset/background throttling boundary | deferred: `AegisAI_Runtime-otk` |
 | 5. Explain/Tune | useful offline reports and threshold suggestions | offline basics exist; online learning deferred |
