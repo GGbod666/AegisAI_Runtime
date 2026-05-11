@@ -1,13 +1,32 @@
 # Latest Task List
 
-_Generated: 2026-05-11_
+_Regenerated: 2026-05-11_
 
-This file is synchronized from the latest repository audit. `bd` remains the
-source of truth for status and ownership; every task below has a concrete bead
-ID, bounded scope, acceptance criteria, and verification command or evidence
-gate.
+This is the current priority plan, not a historical gap inventory. It is based
+on the latest repository state: all local Rust/Python/shell checks pass, the
+Linux source preflight still passes with `processed_events=0`, `bd preflight`
+still shows a non-project Go/Nix checklist, and code-review-graph still marks
+live-action and source/report paths as high-degree hotspots. `bd` remains the
+source of truth for status.
 
-## Current Audit Evidence
+## Priority Rule
+
+The order below is deliberate:
+
+1. **P1: trust and safety blockers**. Fix anything that can make validation
+   conclusions false, widen live actions, or hide a rollback/CLI safety bug.
+2. **P2: production-readiness blockers**. Add the config, helper, and artifact
+   evidence needed before packaging or unattended operation.
+3. **P3: packaging boundary**. Define install/service boundaries only after
+   config and live-safety semantics are explicit.
+4. **P4: deferred extensions**. Dashboard, GPU, and adaptive policy stay behind
+   the safety, config, helper, and packaging gates.
+
+Within the same priority band, execute tasks in the order shown here. `bd ready`
+may display equal-priority issues in a different order; this document is the
+current planning order.
+
+## Current Evidence Snapshot
 
 - `cargo fmt --all -- --check`: `PASS`
 - `cargo check --workspace`: `PASS`
@@ -19,69 +38,115 @@ gate.
   `15` tests
 - `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`: `PASS`
 - `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_verify_workspace_20260511.md bash bench/scripts/verify_workspace.sh`:
-  `PASS`
+  `PASS`; mock daemon `processed_events=3`, Linux preflight `processed_events=0`
 - `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_toolchain_preflight_20260511.md bash bench/scripts/toolchain_preflight.sh`:
   `PASS`
 - `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_inference_preflight_20260511.md bash bench/scripts/inference_tail_guard_preflight.sh`:
   `PASS`
 - `bd lint`: `PASS`
 
-Audit limits:
+Open evidence gaps:
 
-- The Linux source smoke in `verify_workspace.sh` passed with
-  `processed_events=0`; it proves startup and partial-probe degradation, not
-  real Linux ingestion or benefit.
-- The inference preflight does not run `ollama run`, pull a model, or start
-  `stress-ng` load.
-- `bd doctor` is unsupported in embedded mode, and `bd preflight` still prints a
-  Go/Nix checklist that is not this project's quality gate.
-- code-review-graph reported `1286` nodes, `10276` edges, `20` untested
-  hotspots, and `28` files/classes with at least `300` lines.
+- Linux source preflight is still a startup/partial-probe check, not ingestion
+  proof.
+- Inference preflight does not run a model or start stress load.
+- `bd preflight` does not reflect this Rust workspace.
+- Graph analysis reports `20` untested hotspots and `16` files/classes with at
+  least `500` lines.
 
-## Execution Order
+## P1. Trust And Safety Blockers
 
-1. Fix project process/tooling accuracy so future readiness checks are not
-   misleading.
-2. Close direct test gaps around live-action rollback, CLI parsing, helper
-   startup, and benchmark artifact writing.
-3. Normalize policy safety semantics before production config can enable more
-   paths.
-4. Split production config into selector, schema, and cross-file safety checks.
-5. Prove Linux helper/procfs portability with structured host evidence.
-6. Add cpuset/background dry-run rejection behavior before any live cgroup work.
-7. Define packaging boundaries only after config and privilege boundaries are
-   explicit.
-8. Split deferred extensions into evidence-gated epics without runtime changes.
+These tasks come first because they affect whether later test results can be
+trusted or whether live-control boundaries are safe.
 
-## T1. Replace Project Preflight Template
+### 1. Add Controlled Linux Source Ingestion Smoke
+
+- Issue: `AegisAI_Runtime-51c.3`
+- Why first: current `verify_workspace.sh` can pass with Linux
+  `processed_events=0`; until this is fixed, Linux source validation proves
+  startup only, not event ingestion.
+- Scope:
+  - create or select a short-lived allowlisted process
+  - run daemon with `linux-skeleton` or `linux-command-dry-run`
+  - require at least one procfs-derived signal to reach the daemon summary
+  - document exact skip conditions for hosts that cannot emit procfs deltas
+- Acceptance:
+  - smoke records `processed_events > 0`
+  - summary includes `signal_observations` for at least one of
+    `run_queue_delay`, `cpu_migration`, or `major_page_fault`
+  - no live scheduler state is changed
+  - failure and skip states are distinguishable
+  - command is documented in `docs/linux_validation.md`
+- Verification:
+  - new Linux ingestion smoke command
+  - `cargo test -p aegisai-runtime-daemon` if source code changes
+
+### 2. Replace Project Preflight Template
 
 - Issue: `AegisAI_Runtime-awq`
-- Problem: `bd preflight` still prints Go/Nix commands, which can mislead
-  release readiness for this Rust workspace.
+- Why now: `bd preflight` currently prints Go/Nix checks, so a future handoff can
+  report the wrong readiness gates even when Cargo/Python/shell checks pass.
 - Scope:
-  - replace or clearly override the generic checklist with this repo's gates
-  - document the intended preflight command sequence in the same place developers
-    will actually see it
-  - keep `bd lint` clean after the change
+  - replace or override the generic preflight checklist for this repository
+  - list the actual Rust/Python/shell/bench gates in the visible project path
+  - keep `bd lint` clean
 - Acceptance:
-  - readiness instructions include `cargo fmt --all -- --check`
-  - readiness instructions include `cargo test --workspace`
-  - readiness instructions include
+  - active readiness instructions include `cargo fmt --all -- --check`
+  - active readiness instructions include `cargo test --workspace`
+  - active readiness instructions include
     `cargo clippy --all-targets --all-features -- -D warnings`
-  - readiness instructions include both Python unittest discovery commands
-  - readiness instructions include shell syntax checks and the three bench
-    preflight scripts
-  - no Go/Nix gate appears as an active requirement for this repository
+  - active readiness instructions include both Python unittest discovery commands
+  - active readiness instructions include shell syntax and bench preflight gates
+  - Go/Nix commands are removed or explicitly marked irrelevant upstream output
 - Verification:
   - `bd preflight`
   - `bd lint`
 
-## T2. Directly Test Linux Rollback Report Builder
+### 3. Normalize Generic Safety Caps
+
+- Issue: `AegisAI_Runtime-vv2.1`
+- Parent: `AegisAI_Runtime-vv2`
+- Why P1: invalid global safety caps can affect action breadth. This must be
+  fixed before production config work makes more paths selectable.
+- Scope:
+  - normalize priority delta caps in shared policy code
+  - normalize affinity ratio caps in shared policy code
+  - preserve Tool Call Booster audit output and existing benefit interpretation
+- Acceptance:
+  - negative `max_priority_delta` cannot widen scheduler actions
+  - zero, non-finite, or invalid affinity ratios cannot widen scheduler actions
+  - valid caps still produce expected plans
+  - existing Tool Call Booster policy tests keep passing
+- Verification:
+  - `cargo test -p aegisai-policy-engine`
+
+### 4. Implement Cpuset Dry-Run Rejection Matrix
+
+- Issue: `AegisAI_Runtime-7h5.1`
+- Parent: `AegisAI_Runtime-7h5`
+- Why P1: cpuset/background writes are disabled, but the next safe step is a
+  deterministic rejection planner. Without it, future cgroup work lacks a test
+  boundary.
+- Scope:
+  - produce dry-run rejection reasons without writing cgroupfs
+  - include target pid/cgroup context
+  - include capture and rollback plan context where available
+- Acceptance:
+  - unsafe cgroup root is rejected
+  - missing classification is rejected
+  - empty computed CPU set is rejected
+  - missing rollback capture is rejected
+  - overbroad process set is rejected
+  - unsupported live write mode is rejected
+  - live writes remain disabled
+- Verification:
+  - `cargo test -p aegisai-actuator`
+
+### 5. Directly Test Linux Rollback Report Builder
 
 - Issue: `AegisAI_Runtime-yxb`
-- Problem: code-review-graph flags
-  `agent/actuator/src/backend.rs::build_linux_rollback_report` as a high-degree
-  hotspot with no direct test mapping.
+- Why P1: `build_linux_rollback_report` is the top graph hub
+  (`degree=102`) and is directly tied to live-action audit credibility.
 - Scope:
   - add focused tests around rollback audit composition
   - avoid broad backend refactors
@@ -97,20 +162,19 @@ Audit limits:
 - Verification:
   - `cargo test -p aegisai-actuator`
 
-## T3. Expand CLI Parser Edge-Case Tests
+### 6. Expand CLI Parser Edge-Case Tests
 
 - Issue: `AegisAI_Runtime-d42`
-- Problem: `CliConfig::parse` is a high-degree hotspot. Existing tests cover
-  common live flags, but edge cases need to be explicit before adding production
-  profile flags.
+- Why P1: `CliConfig::parse` is the second graph hub (`degree=101`) and guards
+  live actuator confirmation, PID allowlists, warmup side effects, and future
+  profile selection.
 - Scope:
-  - add parser tests only; do not redesign the CLI in this task
-  - cover live actuator and warmup command boundary conditions
-  - include production profile interactions if that flag lands first
+  - add parser tests only
+  - cover live actuator and warmup command boundaries
+  - cover production profile interactions if that flag lands first
 - Acceptance:
   - duplicate `--live-pid-allowlist` behavior is deterministic
-  - whitespace and empty PID elements are rejected or normalized by test-covered
-    rule
+  - whitespace and empty PID elements are rejected or normalized by a tested rule
   - unknown source/backend names produce deterministic errors
   - `--verification-log` missing value is rejected
   - warmup command argument boundaries are covered
@@ -118,16 +182,21 @@ Audit limits:
 - Verification:
   - `cargo test -p aegisai-runtime-daemon`
 
-## T4. Add BpfTracePipe Startup Failure Taxonomy Tests
+## P2. Production-Readiness Blockers
+
+These tasks do not outrank the P1 trust/safety work, but they block packaging,
+cross-host validation, and unattended operation.
+
+### 7. Add BpfTracePipe Startup Failure Taxonomy Tests
 
 - Issue: `AegisAI_Runtime-51c.4`
 - Parent: `AegisAI_Runtime-51c`
-- Problem: `BpfTracePipe::start` is a helper startup hotspot; helper failure
-  modes need stable classification before portability work.
+- Why P2: helper portability depends on stable failure categories before testing
+  multiple hosts.
 - Scope:
   - add focused runtime daemon source tests
   - distinguish startup failures from malformed event parsing
-  - keep partial-probe reporting messages stable
+  - keep partial-probe reporting text stable
 - Acceptance:
   - tests distinguish missing helper or bpftrace binary
   - tests distinguish permission failure
@@ -139,115 +208,17 @@ Audit limits:
 - Verification:
   - `cargo test -p aegisai-runtime-daemon source::tests`
 
-## T5. Add Inference Smoke Artifact Tests
-
-- Issue: `AegisAI_Runtime-fp6`
-- Problem: `bench/scripts/inference_tail_guard_ollama_smoke.sh` is a large
-  benefit-artifact driver; `write_run_env` and `run_mode` are graph hotspots.
-- Scope:
-  - add a deterministic script-level test or harness for run-env output
-  - do not run live workloads inside the unit test
-  - prevent failure artifacts from looking like accepted proof
-- Acceptance:
-  - run-env output records run id
-  - run-env output records mode
-  - run-env output records model and prompt/workload shape
-  - run-env output records stress shape and sample count
-  - run-env output records live flags and artifact paths
-  - failure paths do not write misleading `PASS` fields
-- Verification:
-  - `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`
-  - the new script-level test command
-
-## T6. Normalize Generic Safety Caps
-
-- Issue: `AegisAI_Runtime-vv2.1`
-- Parent: `AegisAI_Runtime-vv2`
-- Problem: Tool Call Booster locally normalizes bad safety caps, but generic and
-  non-TCB policy paths can still rely on raw `SafetyConfig` values.
-- Scope:
-  - implement shared normalization for priority delta caps
-  - implement shared normalization for affinity ratio caps
-  - keep Tool Call Booster audit fields and pass/fail behavior unchanged
-- Acceptance:
-  - negative `max_priority_delta` cannot widen scheduler actions
-  - zero, non-finite, or invalid affinity ratios cannot widen scheduler actions
-  - valid caps still produce expected action plans
-  - existing TCB tests continue to pass
-- Verification:
-  - `cargo test -p aegisai-policy-engine`
-
-## T7. Add Runtime Production Profile Selector
-
-- Issue: `AegisAI_Runtime-cqv.2`
-- Parent: `AegisAI_Runtime-cqv`
-- Problem: runtime startup still loads fixed `configs/*/*.example.toml` files.
-- Scope:
-  - add selector precedence: CLI flag, environment variable, documented local
-    demo default
-  - validate profile names as identifiers only
-  - preserve current example compatibility for tests and local demos
-- Acceptance:
-  - valid profile names load non-example profile files
-  - empty names are rejected
-  - absolute paths are rejected
-  - path separators are rejected
-  - `.` segments are rejected
-  - missing profile root fails before partial startup
-  - CLI/env/default precedence has tests
-- Verification:
-  - `cargo test -p aegisai-runtime-orchestrator`
-  - `cargo test -p aegisai-runtime-daemon` if CLI wiring changes
-
-## T8. Add Production Config Schema Validation
-
-- Issue: `AegisAI_Runtime-cqv.3`
-- Parent: `AegisAI_Runtime-cqv`
-- Problem: the current parser accepts the example shape but does not enforce a
-  production schema with actionable errors.
-- Scope:
-  - validate known keys and required fields
-  - validate enum values, numeric ranges, and duration limits
-  - preserve demo/example compatibility
-- Acceptance:
-  - unknown production key errors include profile, file, section, key, and
-    violated constraint
-  - missing required field errors include the same context
-  - invalid signal, scenario, and action enum cases are tested
-  - invalid `raise_nice` and duration cases are tested
-- Verification:
-  - `cargo test -p aegisai-runtime-orchestrator`
-
-## T9. Add Config Cross-File Safety Validation
-
-- Issue: `AegisAI_Runtime-cqv.1`
-- Parent: `AegisAI_Runtime-cqv`
-- Problem: scenario actions, source focus signals, and global safety caps are
-  not rejected together before startup.
-- Scope:
-  - validate scenario action limits against global safety
-  - validate enabled scenario triggers against `focus_signals`
-  - validate unsupported live affinity/cpuset combinations for the selected mode
-- Acceptance:
-  - duration above `max_boost_duration_ms` is rejected
-  - priority delta outside `max_priority_delta` is rejected
-  - trigger requiring absent `focus_signals` is rejected
-  - unsupported live affinity/cpuset mode is rejected
-  - errors name both files involved
-- Verification:
-  - `cargo test -p aegisai-runtime-orchestrator`
-
-## T10. Classify Helper Compatibility Before Daemon Start
+### 8. Classify Helper Compatibility Before Daemon Start
 
 - Issue: `AegisAI_Runtime-51c.1`
 - Parent: `AegisAI_Runtime-51c`
-- Problem: helper-backed offcpu/io paths need distinct failure buckets before
-  daemon startup.
+- Why P2: current helper checks can conflate helper unavailability, tracepoint
+  incompatibility, and no workload events.
 - Scope:
   - inspect helper availability
   - inspect tracefs root and tracepoint field inventory
-  - classify compatibility before running a long daemon loop
-  - keep procfs-backed fallback available under `--allow-partial-probes`
+  - classify compatibility before long daemon runs
+  - keep procfs fallback available under `--allow-partial-probes`
 - Acceptance:
   - helper unavailable and tracepoint incompatible are distinct results
   - missing block tracepoint fields name the missing field
@@ -257,11 +228,12 @@ Audit limits:
   - `cargo test -p aegisai-runtime-daemon`
   - helper preflight command from `docs/linux_validation.md`
 
-## T11. Run Two-Kernel Helper Portability Matrix
+### 9. Run Two-Kernel Helper Portability Matrix
 
 - Issue: `AegisAI_Runtime-51c.2`
 - Parent: `AegisAI_Runtime-51c`
-- Problem: durable helper validation currently covers one host profile.
+- Why after compatibility classification: matrix results are useful only if
+  each host lands in a precise bucket.
 - Scope:
   - run helper readiness on at least two supported Linux kernel profiles
   - run raw helper stream attach
@@ -282,53 +254,98 @@ Audit limits:
   - helper validation flow from `docs/linux_validation.md`
   - intentional durable entry in `docs/verification_log.md`
 
-## T12. Add Controlled Linux Source Ingestion Smoke
+### 10. Add Inference Smoke Artifact Tests
 
-- Issue: `AegisAI_Runtime-51c.3`
-- Parent: `AegisAI_Runtime-51c`
-- Problem: current Linux source preflight can pass with `processed_events=0`.
+- Issue: `AegisAI_Runtime-fp6`
+- Why P2: benchmark artifacts support benefit claims. The current scripts pass
+  syntax/unit tests, but run-env output from the live smoke path is still a
+  graph hotspot.
 - Scope:
-  - create or select a short-lived allowlisted process
-  - use `linux-skeleton` or `linux-command-dry-run`
-  - prove at least one procfs-derived signal reaches daemon summary
-  - document skip conditions
+  - add a deterministic script-level test or harness for run-env output
+  - do not run live workloads inside the unit test
+  - prevent failure artifacts from looking like accepted proof
 - Acceptance:
-  - smoke records `processed_events > 0`
-  - summary includes at least one `signal_observations` entry from
-    `run_queue_delay`, `cpu_migration`, or `major_page_fault`
-  - no live scheduler state is changed
-  - skip reason is explicit when host procfs data is unavailable
-  - command is documented in `docs/linux_validation.md`
+  - run-env output records run id
+  - run-env output records mode
+  - run-env output records model and prompt/workload shape
+  - run-env output records stress shape and sample count
+  - run-env output records live flags and artifact paths
+  - failure paths do not write misleading `PASS` fields
 - Verification:
-  - new Linux ingestion smoke command
-  - `cargo test -p aegisai-runtime-daemon` if helper/source code changes
+  - `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`
+  - the new script-level test command
 
-## T13. Implement Cpuset Dry-Run Rejection Matrix
+### 11. Add Runtime Production Profile Selector
 
-- Issue: `AegisAI_Runtime-7h5.1`
-- Parent: `AegisAI_Runtime-7h5`
-- Problem: live cpuset/background writes are disabled, but no deterministic
-  dry-run rejection matrix exists.
+- Issue: `AegisAI_Runtime-cqv.2`
+- Parent: `AegisAI_Runtime-cqv`
+- Why before schema/cross-file checks: production validation needs a real
+  profile target instead of fixed `*.example.toml` paths.
 - Scope:
-  - generate rejection reasons without writing cgroupfs
-  - include target pid/cgroup context
-  - include capture and rollback plan context where available
+  - add selector precedence: CLI flag, environment variable, documented local
+    demo default
+  - validate profile names as identifiers only
+  - preserve current example compatibility for tests and local demos
 - Acceptance:
-  - unsafe cgroup root is rejected
-  - missing classification is rejected
-  - empty computed CPU set is rejected
-  - missing rollback capture is rejected
-  - overbroad process set is rejected
-  - unsupported live write mode is rejected
-  - live writes remain disabled
+  - valid profile names load non-example profile files
+  - empty names are rejected
+  - absolute paths are rejected
+  - path separators are rejected
+  - `.` segments are rejected
+  - missing profile root fails before partial startup
+  - CLI/env/default precedence has tests
 - Verification:
-  - `cargo test -p aegisai-actuator`
+  - `cargo test -p aegisai-runtime-orchestrator`
+  - `cargo test -p aegisai-runtime-daemon` if CLI wiring changes
 
-## T14. Define Debian/Systemd Packaging Contract
+### 12. Add Production Config Schema Validation
+
+- Issue: `AegisAI_Runtime-cqv.3`
+- Parent: `AegisAI_Runtime-cqv`
+- Why after selector: schema errors need to name the selected production
+  profile and file.
+- Scope:
+  - validate known keys and required fields
+  - validate enum values, numeric ranges, and duration limits
+  - preserve demo/example compatibility
+- Acceptance:
+  - unknown production key errors include profile, file, section, key, and
+    violated constraint
+  - missing required field errors include the same context
+  - invalid signal, scenario, and action enum cases are tested
+  - invalid `raise_nice` and duration cases are tested
+- Verification:
+  - `cargo test -p aegisai-runtime-orchestrator`
+
+### 13. Add Config Cross-File Safety Validation
+
+- Issue: `AegisAI_Runtime-cqv.1`
+- Parent: `AegisAI_Runtime-cqv`
+- Why after schema: cross-file checks should run on validated profile data.
+- Scope:
+  - validate scenario action limits against global safety
+  - validate enabled scenario triggers against `focus_signals`
+  - validate unsupported live affinity/cpuset combinations for the selected mode
+- Acceptance:
+  - duration above `max_boost_duration_ms` is rejected
+  - priority delta outside `max_priority_delta` is rejected
+  - trigger requiring absent `focus_signals` is rejected
+  - unsupported live affinity/cpuset mode is rejected
+  - errors name both files involved
+- Verification:
+  - `cargo test -p aegisai-runtime-orchestrator`
+
+## P3. Packaging Boundary
+
+Packaging should not start before P1/P2 gates clarify safety, config, and helper
+semantics.
+
+### 14. Define Debian/Systemd Packaging Contract
 
 - Issue: `AegisAI_Runtime-ufp.1`
 - Parent: `AegisAI_Runtime-ufp`
-- Problem: packaging work needs a precise first target before installer code.
+- Why P3: package design is useful now, but installer code should wait until
+  production config and helper boundaries are stable.
 - Scope:
   - choose Debian/Ubuntu systemd or document a different first target
   - specify daemon and helper boundaries separately
@@ -346,12 +363,18 @@ Audit limits:
   - docs-only review
   - no code verification unless files/scripts are added
 
-## T15. Split Deferred Extensions Into Evidence-Gated Epics
+## P4. Deferred Extensions
+
+These remain deliberately last. They should not consume implementation effort
+until the control loop has production config, Linux ingestion proof, helper
+portability evidence, and packaging boundaries.
+
+### 15. Split Deferred Extensions Into Evidence-Gated Epics
 
 - Issue: `AegisAI_Runtime-0ry.1`
 - Parent: `AegisAI_Runtime-0ry`
-- Problem: dashboard, GPU coordination, and adaptive policy remain one broad
-  deferred bucket.
+- Why P4: dashboard, GPU coordination, and adaptive policy are future product
+  directions, not blockers for current runtime correctness.
 - Scope:
   - create separate child epics or tasks for dashboard
   - create separate child epics or tasks for GPU coordination
