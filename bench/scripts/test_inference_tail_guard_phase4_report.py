@@ -105,6 +105,7 @@ def live_daemon_log(action_evidence: str) -> str:
 def write_run_env(
     path: pathlib.Path,
     *,
+    run_id: str,
     artifact_dir: pathlib.Path,
     modes: list[str],
     samples: int,
@@ -113,9 +114,11 @@ def write_run_env(
     overrides: dict[str, str] | None = None,
 ) -> None:
     values = {
+        "run_id": run_id,
         "artifact_dir": str(artifact_dir),
         "modes": " ".join(modes),
         "model": "qwen2.5:0.5b",
+        "prompt_sha256": "unit_prompt_hash",
         "num_predict": "96",
         "samples_per_mode": str(samples),
         "concurrency": "1",
@@ -151,10 +154,12 @@ class Phase4ReportGateTests(unittest.TestCase):
         contract_status_by_mode: dict[str, str] | None = None,
         write_provenance: bool = True,
         run_env_overrides: dict[str, str] | None = None,
+        run_env_overrides_by_round: dict[int, dict[str, str]] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         artifact_dir = root / "artifacts"
         modes = modes or ["baseline", "noop_observation", "dry_run", "live_guarded"]
         contract_status_by_mode = contract_status_by_mode or {}
+        run_env_overrides_by_round = run_env_overrides_by_round or {}
         for round_no in range(1, rounds + 1):
             round_dir = artifact_dir / "cpu" / f"round_{round_no}"
             current_live_metric_ms = (
@@ -200,12 +205,13 @@ class Phase4ReportGateTests(unittest.TestCase):
             if write_provenance:
                 write_run_env(
                     round_dir / "run.env",
+                    run_id=f"phase4_gate_unit_cpu_{round_no}",
                     artifact_dir=round_dir,
                     modes=modes,
                     samples=samples,
                     live_confirm=live_confirm,
                     live_pid_allowlist=live_pid_allowlist,
-                    overrides=run_env_overrides,
+                    overrides={**(run_env_overrides or {}), **run_env_overrides_by_round.get(round_no, {})},
                 )
 
         env = os.environ.copy()
@@ -347,6 +353,7 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Result: `PASS`", report)
             self.assertIn("stable improvement trend with effective host-level actuator changes", report)
+            self.assertIn("Prompt sha256: `unit_prompt_hash`", report)
             self.assertIn("Selected mode contracts: `PASS`", report)
             self.assertIn("Live effective host-level actuator changes: `3`", report)
             self.assertIn("Failure cause: `none`", report)
@@ -480,6 +487,42 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertIn("Artifact provenance contract: `FAIL`", report)
             self.assertIn("run.env samples_per_mode=9, expected 3", report)
             self.assertIn("run.env model=different:model, expected qwen2.5:0.5b", report)
+            self.assertIn("Failure cause: `action_effectiveness`", report)
+
+    def test_mixed_prompt_hashes_cannot_pass_cached_live_trend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                live_action_evidence="effective_taskset",
+                run_env_overrides_by_round={2: {"prompt_sha256": "other_prompt_hash"}},
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertIn("Artifact provenance contract: `FAIL`", report)
+            self.assertIn("mixed prompt_sha256 values", report)
+            self.assertIn("Failure cause: `action_effectiveness`", report)
+
+    def test_round_run_id_mismatch_cannot_pass_cached_live_trend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                live_action_evidence="effective_taskset",
+                run_env_overrides_by_round={3: {"run_id": "wrong_round_id"}},
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertIn("Artifact provenance contract: `FAIL`", report)
+            self.assertIn("run.env run_id=wrong_round_id, expected phase4_gate_unit_cpu_3", report)
             self.assertIn("Failure cause: `action_effectiveness`", report)
 
 

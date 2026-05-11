@@ -12,6 +12,7 @@
 - Tuned variable: `sample_sizing`
 - Tuned variable detail: `Changed samples per mode from 4 to 8 versus live_guarded_phase4_calibrated_20260510T043859Z; stress worker count, concurrency, prompt/model, and affinity/nice pairing remain matched to the latest run; live PID allowlist is explicit for the current ollama serve process.`
 - Model: `qwen2.5:0.5b`
+- Prompt sha256: `70efacbda71f43e7c881cbde726deae7d56d26e91a3ba8818eadf1069fe259c6`
 - Num predict: `32`
 - Rounds per scenario: `3`
 - Samples per mode: `8`

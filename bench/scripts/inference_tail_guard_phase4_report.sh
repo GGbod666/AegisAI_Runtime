@@ -618,6 +618,9 @@ def expected_stress_for_scenario(scenario):
         return cpu_workers, io_workers, hdd_workers
     return cpu_workers, "0", "0"
 
+def expected_run_id_for_round(scenario, round_id):
+    return f"{run_id}_{scenario}_{round_id}"
+
 def env_value(values, key):
     return values.get(key, "missing")
 
@@ -657,6 +660,7 @@ if live_enable_affinity not in ("0", "1"):
 live_metadata_contract_pass = not live_metadata_violations
 
 provenance_violations = []
+prompt_hashes = set()
 seen_artifacts = set()
 round_artifacts = []
 for row in rows:
@@ -673,8 +677,15 @@ for scenario, round_id, artifact_dir in round_artifacts:
         provenance_violations.append(f"{label}: run.env missing")
         continue
 
+    prompt_hash = run_env.get("prompt_sha256", "")
+    if not prompt_hash:
+        provenance_violations.append(f"{label}: run.env prompt_sha256 missing")
+    else:
+        prompt_hashes.add(prompt_hash)
+
     expected_cpu, expected_io, expected_hdd = expected_stress_for_scenario(scenario)
     expected_values = {
+        "run_id": expected_run_id_for_round(scenario, round_id),
         "artifact_dir": artifact_dir,
         "model": model,
         "num_predict": num_predict,
@@ -703,6 +714,11 @@ for scenario, round_id, artifact_dir in round_artifacts:
             f"{label}: run.env modes={actual_modes}, expected {expected_modes}"
         )
 
+if len(prompt_hashes) > 1:
+    provenance_violations.append(
+        "mixed prompt_sha256 values: " + ",".join(sorted(prompt_hashes))
+    )
+prompt_hash_display = next(iter(prompt_hashes), "missing")
 provenance_contract_pass = not provenance_violations
 
 stable_improvements = []
@@ -1027,6 +1043,7 @@ content = [
     f"- Tuned variable: `{tuned_variable}`",
     f"- Tuned variable detail: `{tuned_variable_detail}`",
     f"- Model: `{model}`",
+    f"- Prompt sha256: `{prompt_hash_display}`",
     f"- Num predict: `{num_predict}`",
     f"- Rounds per scenario: `{rounds}`",
     f"- Samples per mode: `{samples}`",
