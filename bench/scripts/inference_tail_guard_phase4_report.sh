@@ -558,12 +558,10 @@ fieldnames = [
     "offcpu_time_events_total",
     "live_effective_action_count_total",
     "live_priority_limited_count_total",
+    "mvp_result",
+    "failure_cause",
+    "failure_cause_detail",
 ]
-
-with open(aggregate_path, "w", newline="", encoding="utf-8") as handle:
-    writer = csv.DictWriter(handle, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(aggregate_rows)
 
 REQUIRED_MODES = ("baseline", "noop_observation", "dry_run", "live_guarded")
 
@@ -835,25 +833,77 @@ elif not provenance_contract_pass:
 elif not mode_contracts_pass or live_action_contract_failed or not live_host_effective:
     failure_cause = "action_effectiveness"
     if not live_host_effective and live_priority_limited_count > 0:
-        failure_cause_detail = "Live guarded trend was observed, but live actuator changes were priority-limited or no-op."
+        failure_cause_detail = (
+            "live_effective_action_count_total=0 and "
+            f"live_priority_limited_count_total={live_priority_limited_count}; "
+            "live actuator changes were priority-limited or no-op."
+        )
     else:
-        failure_cause_detail = "Live guarded did not prove effective host-level action, trigger, rollback, and clean action audit behavior."
+        failure_cause_detail = (
+            "Live guarded action fields failed: "
+            f"live_effective_action_count_total={live_effective_action_count}; "
+            f"trigger_count_total must be >0 per round; "
+            f"rollback_count_total must be >0 per round; "
+            f"action_error_count_total must be 0; "
+            "mode_contract must be PASS."
+        )
 elif not sample_size_sufficient or live_max_comparisons < 3:
     failure_cause = "insufficient_sample_size"
-    failure_cause_detail = "The run did not provide at least three rounds and at least three samples per mode for the stable trend gate."
+    failure_cause_detail = (
+        f"rounds={rounds}, samples_per_mode={samples}, "
+        f"live_metric_comparisons_max={live_max_comparisons}, "
+        f"live_min_samples_total={live_min_samples_total}; "
+        "stable trend gate requires at least three rounds, three samples per mode, "
+        "and three comparable live guarded rounds."
+    )
 elif live_host_effective and not live_action_contract_failed and sample_size_sufficient:
     if live_stable_improvements:
         failure_cause = "none"
         failure_cause_detail = "Live guarded met the stable trend rule with effective host-level actuator changes."
     elif live_has_any_positive_delta:
         failure_cause = "noisy_workload"
-        failure_cause_detail = "Live guarded produced intermittent improvements, but they were not stable across at least two thirds of comparable rounds."
+        best_live_stat = max(
+            live_metric_stats,
+            key=lambda stat: stat["mean_delta"],
+            default=None,
+        )
+        if best_live_stat:
+            failure_cause_detail = (
+                f'Best live metric {best_live_stat["metric_label"]} in '
+                f'{best_live_stat["scenario_label"]}: '
+                f'{best_live_stat["wins"]}/{best_live_stat["comparisons"]} '
+                f'rounds improved, mean delta {best_live_stat["mean_delta"]:.2f}%; '
+                "stable trend gate requires at least two thirds of comparable rounds "
+                "and mean delta >=5.0%."
+            )
+        else:
+            failure_cause_detail = (
+                "Live guarded produced intermittent improvements, but no live metric "
+                "had enough comparable rounds for the stable trend gate."
+            )
     else:
         failure_cause = "no_measurable_benefit"
-        failure_cause_detail = "Live guarded had effective actions and enough configured samples, but no live metric showed measurable improvement versus baseline."
+        best_live_stat = max(
+            live_metric_stats,
+            key=lambda stat: stat["mean_delta"],
+            default=None,
+        )
+        if best_live_stat:
+            failure_cause_detail = (
+                f'Best live metric {best_live_stat["metric_label"]} in '
+                f'{best_live_stat["scenario_label"]}: '
+                f'{best_live_stat["wins"]}/{best_live_stat["comparisons"]} '
+                f'rounds improved, mean delta {best_live_stat["mean_delta"]:.2f}%; '
+                "no live metric showed a positive delta versus baseline."
+            )
+        else:
+            failure_cause_detail = (
+                "No comparable live guarded metric rows were available to show "
+                "measurable improvement versus baseline."
+            )
 else:
     failure_cause = "no_measurable_benefit"
-    failure_cause_detail = "Live guarded did not show a measurable benefit versus baseline."
+    failure_cause_detail = "Live guarded metric deltas did not show measurable improvement versus baseline."
 
 if live_stable_improvements and live_host_effective and sample_size_sufficient and benefit_contract_pass:
     mvp_result = "PASS"
@@ -869,6 +919,16 @@ elif live_stable_improvements:
 else:
     mvp_result = "FAIL"
     verdict = f"MVP benefit not proven: {failure_cause_detail}"
+
+for row in aggregate_rows:
+    row["mvp_result"] = mvp_result
+    row["failure_cause"] = failure_cause
+    row["failure_cause_detail"] = failure_cause_detail
+
+with open(aggregate_path, "w", newline="", encoding="utf-8") as handle:
+    writer = csv.DictWriter(handle, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(aggregate_rows)
 
 detail_headers = [
     "scenario",

@@ -23,6 +23,27 @@ def write_csv(path: pathlib.Path, fieldnames: list[str], rows: list[dict[str, st
         writer.writerows(rows)
 
 
+def aggregate_rows(root: pathlib.Path) -> list[dict[str, str]]:
+    with (root / "artifacts" / "phase4_aggregate.csv").open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def assert_aggregate_classification(
+    test: unittest.TestCase,
+    root: pathlib.Path,
+    *,
+    result: str,
+    failure_cause: str,
+    detail_substring: str,
+) -> None:
+    rows = aggregate_rows(root)
+    test.assertGreater(len(rows), 0)
+    for row in rows:
+        test.assertEqual(row["mvp_result"], result)
+        test.assertEqual(row["failure_cause"], failure_cause)
+        test.assertIn(detail_substring, row["failure_cause_detail"])
+
+
 def summary_row(mode: str, metric_ms: float, samples: int = 1) -> dict[str, str]:
     baseline = mode == "baseline"
     return {
@@ -266,6 +287,13 @@ class Phase4ReportGateTests(unittest.TestCase):
             aggregate = (root / "artifacts" / "phase4_aggregate.csv").read_text(encoding="utf-8")
             self.assertIn("changed_variable", aggregate)
             self.assertIn("stress_shape", aggregate)
+            assert_aggregate_classification(
+                self,
+                root,
+                result="FAIL",
+                failure_cause="no_measurable_benefit",
+                detail_substring="no live metric showed a positive delta versus baseline",
+            )
 
     def test_live_action_count_zero_does_not_pass_even_with_live_trend(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -285,6 +313,13 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertIn("Live priority-limited/no-op nice applications: `0`", report)
             self.assertIn("no effective live actuator changes were observed", report)
             self.assertIn("Failure cause: `action_effectiveness`", report)
+            assert_aggregate_classification(
+                self,
+                root,
+                result="FAIL",
+                failure_cause="action_effectiveness",
+                detail_substring="live_effective_action_count_total=0",
+            )
 
     def test_effective_live_action_with_failed_trend_does_not_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -302,6 +337,13 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertNotIn("Result: `PASS`", report)
             self.assertIn("Live effective host-level actuator changes: `3`", report)
             self.assertIn("Failure cause: `no_measurable_benefit`", report)
+            assert_aggregate_classification(
+                self,
+                root,
+                result="FAIL",
+                failure_cause="no_measurable_benefit",
+                detail_substring="no live metric showed a positive delta versus baseline",
+            )
 
     def test_priority_limited_actions_do_not_count_as_effective_live_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -321,6 +363,13 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertIn("Live priority-limited/no-op nice applications: `3`", report)
             self.assertIn("live actuator changes were priority-limited or no-op", report)
             self.assertIn("Failure cause: `action_effectiveness`", report)
+            assert_aggregate_classification(
+                self,
+                root,
+                result="FAIL",
+                failure_cause="action_effectiveness",
+                detail_substring="live_priority_limited_count_total=3",
+            )
 
     def test_live_trend_without_effective_live_action_does_not_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -360,6 +409,13 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertIn("Evidence batch contract: `PASS`", report)
             self.assertIn("Live metadata contract: `PASS`", report)
             self.assertIn("Artifact provenance contract: `PASS`", report)
+            assert_aggregate_classification(
+                self,
+                root,
+                result="PASS",
+                failure_cause="none",
+                detail_substring="stable trend rule",
+            )
 
     def test_intermittent_live_improvement_is_classified_as_noisy_workload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -376,6 +432,13 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Result: `FAIL`", report)
             self.assertIn("Failure cause: `noisy_workload`", report)
+            assert_aggregate_classification(
+                self,
+                root,
+                result="FAIL",
+                failure_cause="noisy_workload",
+                detail_substring="stable trend gate requires",
+            )
 
     def test_live_trend_with_too_few_samples_is_classified_as_insufficient_sample_size(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -392,6 +455,13 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Result: `FAIL`", report)
             self.assertIn("Failure cause: `insufficient_sample_size`", report)
+            assert_aggregate_classification(
+                self,
+                root,
+                result="FAIL",
+                failure_cause="insufficient_sample_size",
+                detail_substring="live_min_samples_total=1",
+            )
 
     def test_missing_required_control_mode_cannot_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
