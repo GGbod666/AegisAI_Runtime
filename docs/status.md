@@ -31,6 +31,10 @@ Implemented and accepted capabilities:
 - `inference_tail_guard` and `tool_call_booster` both have repeated A/B report
   paths with a strict distinction between control evidence and host-level
   benefit.
+- Tool Call Booster daemon audit highlights now inline
+  `tool_call_stage`, `tool_call_id`, `action_kind`, and `effective` on apply
+  detail records so reports can attribute effective scheduler actions to
+  executor / retrieval / rerank stages.
 
 Latest product-evidence status:
 
@@ -38,8 +42,9 @@ Latest product-evidence status:
   model, prompt, stress shape, concurrency, and live affinity/nice pairing
   fixed, increased samples per mode from `4` to `8`, and produced stable
   live-guarded jitter benefit with effective host-level actions.
-- Tool Call Booster: `FAIL`. The live guarded run passed contracts and audit
-  checks, but did not achieve the configured repeated latency improvement.
+- Tool Call Booster: `FAIL`. The stable executor-control live guarded run
+  passed contracts and audit checks, but reproducibly achieved `0/3`
+  comparable rounds above the configured `5.0%` latency-improvement threshold.
 
 ## Latest Verification Baseline
 
@@ -75,6 +80,8 @@ Tool Call Booster:
 
 | run id | artifact | contract verdict | benefit verdict |
 | --- | --- | --- | --- |
+| `live_guarded_tcb_stable_executor_20260511T000000Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stable_executor_20260511T000000Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`: `live_guarded` improved `0/3` comparable rounds by at least `5.0%`; average delta `1.077%`, median delta `0.200%` |
+| `live_guarded_tcb_stable_executor_20260511T000000Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stable_executor_20260511T000000Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`: `live_guarded` improved `0/3` comparable rounds by at least `5.0%` |
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 
@@ -90,12 +97,9 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-79d` — prove or reproducibly falsify Tool Call Booster guarded
-  latency benefit.
+- `AegisAI_Runtime-vv2` — harden generic policy safety cap normalization.
 - `AegisAI_Runtime-cqv` — add production config profiles and schema validation.
 - `AegisAI_Runtime-51c` — validate eBPF helper portability across Linux kernels.
-- `AegisAI_Runtime-14r` — decide and implement a real `WarmupExecutor` side
-  effect, if the product requires one.
 - `AegisAI_Runtime-7h5` — add a cpuset/background dry-run planner after the
   live isolation safety boundary.
 - `AegisAI_Runtime-ufp` — package runtime daemon and helper for production
@@ -130,4 +134,5 @@ action and stable repeated benefit are both required.
 - `docs/mvp_benefit_report.md` is a generated `PASS` from a live guarded run;
   keep `PASS` restricted to effective live action plus stable repeated benefit.
 - The Tool Call Booster live guarded report is also intentionally a `FAIL`:
-  contracts and audit passed, but repeated latency benefit did not.
+  contracts and audit passed, but the latest stable executor-control run
+  reproducibly showed no repeated latency benefit.

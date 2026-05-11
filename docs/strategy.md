@@ -13,10 +13,11 @@ readiness:
 
 - preserve the effective live `inference_tail_guard` benefit proof under the
   strict Phase 4 gate
-- prove or reproducibly falsify Tool Call Booster guarded latency benefit
+- keep Tool Call Booster classified as reproducibly falsified for the current
+  stable executor-control run shape unless a new bounded run proves otherwise
 - keep helper portability, production config, packaging, cpuset/background
-  isolation, WarmupExecutor side effects, dashboard, GPU, and adaptive policy
-  work behind explicit follow-up issues
+  dry-run planning, dashboard, GPU, and adaptive policy work behind explicit
+  follow-up issues
 
 The accepted mainline remains:
 
@@ -35,7 +36,8 @@ The MVP is the smallest runnable AI-aware optimization loop:
 
 The basic closed-loop MVP is accepted. Inference Tail Guard performance benefit
 is proven for the latest controlled CPU-interference run shape; Tool Call
-Booster performance benefit is not proven yet.
+Booster performance benefit is currently reproducibly falsified for the latest
+stable executor-control run shape.
 
 ## Strict Benefit Gate
 
@@ -84,22 +86,30 @@ Exit checks:
 
 ### Tool Call Booster Benefit
 
-Issue: `AegisAI_Runtime-79d`
-
 Goal:
 
-- continue from the real executor lifecycle harness and current live guarded
-  artifact
-- determine whether guarded scheduler actions can produce repeated tool-call
-  latency benefit on this host
+- preserve the latest stable executor-control result as an honest `FAIL` unless
+  a future issue defines a new controlled experiment shape
 - keep `WarmupExecutor` benefit accounting separate from scheduler benefit; the
   default remains deferred audit unless an explicit bounded warmup command is
   configured
 
+Latest stable run: `live_guarded_tcb_stable_executor_20260511T000000Z`
+
+Disposition:
+
+- contract `PASS`, benefit `FAIL`
+- `live_guarded` improved `0/3` comparable rounds by at least `5.0%`
+- average delta versus same-round baseline was `1.077%`, median delta was
+  `0.200%`
+- trigger count, rollback count, action errors, warmup counts, and
+  stage-attributed effective scheduler actions remain report fields
+
 Exit checks:
 
 - report includes latency deltas, trigger counts, rollback counts, action
-  errors, and explicit PASS/FAIL verdict
+  errors, stage-attributed effective scheduler actions, and explicit PASS/FAIL
+  verdict
 - noop/dry-run remain control evidence, not host benefit proof
 - guarded benefit `PASS` requires clean contracts plus repeated latency
   improvement versus baseline
@@ -169,8 +179,8 @@ AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
 | 0. Framework reset | project definition, dual-axis skeleton, config and safety boundaries | complete |
 | 1. Awareness foundation | stable AI workload labels for scenario policies | basic loop complete |
 | 2. Inference Tail Guard MVP | prove or falsify live guarded tail-latency benefit | latest controlled run `PASS` |
-| 3. Tool Calling Booster | prove or falsify guarded tool-call latency benefit | active: `AegisAI_Runtime-79d`; `WarmupExecutor` has explicit command-backed side-effect boundaries and separate reporting |
-| 4. AI-aware isolation | define live cpuset/background throttling boundary | deferred: `AegisAI_Runtime-otk` |
+| 3. Tool Calling Booster | prove or falsify guarded tool-call latency benefit | latest stable executor-control run is `FAIL`; `WarmupExecutor` has explicit command-backed side-effect boundaries and separate reporting |
+| 4. AI-aware isolation | define live cpuset/background throttling boundary | safety boundary documented; dry-run planner deferred: `AegisAI_Runtime-7h5` |
 | 5. Explain/Tune | useful offline reports and threshold suggestions | offline basics exist; online learning deferred |
 | 6. Productionization | config profiles, schema validation, daemon/helper packaging | deferred: `AegisAI_Runtime-cqv`, `AegisAI_Runtime-ufp` |
 | 7. Advanced extensions | RAG, multi-agent isolation, GPU host coordination, cold start, adaptive policy, dashboard | deferred: `AegisAI_Runtime-0ry` |

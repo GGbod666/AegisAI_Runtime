@@ -23,9 +23,10 @@ Current baseline:
 
 - helper-backed `offcpu_time` and `io_latency` have been validated on Linux host
   `gg-vm`
-- live guarded Inference Tail Guard has effective host-level action evidence but
-  no stable MVP benefit yet
-- live guarded Tool Call Booster has contract `PASS` but benefit `FAIL`
+- live guarded Inference Tail Guard has effective host-level action evidence and
+  stable MVP benefit for `live_guarded_phase4_sample_sizing_20260511T000000Z`
+- live guarded Tool Call Booster has contract `PASS` but benefit `FAIL` for
+  `live_guarded_tcb_stable_executor_20260511T000000Z`
 
 ## Base Host Checks
 
@@ -211,7 +212,8 @@ AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
 ```
 
 Reports should include latency deltas, trigger counts, rollback counts, action
-errors, explicit contract/benefit verdicts, and the `WarmupExecutor` boundary.
+errors, stage-attributed effective scheduler action counts, explicit
+contract/benefit verdicts, and the `WarmupExecutor` boundary.
 
 ## Pre-Ollama Preflight
 

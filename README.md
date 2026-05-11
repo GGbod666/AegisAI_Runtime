@@ -41,8 +41,11 @@ allowlist，把这些系统实体映射成 `AI_INFERENCE`、`TOOL_CALL`、
 
 工具调用链路中有 executor startup、retrieval、rerank 和 background interference 等
 阶段。仓库当前用标签和 `tool_call_id` 审计字段识别生命周期，并按 executor、
-retrieval、rerank 阶段缩放动作时长和审计字段。当前已有重复 A/B harness/report，但
-live guarded 主机级收益仍需单独验证。
+retrieval、rerank 阶段缩放动作时长和审计字段。daemon apply detail 会内联记录
+`tool_call_stage`、`tool_call_id`、`action_kind` 和动作是否有效，report 因此能把
+有效 scheduler action 归因到具体阶段。当前已有重复 A/B harness/report；最新稳定
+executor-control live guarded 运行 contract `PASS`、benefit `FAIL`，没有证明主机级
+收益。
 
 ## 设计理念
 
@@ -755,6 +758,8 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 
 | run id | artifact | contract verdict | benefit verdict |
 | --- | --- | --- | --- |
+| `live_guarded_tcb_stable_executor_20260511T000000Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stable_executor_20260511T000000Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`：`live_guarded` 只有 `0/3` 可比较轮次达到 `5.0%` latency improvement，avg delta `1.077%` |
+| `live_guarded_tcb_stable_executor_20260511T000000Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stable_executor_20260511T000000Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`：`live_guarded` 只有 `0/3` 可比较轮次达到 `5.0%` latency improvement |
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 
@@ -762,12 +767,12 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 
 当前仍打开的 beads issue：
 
-- `AegisAI_Runtime-79d`：继续 Tool Call Booster guarded latency benefit proof；当前
-  contract `PASS`，benefit `FAIL`。
+- `AegisAI_Runtime-vv2`：统一 generic policy safety cap normalization，避免非 TCB
+  路径继续直接依赖 raw safety config 值。
 - `AegisAI_Runtime-cqv`：补 production config profiles 和 schema validation。
 - `AegisAI_Runtime-51c`：验证 helper-backed eBPF/bpftrace 路径跨 kernel 可移植性。
-- `AegisAI_Runtime-14r`：决定是否实现真实 `WarmupExecutor` side effect。
-- `AegisAI_Runtime-otk`：定义 live cpuset/background isolation 安全边界。
+- `AegisAI_Runtime-7h5`：在已定义的 live cpuset/background isolation 安全边界后，
+  添加 deterministic dry-run planner。
 - `AegisAI_Runtime-ufp`：生产 daemon/helper packaging 和 installer。
 - `AegisAI_Runtime-0ry`：规划 dashboard、GPU、adaptive policy 等延期扩展。
 

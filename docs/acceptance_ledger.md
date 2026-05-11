@@ -52,14 +52,18 @@ rewriting or appending to `docs/verification_log.md`.
 
 ## Remaining Gap Classes
 
-The accepted pass did not prove product benefit or production readiness. The
-remaining blockers are:
+The accepted pass did not complete production readiness. Since this ledger was
+created, Inference Tail Guard benefit has been proven for the latest controlled
+run shape, Tool Call Booster guarded latency benefit has been reproducibly
+falsified for the latest stable executor-control run shape, the
+`WarmupExecutor` boundary has been implemented, and the live cpuset/background
+safety boundary has been documented. The remaining blockers are:
 
-- product evidence: `AegisAI_Runtime-2kz`, `AegisAI_Runtime-79d`
+- policy safety consistency: `AegisAI_Runtime-vv2`
 - productionization and portability: `AegisAI_Runtime-cqv`,
   `AegisAI_Runtime-51c`, `AegisAI_Runtime-ufp`
-- deferred runtime extensions: `AegisAI_Runtime-14r`,
-  `AegisAI_Runtime-otk`, `AegisAI_Runtime-0ry`
+- cpuset/background dry-run planning: `AegisAI_Runtime-7h5`
+- deferred runtime extensions: `AegisAI_Runtime-0ry`
 
 See `docs/status.md` for the current issue index and `bd ready` for executable
 work.

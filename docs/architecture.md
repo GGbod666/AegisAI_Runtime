@@ -83,6 +83,8 @@ Metrics / Explain:
 - tool call lifecycle recognition
 - executor/retrieval/rerank subpath tracking
 - lifecycle-scoped scheduler protection
+- apply detail attribution of `tool_call_stage`, `tool_call_id`,
+  `action_kind`, and effective scheduler action status
 
 ## Data Flow
 
@@ -170,6 +172,8 @@ Current Tool Call Booster action boundary:
 
 - benefit proof covers guarded scheduler actions: `nice`, plus explicitly
   enabled `affinity`
+- apply detail audit must keep stage/action/effectiveness attribution intact so
+  reports can distinguish action coverage from latency improvement
 - `WarmupExecutor` defaults to deferred/no-side-effect audit; command backends
   can run an explicitly configured warmup command with a positive timeout, and
   rollback remains an audited no-op because cache/process priming is not
