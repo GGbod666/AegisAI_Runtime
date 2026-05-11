@@ -758,10 +758,24 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 
 | run id | artifact | contract verdict | benefit verdict |
 | --- | --- | --- | --- |
+| `live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z/tool_call_booster_benefit_report.md` | `PASS` | `PASS`：`live_guarded` 3/3 可比较轮次达到 `5.0%` latency improvement，avg delta `-21.495%`；executor/retrieval/rerank stage effectiveness 全部 `PASS` |
+| `live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z/tool_call_booster_summary.csv` | `PASS` | `PASS` |
 | `live_guarded_tcb_stable_executor_20260511T000000Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stable_executor_20260511T000000Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`：`live_guarded` 只有 `0/3` 可比较轮次达到 `5.0%` latency improvement，avg delta `1.077%` |
 | `live_guarded_tcb_stable_executor_20260511T000000Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stable_executor_20260511T000000Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`：`live_guarded` 只有 `0/3` 可比较轮次达到 `5.0%` latency improvement |
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
+
+受控 fixed-work proof 可用以下命令复跑：
+
+```bash
+AEGISAI_TCB_PROFILE=fixed_work_guarded \
+AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
+  bash bench/scripts/tool_call_booster_real_executor_harness.sh
+```
+
+该 profile 固化 fixed hash work、baseline/background CPU affinity 和 live
+guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-control
+仍保留为非受控工作量边界。
 
 ## 已知问题和差距
 

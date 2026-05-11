@@ -96,6 +96,20 @@ AEGISAI_TCB_MIN_BENEFIT_PCT=5 \
   bash bench/scripts/tool_call_booster_real_executor_harness.sh
 ```
 
+受控 fixed-work guarded benefit 复跑：
+
+```bash
+AEGISAI_TCB_PROFILE=fixed_work_guarded \
+AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
+  bash bench/scripts/tool_call_booster_real_executor_harness.sh
+```
+
+该 profile 固化已验证 PASS 的收益形状：fixed hash work units、baseline
+critical-chain affinity on CPUs `0,1`、background contention on CPUs `0,1`、
+live guarded `nice+affinity`、3 轮、`5%` benefit hard gate。它适合验收
+scheduler 隔离收益，不替代 stable executor-control artifact 对非受控工作量的
+FAIL 边界。
+
 需要把 benefit verdict 作为 shell hard gate 时，设置
 `AEGISAI_TCB_REQUIRE_BENEFIT=1`。这通常只适合显式受控的 guarded/live 实验窗口。
 `live_guarded` 还必须设置 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1`；可以用

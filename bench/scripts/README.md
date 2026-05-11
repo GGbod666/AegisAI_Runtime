@@ -38,6 +38,11 @@ host-level latency benefit。显式加入 `live_guarded` 时必须设置
 stage effectiveness 依赖 daemon apply detail 中的 `tool_call_stage`、
 `tool_call_id`、`action_kind` 和 `effective` 字段来判断哪段真实获得有效
 scheduler action。
+受控收益证明可用 `AEGISAI_TCB_PROFILE=fixed_work_guarded` 复跑；该 profile
+固定 hash work、baseline/background CPU affinity、live guarded nice+affinity，
+并把 benefit verdict 作为 hard gate。它仍需要
+`AEGISAI_CONFIRM_LIVE_ACTUATOR=1`，且只声明该受控 workload shape 下的 scheduler
+隔离收益。
 该阶段仍不声明 background isolation 或 explain/tune 已正式固化。
 
 ## 真实 Ollama A/B harness 前置条件

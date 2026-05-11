@@ -231,6 +231,29 @@ class SummarizeAbTests(unittest.TestCase):
         self.assertEqual(rerank["effective_scheduler_action_count_total"], "0")
         self.assertEqual(rerank["stage_effectiveness"], "NO_EFFECTIVE_ACTION")
 
+    def test_latency_gate_requires_two_thirds_and_average_improvement(self) -> None:
+        comparable, improved, avg, median, passed = summarize_ab.latency_gate(
+            [-10.0, -6.0, 1.0],
+            min_benefit_pct=5.0,
+        )
+
+        self.assertEqual(comparable, 3)
+        self.assertEqual(improved, 2)
+        self.assertEqual(avg, -5.0)
+        self.assertEqual(median, -6.0)
+        self.assertTrue(passed)
+
+        comparable, improved, avg, median, passed = summarize_ab.latency_gate(
+            [-10.0, -4.0, -4.0],
+            min_benefit_pct=5.0,
+        )
+
+        self.assertEqual(comparable, 3)
+        self.assertEqual(improved, 1)
+        self.assertEqual(avg, -6.0)
+        self.assertEqual(median, -4.0)
+        self.assertFalse(passed)
+
     def test_only_guarded_repeated_improvement_counts_as_benefit(self) -> None:
         rows: list[dict[str, str]] = []
         for round_no in range(1, 4):

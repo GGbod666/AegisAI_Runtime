@@ -10,7 +10,7 @@ import math
 import re
 import statistics
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 CONTRACT_STAGES = ("executor", "retrieval", "rerank")
@@ -576,6 +576,42 @@ def median(values: list[float]) -> float | None:
     return statistics.median(values)
 
 
+def same_round_deltas(
+    pass_rows: list[dict[str, str]],
+    baseline_by_round: dict[str, dict[str, str]],
+    value_fn: Callable[[dict[str, str]], float | None],
+) -> list[float]:
+    deltas: list[float] = []
+    for row in pass_rows:
+        baseline = baseline_by_round.get(row["round"])
+        if baseline is None:
+            continue
+        base_latency = value_fn(baseline)
+        mode_latency = value_fn(row)
+        if base_latency is None or mode_latency is None or base_latency <= 0:
+            continue
+        deltas.append(((mode_latency - base_latency) / base_latency) * 100.0)
+    return deltas
+
+
+def latency_gate(
+    deltas: list[float],
+    min_benefit_pct: float,
+) -> tuple[int, int, float | None, float | None, bool]:
+    comparable_rounds = len(deltas)
+    required_improved_rounds = math.ceil(comparable_rounds * 2 / 3) if comparable_rounds else 0
+    improved_rounds = sum(1 for delta in deltas if delta <= -min_benefit_pct)
+    avg_delta = mean(deltas)
+    median_delta = median(deltas)
+    passed = (
+        comparable_rounds > 0
+        and improved_rounds >= required_improved_rounds
+        and avg_delta is not None
+        and avg_delta <= -min_benefit_pct
+    )
+    return comparable_rounds, improved_rounds, avg_delta, median_delta, passed
+
+
 def build_summary_rows(
     rows: list[dict[str, str]],
     modes: list[str],
@@ -597,36 +633,18 @@ def build_summary_rows(
         mode_rows = [row for row in rows if row["mode"] == mode]
         pass_rows = [row for row in mode_rows if row["contract"] == "PASS"]
         latencies = [value for row in pass_rows if (value := latency(row)) is not None]
-        deltas: list[float] = []
-        for row in pass_rows:
-            if mode == "baseline":
-                continue
-            baseline = baseline_by_round.get(row["round"])
-            if baseline is None:
-                continue
-            base_latency = latency(baseline)
-            mode_latency = latency(row)
-            if base_latency is None or mode_latency is None or base_latency <= 0:
-                continue
-            deltas.append(((mode_latency - base_latency) / base_latency) * 100.0)
-
-        comparable_rounds = len(deltas)
-        required_improved_rounds = math.ceil(comparable_rounds * 2 / 3) if comparable_rounds else 0
-        improved_rounds = sum(1 for delta in deltas if delta <= -min_benefit_pct)
-        avg_delta = mean(deltas)
-        median_delta = median(deltas)
+        deltas = [] if mode == "baseline" else same_round_deltas(
+            pass_rows, baseline_by_round, latency
+        )
+        comparable_rounds, improved_rounds, avg_delta, median_delta, latency_gate_pass = (
+            latency_gate(deltas, min_benefit_pct)
+        )
         mode_contract_pass = len(pass_rows) == rounds
         effective_scheduler_action_count = sum(
             as_int(row.get("effective_scheduler_action_count")) for row in mode_rows
         )
-        latency_trend_pass = (
-            mode != "baseline"
-            and mode_contract_pass
-            and comparable_rounds > 0
-            and improved_rounds >= required_improved_rounds
-            and avg_delta is not None
-            and avg_delta <= -min_benefit_pct
-        )
+        required_improved_rounds = math.ceil(comparable_rounds * 2 / 3) if comparable_rounds else 0
+        latency_trend_pass = mode != "baseline" and mode_contract_pass and latency_gate_pass
         guarded_mode = mode in GUARDED_MODES
         stage_effectiveness_pass = (
             not guarded_mode or stage_effectiveness_by_mode.get(mode, False)
@@ -732,25 +750,14 @@ def build_stage_effectiveness_rows(
                 for baseline in baseline_by_round.values()
                 if (value := stage_latency(baseline, stage)) is not None
             ]
-            deltas: list[float] = []
-            for row in pass_rows:
-                if mode == "baseline":
-                    continue
-                baseline = baseline_by_round.get(row["round"])
-                if baseline is None:
-                    continue
-                base_latency = stage_latency(baseline, stage)
-                mode_latency = stage_latency(row, stage)
-                if base_latency is None or mode_latency is None or base_latency <= 0:
-                    continue
-                deltas.append(((mode_latency - base_latency) / base_latency) * 100.0)
-
-            comparable_rounds = len(deltas)
-            required_improved_rounds = (
-                math.ceil(comparable_rounds * 2 / 3) if comparable_rounds else 0
+            deltas = [] if mode == "baseline" else same_round_deltas(
+                pass_rows,
+                baseline_by_round,
+                lambda row, stage=stage: stage_latency(row, stage),
             )
-            improved_rounds = sum(1 for delta in deltas if delta <= -min_benefit_pct)
-            avg_delta = mean(deltas)
+            comparable_rounds, improved_rounds, avg_delta, median_delta, latency_gate_pass = (
+                latency_gate(deltas, min_benefit_pct)
+            )
             stage_action_count = sum(
                 parse_count_map(row.get("stage_effective_scheduler_actions", "")).get(stage, 0)
                 for row in mode_rows
@@ -762,12 +769,7 @@ def build_stage_effectiveness_rows(
                 stage_effectiveness = "BASELINE"
             elif stage_action_count <= 0:
                 stage_effectiveness = "NO_EFFECTIVE_ACTION"
-            elif (
-                comparable_rounds > 0
-                and improved_rounds >= required_improved_rounds
-                and avg_delta is not None
-                and avg_delta <= -min_benefit_pct
-            ):
+            elif latency_gate_pass:
                 stage_effectiveness = "PASS"
             else:
                 stage_effectiveness = "LATENCY_NOT_IMPROVED"
@@ -786,7 +788,7 @@ def build_stage_effectiveness_rows(
                     "comparable_rounds": str(comparable_rounds),
                     "improved_rounds": str(improved_rounds),
                     "avg_delta_vs_baseline_pct": fmt_float(avg_delta),
-                    "median_delta_vs_baseline_pct": fmt_float(median(deltas)),
+                    "median_delta_vs_baseline_pct": fmt_float(median_delta),
                     "trigger_count_total": str(trigger_count),
                     "effective_scheduler_action_count_total": str(stage_action_count),
                     "stage_effectiveness": stage_effectiveness,

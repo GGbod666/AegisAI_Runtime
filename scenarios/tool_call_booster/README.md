@@ -52,12 +52,29 @@ AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
   bash bench/scripts/tool_call_booster_real_executor_harness.sh
 ```
 
+The reproducible fixed-work benefit proof has a dedicated profile:
+
+```bash
+AEGISAI_TCB_PROFILE=fixed_work_guarded \
+AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
+  bash bench/scripts/tool_call_booster_real_executor_harness.sh
+```
+
 The harness writes `tool_call_booster_detail.csv`,
 `tool_call_booster_summary.csv`, `tool_call_booster_stage_effectiveness.csv`,
 and `tool_call_booster_benefit_report.md` under
 `.cache/aegisai/tool_call_booster/<run_id>/`.
 
 ## Current Evidence
+
+Latest fixed-work guarded run:
+`live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z`.
+
+- contract verdict: `PASS`
+- benefit verdict: `PASS`
+- `live_guarded` improved `3/3` comparable rounds by at least `5.0%`
+- average delta versus same-round baseline: `-21.495%`
+- executor / retrieval / rerank stage effectiveness: all `PASS`
 
 Latest stable executor-control run:
 `live_guarded_tcb_stable_executor_20260511T000000Z`.
@@ -68,5 +85,7 @@ Latest stable executor-control run:
 - average delta versus same-round baseline: `1.077%`
 - median delta versus same-round baseline: `0.200%`
 
-This is a reproducible falsification for this host/run shape, not a product
-benefit proof. `noop` and `dry_run` remain control evidence only.
+The fixed-work profile is the current scheduler isolation benefit proof for
+this host shape. The stable executor-control run remains a reproducible
+falsification for its workload shape, so `noop` and `dry_run` remain control
+evidence only and should not be treated as host-level benefit proof.
