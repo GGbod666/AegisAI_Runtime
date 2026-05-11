@@ -65,6 +65,24 @@ The latest accepted baseline passed:
 The `/tmp` log override kept this pass from appending to
 `docs/verification_log.md`.
 
+Latest audit refresh on 2026-05-11 also passed:
+
+- `cargo check --workspace`
+- `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`
+- `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_verify_workspace_20260511.md bash bench/scripts/verify_workspace.sh`
+- `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_toolchain_preflight_20260511.md bash bench/scripts/toolchain_preflight.sh`
+- `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_inference_preflight_20260511.md bash bench/scripts/inference_tail_guard_preflight.sh`
+- `bd lint`
+
+Audit caveats:
+
+- Linux source preflight passed with `processed_events=0`; this is a safe
+  startup/partial-probe check, not an ingestion or benefit proof.
+- Inference preflight intentionally does not run `ollama run`, pull a model, or
+  start `stress-ng` load.
+- `bd doctor` is unsupported in embedded mode, and `bd preflight` currently
+  prints an irrelevant Go/Nix checklist until `AegisAI_Runtime-awq` is fixed.
+
 ## Artifact Index
 
 Inference Tail Guard:
@@ -106,15 +124,31 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-vv2` — harden generic policy safety cap normalization.
-- `AegisAI_Runtime-cqv` — add production config profiles and schema validation.
-- `AegisAI_Runtime-51c` — validate eBPF helper portability across Linux kernels.
-- `AegisAI_Runtime-7h5` — add a cpuset/background dry-run planner after the
-  live isolation safety boundary.
-- `AegisAI_Runtime-ufp` — package runtime daemon and helper for production
-  deployment.
-- `AegisAI_Runtime-0ry` — plan deferred dashboard, GPU, and adaptive policy
-  extensions.
+- `AegisAI_Runtime-awq` — replace the generic Go/Nix `bd preflight` checklist
+  with this Rust workspace's real quality gates.
+- `AegisAI_Runtime-yxb` — directly test the Linux rollback report builder
+  hotspot.
+- `AegisAI_Runtime-d42` — expand CLI parser edge-case tests for live and
+  warmup flags.
+- `AegisAI_Runtime-fp6` — add deterministic tests for inference smoke run-env
+  artifact output.
+- `AegisAI_Runtime-vv2` / `AegisAI_Runtime-vv2.1` — harden generic policy
+  safety cap normalization.
+- `AegisAI_Runtime-cqv` / `AegisAI_Runtime-cqv.1` /
+  `AegisAI_Runtime-cqv.2` / `AegisAI_Runtime-cqv.3` — add production config
+  profile selection, schema validation, and cross-file safety checks.
+- `AegisAI_Runtime-51c` / `AegisAI_Runtime-51c.1` /
+  `AegisAI_Runtime-51c.2` / `AegisAI_Runtime-51c.3` /
+  `AegisAI_Runtime-51c.4` — validate helper portability, classify helper
+  compatibility, add controlled Linux ingestion smoke, and harden helper
+  startup failure tests.
+- `AegisAI_Runtime-7h5` / `AegisAI_Runtime-7h5.1` — add a deterministic
+  cpuset/background dry-run rejection matrix while live cgroup writes remain
+  disabled.
+- `AegisAI_Runtime-ufp` / `AegisAI_Runtime-ufp.1` — define and then implement
+  daemon/helper packaging boundaries.
+- `AegisAI_Runtime-0ry` / `AegisAI_Runtime-0ry.1` — split deferred dashboard,
+  GPU, and adaptive policy extensions into evidence-gated future work.
 
 Use:
 

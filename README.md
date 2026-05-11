@@ -720,10 +720,40 @@ bash bench/scripts/verify_workspace.sh
 - `cargo check --workspace`
 - `cargo test --workspace`
 - Tool Call Booster report unit tests
+- Inference Tail Guard report unit tests
 - `cargo fmt --all -- --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - mock daemon smoke
 - Linux source partial-probe smoke
+
+2026-05-11 最新系统审计复跑结果：
+
+| check | result | evidence |
+| --- | --- | --- |
+| `cargo fmt --all -- --check` | `PASS` | 本地命令退出码 `0` |
+| `cargo check --workspace` | `PASS` | 本地命令退出码 `0` |
+| `cargo test --workspace` | `PASS` | Rust workspace unit/doc tests 全部通过 |
+| `cargo clippy --all-targets --all-features -- -D warnings` | `PASS` | 本地命令退出码 `0` |
+| `python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py'` | `PASS` | `14` tests |
+| `python3 -m unittest discover -s bench/scripts -p 'test_*.py'` | `PASS` | `15` tests |
+| `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done` | `PASS` | shell 语法检查退出码 `0` |
+| `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_verify_workspace_20260511.md bash bench/scripts/verify_workspace.sh` | `PASS` | mock daemon `processed_events=3`；Linux source preflight `processed_events=0` |
+| `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_toolchain_preflight_20260511.md bash bench/scripts/toolchain_preflight.sh` | `PASS` | bpftool、bpftrace、clang、llc、taskset、rustfmt、clippy、stress-ng 可用 |
+| `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_inference_preflight_20260511.md bash bench/scripts/inference_tail_guard_preflight.sh` | `PASS` | Ollama `0.21.3-rc0` 可用；llama.cpp binary 未找到并按设计跳过 |
+| `bd lint` | `PASS` | 已补齐现有 open issue 的 acceptance criteria |
+
+本轮测试没有发现当前 suite 的失败用例。审计发现的是边界和盲点：
+
+- Linux source preflight 仍可能是 `processed_events=0`；它证明启动、权限降级和
+  partial-probe 安全，不证明真实 Linux ingestion，也不证明性能收益。
+- Inference preflight 不拉取或运行模型；`stress-ng` 只记录可用性，不启动压力负载。
+- `bd doctor` 在 embedded mode 下不支持；`bd preflight` 仍输出 Go/Nix 项目模板，
+  与本 Rust workspace 的真实质量门不一致。
+- code-review-graph 显示 `1286` nodes、`10276` edges、风险低，但也标出
+  `20` 个 untested hotspot 和 `28` 个 300 行以上的大文件/大类。
+- 图分析未找到 `build_linux_rollback_report`、`CliConfig::parse`、
+  `BpfTracePipe::start` 的直接测试映射；现有测试覆盖了一些行为，但这些热点仍需要
+  更直接的回归测试。
 
 Inference Tail Guard Phase 4 严格收益报告：
 
@@ -783,16 +813,16 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 
 ## 已知问题和差距
 
-当前仍打开的 beads issue：
+`bd` 是任务源，最新精细任务清单见 `docs/latest_tasks.md`。当前 open issue 分两层：
 
-- `AegisAI_Runtime-vv2`：统一 generic policy safety cap normalization，避免非 TCB
-  路径继续直接依赖 raw safety config 值。
-- `AegisAI_Runtime-cqv`：补 production config profiles 和 schema validation。
-- `AegisAI_Runtime-51c`：验证 helper-backed eBPF/bpftrace 路径跨 kernel 可移植性。
-- `AegisAI_Runtime-7h5`：在已定义的 live cpuset/background isolation 安全边界后，
-  添加 deterministic dry-run planner。
-- `AegisAI_Runtime-ufp`：生产 daemon/helper packaging 和 installer。
-- `AegisAI_Runtime-0ry`：规划 dashboard、GPU、adaptive policy 等延期扩展。
+- 父级 gap：`AegisAI_Runtime-vv2`、`AegisAI_Runtime-cqv`、`AegisAI_Runtime-51c`、
+  `AegisAI_Runtime-7h5`、`AegisAI_Runtime-ufp`、`AegisAI_Runtime-0ry`。
+- 审计新增执行项：`AegisAI_Runtime-vv2.1`、`AegisAI_Runtime-cqv.1`、
+  `AegisAI_Runtime-cqv.2`、`AegisAI_Runtime-cqv.3`、`AegisAI_Runtime-51c.1`、
+  `AegisAI_Runtime-51c.2`、`AegisAI_Runtime-51c.3`、`AegisAI_Runtime-51c.4`、
+  `AegisAI_Runtime-7h5.1`、`AegisAI_Runtime-ufp.1`、`AegisAI_Runtime-0ry.1`、
+  `AegisAI_Runtime-yxb`、`AegisAI_Runtime-d42`、`AegisAI_Runtime-fp6`、
+  `AegisAI_Runtime-awq`。
 
 源码和设计层面的限制：
 
@@ -806,12 +836,18 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 - warmup executor 默认仍是 deferred audit；只有显式 CLI warmup command 才会产生受超时约束的真实 side effect，且 rollback 是 no-op audit。
 - 配置加载固定读取 `configs/*/*.example.toml`，没有生产配置 profile、动态 reload 或完整 TOML
   schema 校验。
-- Linux source preflight smoke 可能处理 0 个事件；它证明启动、权限降级和 partial-probe
-  安全，不证明性能收益。
+- Linux source preflight smoke 当前可在 `processed_events=0` 时通过；需要新增受控
+  procfs ingestion smoke 来证明真实事件流。
+- `bd preflight` 当前不代表本项目质量门；应以 Cargo、Python unittest、shell 语法和
+  bench preflight 组合为准，直到 `AegisAI_Runtime-awq` 修复。
 - 当前热点大文件仍包括 `agent/runtime_daemon/src/source.rs`、
-  `agent/actuator/src/backend.rs`、`agent/explain_tune/src/engine.rs`、
-  `agent/runtime_orchestrator/src/runtime_orchestrator.rs`、`agent/policy_engine/src/engine.rs`
-  和 `bench/scripts/inference_tail_guard_ollama_smoke.sh`；后续修改应小步、测试先行。
+  `agent/actuator/src/backend.rs`、`bench/scripts/inference_tail_guard_ollama_smoke.sh`、
+  `agent/actuator/src/lib.rs`、`agent/runtime_daemon/src/main.rs`、
+  `bench/scripts/inference_tail_guard_phase4_report.sh`、
+  `bench/tool_call_booster/summarize_ab.py`、`agent/runtime_orchestrator/src/runtime_orchestrator.rs`、
+  `agent/explain_tune/src/engine.rs`、`agent/runtime_daemon/src/runtime_loop.rs`、
+  `scenarios/tool_call_booster/src/policy.rs` 和 `agent/policy_engine/src/engine.rs`；
+  后续修改应小步、测试先行。
 - 还没有生产 service packaging、installer、dashboard、GPU scheduler 或在线 adaptive policy
   loop。
 
