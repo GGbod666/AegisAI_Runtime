@@ -34,6 +34,18 @@ Coordinate MCP services actively:
 - Prefer existing patterns and utilities over new abstractions.
 - Preserve unrelated configuration and local environment settings.
 - When reviewing, focus first on bugs, regressions, risks, and missing tests.
+- After every task that changes code, docs, config, validation evidence, issue
+  status, or runtime artifacts, synchronize the shared project status before
+  handoff. Update the relevant README/status/verification log/issue notes so
+  the latest result, artifact path, verdict, and remaining boundary are visible
+  to the next person or next session; do not leave stale status messages behind.
+- For non-trivial design, acceptance, optimization, reliability, or
+  high-benefit work, do not rely only on local reasoning. Actively consult
+  authoritative sources such as official docs, standards, upstream projects,
+  kernel/runtime docs, or respected engineering case studies, then digest that
+  evidence into the project-specific plan and validation. Prefer authoritative
+  sources over generic search results, and cite or record the useful references
+  in the handoff or relevant docs when they materially influenced the decision.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
