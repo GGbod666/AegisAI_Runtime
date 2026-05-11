@@ -17414,3 +17414,42 @@ qwen2.5:0.5b    a8b0c5157701    442 MB    100% CPU     4096       4 minutes from
 - Report: `/home/gg/AegisAI_Runtime/docs/mvp_benefit_report.md`
 - Harness aggregate exit status: `0`
 - Benefit verdict: `PASS`
+
+### 2026-05-11T09:01:17Z - Tool Call Booster repeated A/B benefit harness
+
+- Run ID: `live_guarded_tcb_affinity_default_20260511T090042Z`
+- Artifact dir: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_affinity_default_20260511T090042Z`
+- Tool call id base: `tc-real-001`
+- Rounds: `3`
+- Modes: `baseline,noop_observation,dry_run,live_guarded`
+- Executor roles observed: `48`
+- Report verdict:
+```text
+overall_contract_verdict=PASS
+overall_benefit_verdict=FAIL
+```
+- Aggregate summary:
+```text
+mode,backend,mode_contract,rounds,contract_pass_rounds,tool_call_latency_median_ms,tool_call_latency_avg_ms,baseline_latency_median_ms,comparable_rounds,improved_rounds,avg_delta_vs_baseline_pct,median_delta_vs_baseline_pct,trigger_count_total,rollback_count_total,action_error_count_total,scheduler_command_count_total,effective_scheduler_action_count_total,guarded_noop_count_total,latency_trend_verdict,benefit_verdict,verdict_reason
+baseline,none,PASS,3,3,2686.409,2689.467,2686.409,0,0,,,0,0,0,0,0,0,BASELINE,BASELINE,baseline reference
+noop_observation,noop,PASS,3,3,2686.204,2686.306,2686.409,3,0,-0.117,-0.017,28,9,0,0,0,0,FAIL,FAIL,only 0/3 comparable rounds improved by >=5.0%
+dry_run,linux-command-dry-run,PASS,3,3,2687.079,2687.334,2686.409,3,0,-0.079,0.005,23,9,0,18,0,0,FAIL,FAIL,only 0/3 comparable rounds improved by >=5.0%
+live_guarded,linux-command,PASS,3,3,2688.335,2688.741,2686.409,3,0,-0.027,0.079,39,9,0,33,24,9,FAIL,FAIL,only 0/3 comparable rounds improved by >=5.0%
+```
+- Detail:
+```text
+round,mode,backend,contract,tool_call_id,tool_call_latency_ms,executor_ms,retrieval_ms,rerank_ms,background_ms,daemon_lifecycle_ms,processed_events,applied_actions,total_rollbacks,tool_call_booster_triggers,executor_roles,stages,action_error_count,scheduler_command_count,effective_scheduler_action_count,guarded_noop_count,live_guard_scope,artifact_prefix,contract_reason
+1,baseline,none,PASS,tc-real-001-r1-baseline,2695.780,2695.780,2654.595,2658.594,2655.682,,0,0,0,0,4,none,0,0,0,0,none,round1.baseline,ok
+1,noop_observation,noop,PASS,tc-real-001-r1-noop_observation,2686.770,2686.770,2653.092,2656.714,2654.235,908.000,64,11,3,11,4,"background:17,executor:20,rerank:14,retrieval:13",0,0,0,0,none,round1.noop_observation,ok
+1,dry_run,linux-command-dry-run,PASS,tc-real-001-r1-dry_run,2687.079,2687.079,2653.238,2657.353,2658.501,621.000,64,6,3,6,4,"background:25,executor:12,rerank:10,retrieval:17",0,6,0,0,none,round1.dry_run,ok
+1,live_guarded,linux-command,PASS,tc-real-001-r1-live_guarded,2688.238,2688.238,2651.787,2652.093,2652.806,601.000,64,6,3,6,4,"background:11,executor:19,rerank:17,retrieval:17",0,9,6,3,"nice,affinity",round1.live_guarded,ok
+2,baseline,none,PASS,tc-real-001-r2-baseline,2686.212,2686.212,2652.192,2652.142,2657.095,,0,0,0,0,4,none,0,0,0,0,none,round2.baseline,ok
+2,noop_observation,noop,PASS,tc-real-001-r2-noop_observation,2686.204,2686.204,2657.600,2652.257,2653.704,737.000,64,8,3,8,4,"background:13,executor:13,rerank:29,retrieval:8",0,0,0,0,none,round2.noop_observation,ok
+2,dry_run,linux-command-dry-run,PASS,tc-real-001-r2-dry_run,2686.351,2686.351,2657.330,2654.455,2652.399,716.000,64,8,3,8,4,"background:17,executor:10,rerank:28,retrieval:8",0,6,0,0,none,round2.dry_run,ok
+2,live_guarded,linux-command,PASS,tc-real-001-r2-live_guarded,2688.335,2688.335,2656.150,2653.930,2653.805,1325.000,64,21,3,21,4,"background:9,executor:17,rerank:19,retrieval:19",0,12,9,3,"nice,affinity",round2.live_guarded,ok
+3,baseline,none,PASS,tc-real-001-r3-baseline,2686.409,2686.409,2653.271,2653.065,2657.278,,0,0,0,0,4,none,0,0,0,0,none,round3.baseline,ok
+3,noop_observation,noop,PASS,tc-real-001-r3-noop_observation,2685.943,2685.943,2656.539,2652.092,2652.735,706.000,64,9,3,9,4,"background:9,executor:22,rerank:9,retrieval:21",0,0,0,0,none,round3.noop_observation,ok
+3,dry_run,linux-command-dry-run,PASS,tc-real-001-r3-dry_run,2688.571,2688.571,2652.913,2653.012,2656.498,721.000,64,9,3,9,4,"background:11,executor:17,rerank:25,retrieval:10",0,6,0,0,none,round3.dry_run,ok
+3,live_guarded,linux-command,PASS,tc-real-001-r3-live_guarded,2689.649,2689.649,2659.159,2655.099,2658.280,992.000,64,12,3,12,4,"background:11,executor:17,rerank:18,retrieval:18",0,12,9,3,"nice,affinity",round3.live_guarded,ok
+```
+- Report: `/home/gg/AegisAI_Runtime/.cache/aegisai/tool_call_booster/live_guarded_tcb_affinity_default_20260511T090042Z/tool_call_booster_benefit_report.md`
