@@ -121,19 +121,19 @@ append_round_detail() {
   local run_dir="$5"
 
   if [[ ! -s "${run_dir}/summary.csv" ]]; then
-    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-      "${scenario}" "${label}" "${round}" "${run_status}" "${TUNED_VARIABLE}" "missing" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "0" "0" "${run_dir}" \
+    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+      "${scenario}" "${label}" "${round}" "${run_status}" "${TUNED_VARIABLE}" "missing" "" "" "" "" "" "" "" "" "" "" "" "missing" "summary.csv missing" "" "" "" "" "" "0" "0" "${run_dir}" \
       >>"${DETAIL_CSV}"
     return 0
   fi
 
-  python3 - "${scenario}" "${label}" "${round}" "${run_status}" "${run_dir}" "${run_dir}/summary.csv" "${run_dir}/mode_counts.csv" "${TUNED_VARIABLE}" >>"${DETAIL_CSV}" <<'PY'
+  python3 - "${scenario}" "${label}" "${round}" "${run_status}" "${run_dir}" "${run_dir}/summary.csv" "${run_dir}/mode_counts.csv" "${run_dir}/mode_contract.csv" "${TUNED_VARIABLE}" >>"${DETAIL_CSV}" <<'PY'
 import csv
 import os
 import re
 import sys
 
-scenario, label, round_id, harness_status, run_dir, summary_path, counts_path, changed_variable = sys.argv[1:9]
+scenario, label, round_id, harness_status, run_dir, summary_path, counts_path, contract_path, changed_variable = sys.argv[1:10]
 
 counts = {}
 try:
@@ -142,8 +142,22 @@ try:
 except FileNotFoundError:
     counts = {}
 
+mode_contracts = {}
+try:
+    with open(contract_path, newline="", encoding="utf-8") as handle:
+        mode_contracts = {row["mode"]: row for row in csv.DictReader(handle)}
+except FileNotFoundError:
+    mode_contracts = {}
+
+def mode_contract(mode):
+    contract = mode_contracts.get(mode)
+    if not contract:
+        return "missing", "mode_contract.csv missing or mode row absent"
+    return contract.get("mode_contract", "missing") or "missing", contract.get("reason", "")
+
 def mode_status(mode, row):
     count = counts.get(mode, {})
+    contract_status, _reason = mode_contract(mode)
     try:
         samples_ok = int(row["samples_ok"])
         samples_total = int(row["samples_total"])
@@ -155,6 +169,8 @@ def mode_status(mode, row):
     except ValueError:
         return "1"
 
+    if contract_status != "PASS":
+        return "1"
     if samples_ok != samples_total or stress_exhausted != 0:
         return "1"
     if mode == "baseline":
@@ -222,11 +238,13 @@ def live_effective_action_counts(mode):
 
 with open(summary_path, newline="", encoding="utf-8") as handle:
     reader = csv.DictReader(handle)
+    writer = csv.writer(sys.stdout, lineterminator="\n")
     for row in reader:
         status = mode_status(row["mode"], row)
         count = counts.get(row["mode"], {})
+        contract_status, contract_reason = mode_contract(row["mode"])
         live_effective_actions, live_priority_limited = live_effective_action_counts(row["mode"])
-        print(",".join([
+        writer.writerow([
             scenario,
             label,
             round_id,
@@ -244,6 +262,8 @@ with open(summary_path, newline="", encoding="utf-8") as handle:
             row["trigger_count"],
             row["rollback_count"],
             count.get("action_error_count", "0"),
+            contract_status,
+            contract_reason,
             row.get("cpu_migration_total", count.get("cpu_migration_total", "0")),
             row.get("cpu_migrations_per_sec_max", count.get("cpu_migrations_per_sec_max", "0")),
             row.get("major_page_fault_total", count.get("major_page_fault_total", "0")),
@@ -252,7 +272,7 @@ with open(summary_path, newline="", encoding="utf-8") as handle:
             live_effective_actions,
             live_priority_limited,
             run_dir,
-        ]))
+        ])
 PY
 }
 
@@ -370,7 +390,7 @@ append_log "- Tuned variable: \`${TUNED_VARIABLE}\`"
 append_log "- Tuned variable detail: \`${TUNED_VARIABLE_DETAIL}\`"
 append_log "- Success criterion: MVP benefit is true only when P95/P99, TTFT, or jitter shows a stable improvement trend vs baseline across rounds and live_guarded records effective host-level actuator changes."
 
-printf 'scenario,scenario_label,round,run_status,changed_variable,mode,backend,samples_ok,samples_total,ttft_p95_ms,ttft_p99_ms,latency_p95_ms,latency_p99_ms,jitter_ms,trigger_count,rollback_count,action_error_count,cpu_migration_total,cpu_migrations_per_sec_max,major_page_fault_total,major_page_faults_per_sec_max,offcpu_time_events,live_effective_action_count,live_priority_limited_count,artifact_dir\n' >"${DETAIL_CSV}"
+printf 'scenario,scenario_label,round,run_status,changed_variable,mode,backend,samples_ok,samples_total,ttft_p95_ms,ttft_p99_ms,latency_p95_ms,latency_p99_ms,jitter_ms,trigger_count,rollback_count,action_error_count,mode_contract,mode_contract_reason,cpu_migration_total,cpu_migrations_per_sec_max,major_page_fault_total,major_page_faults_per_sec_max,offcpu_time_events,live_effective_action_count,live_priority_limited_count,artifact_dir\n' >"${DETAIL_CSV}"
 
 overall_status=0
 for scenario in ${SCENARIOS//,/ }; do
@@ -474,6 +494,8 @@ for (scenario, mode), mode_rows in sorted(by_key.items()):
         "trigger_count_total": str(sum(int(row["trigger_count"] or 0) for row in mode_rows)),
         "rollback_count_total": str(sum(int(row["rollback_count"] or 0) for row in mode_rows)),
         "action_error_count_total": str(sum(int(row["action_error_count"] or 0) for row in mode_rows)),
+        "mode_contract_pass_total": str(sum(1 for row in mode_rows if row.get("mode_contract") == "PASS")),
+        "mode_contract_total": str(len(mode_rows)),
         "cpu_migration_total": str(sum(int(row["cpu_migration_total"] or 0) for row in mode_rows)),
         "cpu_migrations_per_sec_max": str(max(int(row["cpu_migrations_per_sec_max"] or 0) for row in mode_rows)),
         "major_page_fault_total": str(sum(int(row["major_page_fault_total"] or 0) for row in mode_rows)),
@@ -527,6 +549,8 @@ fieldnames = [
     "trigger_count_total",
     "rollback_count_total",
     "action_error_count_total",
+    "mode_contract_pass_total",
+    "mode_contract_total",
     "cpu_migration_total",
     "cpu_migrations_per_sec_max",
     "major_page_fault_total",
@@ -540,6 +564,72 @@ with open(aggregate_path, "w", newline="", encoding="utf-8") as handle:
     writer = csv.DictWriter(handle, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(aggregate_rows)
+
+REQUIRED_MODES = ("baseline", "noop_observation", "dry_run", "live_guarded")
+
+def parse_configured_modes(raw):
+    aliases = {
+        "noop": "noop_observation",
+        "noop_observation": "noop_observation",
+        "noop-observation": "noop_observation",
+        "dry_run": "dry_run",
+        "dry-run": "dry_run",
+        "dryrun": "dry_run",
+        "live": "live_guarded",
+        "live_guarded": "live_guarded",
+        "live-guarded": "live_guarded",
+        "linux-command": "live_guarded",
+        "baseline": "baseline",
+    }
+    configured = []
+    for mode in raw.replace(",", " ").split():
+        canonical = aliases.get(mode, mode)
+        if canonical not in configured:
+            configured.append(canonical)
+    return configured
+
+def is_pid_allowlist(raw):
+    count = 0
+    for pid in raw.replace(",", " ").split():
+        if not pid.isdigit() or int(pid) <= 0:
+            return False
+        count += 1
+    return count > 0
+
+configured_modes = parse_configured_modes(modes)
+configured_mode_set = set(configured_modes)
+configured_rounds = parse_int(rounds)
+evidence_contract_violations = []
+if not rows:
+    evidence_contract_violations.append("no detail rows found")
+missing_configured_modes = [
+    mode for mode in REQUIRED_MODES if mode not in configured_mode_set
+]
+if missing_configured_modes:
+    evidence_contract_violations.append(
+        "configured modes missing " + ",".join(missing_configured_modes)
+    )
+
+for scenario in sorted(scenario_labels):
+    for mode in REQUIRED_MODES:
+        mode_rows = [
+            row for row in rows
+            if row["scenario"] == scenario and row["mode"] == mode
+        ]
+        if len(mode_rows) < configured_rounds:
+            evidence_contract_violations.append(
+                f'{scenario_labels[scenario]} / {mode}: {len(mode_rows)}/{configured_rounds} rounds present'
+            )
+
+evidence_batch_contract_pass = not evidence_contract_violations
+live_metadata_violations = []
+if live_confirm != "1":
+    live_metadata_violations.append("AEGISAI_CONFIRM_LIVE_ACTUATOR must be 1")
+if not is_pid_allowlist(live_pid_allowlist):
+    live_metadata_violations.append("AEGISAI_LIVE_PID_ALLOWLIST must contain one or more positive PIDs")
+if live_enable_affinity not in ("0", "1"):
+    live_metadata_violations.append("AEGISAI_ENABLE_LIVE_AFFINITY must be 0 or 1")
+live_metadata_contract_pass = not live_metadata_violations
 
 stable_improvements = []
 live_stable_improvements = []
@@ -618,7 +708,9 @@ live_priority_limited_count = sum(
 )
 live_host_effective = live_effective_action_count > 0
 mode_contracts_pass = all(
-    row["mode"] == "missing" or row["run_status"] == "0"
+    row["mode"] != "missing"
+    and row["run_status"] == "0"
+    and row.get("mode_contract") == "PASS"
     for row in rows
 )
 live_action_contract_failed = any(
@@ -633,8 +725,29 @@ live_action_contract_failed = any(
 )
 live_max_comparisons = max((stat["comparisons"] for stat in live_metric_stats), default=0)
 live_has_any_positive_delta = any(stat["positive_delta"] for stat in live_metric_stats)
+benefit_contract_pass = (
+    evidence_batch_contract_pass
+    and live_metadata_contract_pass
+    and mode_contracts_pass
+    and not live_action_contract_failed
+)
 
-if live_host_effective and not live_action_contract_failed and sample_size_sufficient:
+if not evidence_batch_contract_pass:
+    failure_cause = "insufficient_sample_size"
+    failure_cause_detail = "The report batch is incomplete for benefit proof: " + "; ".join(evidence_contract_violations[:3])
+elif not live_metadata_contract_pass:
+    failure_cause = "action_effectiveness"
+    failure_cause_detail = "Live guarded proof metadata is incomplete: " + "; ".join(live_metadata_violations)
+elif not mode_contracts_pass or live_action_contract_failed or not live_host_effective:
+    failure_cause = "action_effectiveness"
+    if not live_host_effective and live_priority_limited_count > 0:
+        failure_cause_detail = "Live guarded trend was observed, but live actuator changes were priority-limited or no-op."
+    else:
+        failure_cause_detail = "Live guarded did not prove effective host-level action, trigger, rollback, and clean action audit behavior."
+elif not sample_size_sufficient or live_max_comparisons < 3:
+    failure_cause = "insufficient_sample_size"
+    failure_cause_detail = "The run did not provide at least three rounds and at least three samples per mode for the stable trend gate."
+elif live_host_effective and not live_action_contract_failed and sample_size_sufficient:
     if live_stable_improvements:
         failure_cause = "none"
         failure_cause_detail = "Live guarded met the stable trend rule with effective host-level actuator changes."
@@ -644,22 +757,18 @@ if live_host_effective and not live_action_contract_failed and sample_size_suffi
     else:
         failure_cause = "no_measurable_benefit"
         failure_cause_detail = "Live guarded had effective actions and enough configured samples, but no live metric showed measurable improvement versus baseline."
-elif not live_host_effective or live_action_contract_failed:
-    failure_cause = "action_effectiveness"
-    failure_cause_detail = "Live guarded did not prove effective host-level action, trigger, rollback, and clean action audit behavior."
-elif not sample_size_sufficient or live_max_comparisons < 3:
-    failure_cause = "insufficient_sample_size"
-    failure_cause_detail = "The run did not provide at least three rounds and at least three samples per mode for the stable trend gate."
 else:
     failure_cause = "no_measurable_benefit"
     failure_cause_detail = "Live guarded did not show a measurable benefit versus baseline."
 
-if live_stable_improvements and live_host_effective and sample_size_sufficient:
+if live_stable_improvements and live_host_effective and sample_size_sufficient and benefit_contract_pass:
     mvp_result = "PASS"
     verdict = "MVP benefit observed: live_guarded shows a stable improvement trend with effective host-level actuator changes."
 elif live_stable_improvements:
     mvp_result = "FAIL"
-    if not sample_size_sufficient:
+    if failure_cause != "none":
+        verdict = f"MVP benefit not proven: {failure_cause_detail}"
+    elif not sample_size_sufficient:
         verdict = "MVP benefit not proven: live_guarded trend was observed, but sample sizing was insufficient for the strict gate."
     else:
         verdict = "MVP benefit not proven: live_guarded trend was observed, but live actuator changes were priority-limited or no-op."
@@ -682,6 +791,7 @@ detail_headers = [
     "triggers",
     "rollbacks",
     "action errors",
+    "mode contract",
     "cpu mig total",
     "maj fault total",
     "live effective actions",
@@ -707,6 +817,7 @@ for row in rows:
         row["trigger_count"],
         row["rollback_count"],
         row["action_error_count"],
+        row["mode_contract"],
         row["cpu_migration_total"],
         row["major_page_fault_total"],
         row["live_effective_action_count"],
@@ -726,6 +837,7 @@ agg_headers = [
     "jitter mean",
     "cpu mig total",
     "maj fault total",
+    "mode contracts",
     "TTFT P95 delta %",
     "TTFT P99 delta %",
     "lat P95 delta %",
@@ -752,6 +864,7 @@ for row in aggregate_rows:
         row["jitter_ms_mean"],
         row["cpu_migration_total"],
         row["major_page_fault_total"],
+        f'{row["mode_contract_pass_total"]}/{row["mode_contract_total"]}',
         row["ttft_p95_ms_delta_vs_baseline_pct"],
         row["ttft_p99_ms_delta_vs_baseline_pct"],
         row["latency_p95_ms_delta_vs_baseline_pct"],
@@ -773,6 +886,18 @@ if live_stable_improvements and not live_host_effective:
     stable_lines.append("- Live guarded trend is treated as non-proof because no effective live actuator changes were observed.")
 
 failure_lines = []
+contract_lines = [
+    f"- Required evidence modes: `{','.join(REQUIRED_MODES)}`.",
+    f"- Configured evidence modes: `{','.join(configured_modes)}`.",
+    f"- Evidence batch contract: `{'PASS' if evidence_batch_contract_pass else 'FAIL'}`.",
+    f"- Live metadata contract: `{'PASS' if live_metadata_contract_pass else 'FAIL'}`.",
+    f"- Mode contract rollup: `{'PASS' if mode_contracts_pass else 'FAIL'}`.",
+]
+for violation in evidence_contract_violations:
+    contract_lines.append(f"- Evidence contract violation: {violation}.")
+for violation in live_metadata_violations:
+    contract_lines.append(f"- Live metadata violation: {violation}.")
+
 for row in rows:
     if row["mode"] != "live_guarded" or row["run_status"] == "0":
         continue
@@ -785,6 +910,8 @@ for row in rows:
         reasons.append("no rollback")
     if int(row["action_error_count"] or 0) > 0:
         reasons.append(f'{row["action_error_count"]} action audit error(s)')
+    if row.get("mode_contract") != "PASS":
+        reasons.append(f'mode contract {row.get("mode_contract", "missing")}: {row.get("mode_contract_reason", "")}')
     if not reasons:
         reasons.append("mode contract failed")
     failure_lines.append(f'- {row["scenario_label"]} round {row["round"]}: {", ".join(reasons)}.')
@@ -845,6 +972,10 @@ content = [
     "## Failure Diagnosis",
     "",
     *diagnosis_lines,
+    "",
+    "## Evidence Contract",
+    "",
+    *contract_lines,
     "",
     "## Live Guarded Contract",
     "",

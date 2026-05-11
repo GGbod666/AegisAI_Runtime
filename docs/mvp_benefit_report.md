@@ -25,29 +25,29 @@
 
 ## Aggregate Comparison
 
-| scenario | changed variable | mode | rounds | samples | TTFT P95 mean | TTFT P99 mean | lat P95 mean | lat P99 mean | jitter mean | cpu mig total | maj fault total | TTFT P95 delta % | TTFT P99 delta % | lat P95 delta % | lat P99 delta % | jitter delta % | live effective actions | live priority-limited |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| CPU interference | sample_sizing | baseline | 3/3 | 24/24 | 17882.410 | 17882.410 | 34309.526 | 34309.526 | 8945.077 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
-| CPU interference | sample_sizing | dry_run | 3/3 | 24/24 | 18814.851 | 18814.851 | 34908.679 | 34908.679 | 8828.700 | 269 | 0 | -5.21 | -5.21 | -1.75 | -1.75 | 1.30 | 0 | 0 |
-| CPU interference | sample_sizing | live_guarded | 3/3 | 24/24 | 17974.502 | 17974.502 | 33314.581 | 33314.581 | 8371.052 | 1225 | 1 | -0.51 | -0.51 | 2.90 | 2.90 | 6.42 | 3 | 3 |
-| CPU interference | sample_sizing | noop_observation | 3/3 | 24/24 | 19564.538 | 19564.538 | 35215.049 | 35215.049 | 8821.581 | 164 | 0 | -9.41 | -9.41 | -2.64 | -2.64 | 1.38 | 0 | 0 |
+| scenario | changed variable | mode | rounds | samples | TTFT P95 mean | TTFT P99 mean | lat P95 mean | lat P99 mean | jitter mean | cpu mig total | maj fault total | mode contracts | TTFT P95 delta % | TTFT P99 delta % | lat P95 delta % | lat P99 delta % | jitter delta % | live effective actions | live priority-limited |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| CPU interference | sample_sizing | baseline | 3/3 | 24/24 | 17882.410 | 17882.410 | 34309.526 | 34309.526 | 8945.077 | 0 | 0 | 3/3 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
+| CPU interference | sample_sizing | dry_run | 3/3 | 24/24 | 18814.851 | 18814.851 | 34908.679 | 34908.679 | 8828.700 | 269 | 0 | 3/3 | -5.21 | -5.21 | -1.75 | -1.75 | 1.30 | 0 | 0 |
+| CPU interference | sample_sizing | live_guarded | 3/3 | 24/24 | 17974.502 | 17974.502 | 33314.581 | 33314.581 | 8371.052 | 1225 | 1 | 3/3 | -0.51 | -0.51 | 2.90 | 2.90 | 6.42 | 3 | 3 |
+| CPU interference | sample_sizing | noop_observation | 3/3 | 24/24 | 19564.538 | 19564.538 | 35215.049 | 35215.049 | 8821.581 | 164 | 0 | 3/3 | -9.41 | -9.41 | -2.64 | -2.64 | 1.38 | 0 | 0 |
 
 ## Per-Round Comparison
 
-| scenario | round | changed variable | status | mode | ok/total | TTFT P95 | TTFT P99 | lat P95 | lat P99 | jitter | triggers | rollbacks | action errors | cpu mig total | maj fault total | live effective actions | live priority-limited |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| CPU interference | 1 | sample_sizing | 0 | baseline | 8/8 | 16599.205 | 16599.205 | 31859.407 | 31859.407 | 8377.712 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| CPU interference | 1 | sample_sizing | 0 | noop_observation | 8/8 | 18841.018 | 18841.018 | 34219.734 | 34219.734 | 8866.630 | 3 | 3 | 0 | 56 | 0 | 0 | 0 |
-| CPU interference | 1 | sample_sizing | 0 | dry_run | 8/8 | 18613.074 | 18613.074 | 34245.467 | 34245.467 | 8552.931 | 5 | 5 | 0 | 96 | 0 | 0 | 0 |
-| CPU interference | 1 | sample_sizing | 0 | live_guarded | 8/8 | 18523.912 | 18523.912 | 32488.064 | 32488.064 | 7669.485 | 41 | 41 | 0 | 396 | 0 | 1 | 1 |
-| CPU interference | 2 | sample_sizing | 0 | baseline | 8/8 | 19766.641 | 19766.641 | 38708.091 | 38708.091 | 9940.574 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| CPU interference | 2 | sample_sizing | 0 | noop_observation | 8/8 | 20740.355 | 20740.355 | 37407.963 | 37407.963 | 9118.086 | 3 | 3 | 0 | 60 | 0 | 0 | 0 |
-| CPU interference | 2 | sample_sizing | 0 | dry_run | 8/8 | 19905.275 | 19905.275 | 36198.610 | 36198.610 | 9377.881 | 2 | 2 | 0 | 55 | 0 | 0 | 0 |
-| CPU interference | 2 | sample_sizing | 0 | live_guarded | 8/8 | 18065.193 | 18065.193 | 32550.273 | 32550.273 | 8335.873 | 41 | 41 | 0 | 408 | 1 | 1 | 1 |
-| CPU interference | 3 | sample_sizing | 0 | baseline | 8/8 | 17281.385 | 17281.385 | 32361.079 | 32361.079 | 8516.945 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| CPU interference | 3 | sample_sizing | 0 | noop_observation | 8/8 | 19112.242 | 19112.242 | 34017.449 | 34017.449 | 8480.026 | 2 | 2 | 0 | 48 | 0 | 0 | 0 |
-| CPU interference | 3 | sample_sizing | 0 | dry_run | 8/8 | 17926.204 | 17926.204 | 34281.959 | 34281.959 | 8555.287 | 6 | 6 | 0 | 118 | 0 | 0 | 0 |
-| CPU interference | 3 | sample_sizing | 0 | live_guarded | 8/8 | 17334.400 | 17334.400 | 34905.406 | 34905.406 | 9107.799 | 43 | 43 | 0 | 421 | 0 | 1 | 1 |
+| scenario | round | changed variable | status | mode | ok/total | TTFT P95 | TTFT P99 | lat P95 | lat P99 | jitter | triggers | rollbacks | action errors | mode contract | cpu mig total | maj fault total | live effective actions | live priority-limited |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| CPU interference | 1 | sample_sizing | 0 | baseline | 8/8 | 16599.205 | 16599.205 | 31859.407 | 31859.407 | 8377.712 | 0 | 0 | 0 | PASS | 0 | 0 | 0 | 0 |
+| CPU interference | 1 | sample_sizing | 0 | noop_observation | 8/8 | 18841.018 | 18841.018 | 34219.734 | 34219.734 | 8866.630 | 3 | 3 | 0 | PASS | 56 | 0 | 0 | 0 |
+| CPU interference | 1 | sample_sizing | 0 | dry_run | 8/8 | 18613.074 | 18613.074 | 34245.467 | 34245.467 | 8552.931 | 5 | 5 | 0 | PASS | 96 | 0 | 0 | 0 |
+| CPU interference | 1 | sample_sizing | 0 | live_guarded | 8/8 | 18523.912 | 18523.912 | 32488.064 | 32488.064 | 7669.485 | 41 | 41 | 0 | PASS | 396 | 0 | 1 | 1 |
+| CPU interference | 2 | sample_sizing | 0 | baseline | 8/8 | 19766.641 | 19766.641 | 38708.091 | 38708.091 | 9940.574 | 0 | 0 | 0 | PASS | 0 | 0 | 0 | 0 |
+| CPU interference | 2 | sample_sizing | 0 | noop_observation | 8/8 | 20740.355 | 20740.355 | 37407.963 | 37407.963 | 9118.086 | 3 | 3 | 0 | PASS | 60 | 0 | 0 | 0 |
+| CPU interference | 2 | sample_sizing | 0 | dry_run | 8/8 | 19905.275 | 19905.275 | 36198.610 | 36198.610 | 9377.881 | 2 | 2 | 0 | PASS | 55 | 0 | 0 | 0 |
+| CPU interference | 2 | sample_sizing | 0 | live_guarded | 8/8 | 18065.193 | 18065.193 | 32550.273 | 32550.273 | 8335.873 | 41 | 41 | 0 | PASS | 408 | 1 | 1 | 1 |
+| CPU interference | 3 | sample_sizing | 0 | baseline | 8/8 | 17281.385 | 17281.385 | 32361.079 | 32361.079 | 8516.945 | 0 | 0 | 0 | PASS | 0 | 0 | 0 | 0 |
+| CPU interference | 3 | sample_sizing | 0 | noop_observation | 8/8 | 19112.242 | 19112.242 | 34017.449 | 34017.449 | 8480.026 | 2 | 2 | 0 | PASS | 48 | 0 | 0 | 0 |
+| CPU interference | 3 | sample_sizing | 0 | dry_run | 8/8 | 17926.204 | 17926.204 | 34281.959 | 34281.959 | 8555.287 | 6 | 6 | 0 | PASS | 118 | 0 | 0 | 0 |
+| CPU interference | 3 | sample_sizing | 0 | live_guarded | 8/8 | 17334.400 | 17334.400 | 34905.406 | 34905.406 | 9107.799 | 43 | 43 | 0 | PASS | 421 | 0 | 1 | 1 |
 
 ## Stable Trend Check
 
@@ -60,6 +60,14 @@
 - Comparable live guarded rounds per metric: `3`.
 - Minimum observed live guarded samples per successful round: `8`.
 - Configured minimum for benefit proof: `rounds>=3; samples_per_mode>=3`; observed live guarded samples must also be at least 3.
+
+## Evidence Contract
+
+- Required evidence modes: `baseline,noop_observation,dry_run,live_guarded`.
+- Configured evidence modes: `baseline,noop_observation,dry_run,live_guarded`.
+- Evidence batch contract: `PASS`.
+- Live metadata contract: `PASS`.
+- Mode contract rollup: `PASS`.
 
 ## Live Guarded Contract
 

@@ -59,6 +59,26 @@ def counts_row(mode: str) -> dict[str, str]:
     }
 
 
+def contract_row(mode: str, status: str = "PASS", reason: str = "ok") -> dict[str, str]:
+    return {
+        "mode": mode,
+        "acceptance_gate": "control_latency" if mode == "baseline" else mode,
+        "backend": "none" if mode == "baseline" else mode,
+        "request_contract": "PASS",
+        "recognition_contract": "n/a" if mode == "baseline" else "PASS",
+        "observation_signal_contract": "n/a" if mode == "baseline" else "PASS",
+        "audit_contract": "n/a" if mode in ("baseline", "noop_observation") else "PASS",
+        "live_nice_only_contract": "PASS" if mode == "live_guarded" else "n/a",
+        "live_affinity_contract": "n/a",
+        "live_cpuset_disabled_contract": "PASS" if mode == "live_guarded" else "n/a",
+        "actuator_quality_contract": "PASS" if mode == "live_guarded" else "n/a",
+        "live_permission_contract": "PASS" if mode == "live_guarded" else "n/a",
+        "live_command_contract": "PASS" if mode == "live_guarded" else "n/a",
+        "mode_contract": status,
+        "reason": reason,
+    }
+
+
 def live_daemon_log(action_evidence: str) -> str:
     if action_evidence == "effective_taskset":
         return (
@@ -93,9 +113,14 @@ class Phase4ReportGateTests(unittest.TestCase):
         samples: int = 3,
         rounds: int = 3,
         live_metrics_by_round: list[float] | None = None,
+        modes: list[str] | None = None,
+        live_confirm: str = "1",
+        live_pid_allowlist: str = "1234",
+        contract_status_by_mode: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         artifact_dir = root / "artifacts"
-        modes = ["baseline", "noop_observation", "dry_run", "live_guarded"]
+        modes = modes or ["baseline", "noop_observation", "dry_run", "live_guarded"]
+        contract_status_by_mode = contract_status_by_mode or {}
         for round_no in range(1, rounds + 1):
             round_dir = artifact_dir / "cpu" / f"round_{round_no}"
             current_live_metric_ms = (
@@ -103,27 +128,41 @@ class Phase4ReportGateTests(unittest.TestCase):
                 if live_metrics_by_round is not None
                 else live_metric_ms
             )
+            metric_by_mode = {
+                "baseline": 100.0,
+                "noop_observation": control_metric_ms,
+                "dry_run": control_metric_ms,
+                "live_guarded": current_live_metric_ms,
+            }
             write_csv(
                 round_dir / "summary.csv",
                 list(summary_row("baseline", 100.0).keys()),
-                [
-                    summary_row("baseline", 100.0, samples),
-                    summary_row("noop_observation", control_metric_ms, samples),
-                    summary_row("dry_run", control_metric_ms, samples),
-                    summary_row("live_guarded", current_live_metric_ms, samples),
-                ],
+                [summary_row(mode, metric_by_mode[mode], samples) for mode in modes],
             )
             write_csv(
                 round_dir / "mode_counts.csv",
                 list(counts_row("baseline").keys()),
                 [counts_row(mode) for mode in modes],
             )
-            live_dir = round_dir / "live_guarded"
-            live_dir.mkdir(parents=True, exist_ok=True)
-            (live_dir / "daemon.log").write_text(
-                live_daemon_log(live_action_evidence),
-                encoding="utf-8",
+            write_csv(
+                round_dir / "mode_contract.csv",
+                list(contract_row("baseline").keys()),
+                [
+                    contract_row(
+                        mode,
+                        contract_status_by_mode.get(mode, "PASS"),
+                        "forced test contract failure" if contract_status_by_mode.get(mode) == "FAIL" else "ok",
+                    )
+                    for mode in modes
+                ],
             )
+            if "live_guarded" in modes:
+                live_dir = round_dir / "live_guarded"
+                live_dir.mkdir(parents=True, exist_ok=True)
+                (live_dir / "daemon.log").write_text(
+                    live_daemon_log(live_action_evidence),
+                    encoding="utf-8",
+                )
 
         env = os.environ.copy()
         env.update(
@@ -138,6 +177,9 @@ class Phase4ReportGateTests(unittest.TestCase):
                 "AEGISAI_PHASE4_ROUNDS": str(rounds),
                 "AEGISAI_AB_SAMPLES": str(samples),
                 "AEGISAI_AB_CONCURRENCY": "1",
+                "AEGISAI_CONFIRM_LIVE_ACTUATOR": live_confirm,
+                "AEGISAI_LIVE_PID_ALLOWLIST": live_pid_allowlist,
+                "AEGISAI_ENABLE_LIVE_AFFINITY": "0",
                 "AEGISAI_PHASE4_TUNED_VARIABLE": "stress_shape",
                 "AEGISAI_PHASE4_TUNED_VARIABLE_DETAIL": "Changed CPU workers from 1 to 2; all other controls held constant.",
             }
@@ -264,6 +306,8 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertIn("Selected mode contracts: `PASS`", report)
             self.assertIn("Live effective host-level actuator changes: `3`", report)
             self.assertIn("Failure cause: `none`", report)
+            self.assertIn("Evidence batch contract: `PASS`", report)
+            self.assertIn("Live metadata contract: `PASS`", report)
 
     def test_intermittent_live_improvement_is_classified_as_noisy_workload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -296,6 +340,65 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Result: `FAIL`", report)
             self.assertIn("Failure cause: `insufficient_sample_size`", report)
+
+    def test_missing_required_control_mode_cannot_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                live_action_evidence="effective_taskset",
+                modes=["baseline", "noop_observation", "live_guarded"],
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertNotIn("Result: `PASS`", report)
+            self.assertIn("Evidence batch contract: `FAIL`", report)
+            self.assertIn("configured modes missing dry_run", report)
+            self.assertIn("Failure cause: `insufficient_sample_size`", report)
+
+    def test_missing_live_metadata_cannot_pass_cached_live_trend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                live_action_evidence="effective_taskset",
+                live_confirm="0",
+                live_pid_allowlist="",
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertNotIn("Result: `PASS`", report)
+            self.assertIn("Live metadata contract: `FAIL`", report)
+            self.assertIn("AEGISAI_CONFIRM_LIVE_ACTUATOR must be 1", report)
+            self.assertIn("AEGISAI_LIVE_PID_ALLOWLIST must contain one or more positive PIDs", report)
+            self.assertIn("Failure cause: `action_effectiveness`", report)
+
+    def test_failed_mode_contract_cannot_pass_cached_live_trend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                live_action_evidence="effective_taskset",
+                contract_status_by_mode={"live_guarded": "FAIL"},
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertNotIn("Result: `PASS`", report)
+            self.assertIn("Mode contract rollup: `FAIL`", report)
+            self.assertIn("mode contract FAIL: forced test contract failure", report)
+            self.assertIn("Failure cause: `action_effectiveness`", report)
 
 
 if __name__ == "__main__":
