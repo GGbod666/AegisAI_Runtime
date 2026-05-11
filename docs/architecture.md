@@ -145,6 +145,17 @@ verification. Probe validation and benchmark evidence require Linux.
 
 ## Live Action Boundaries
 
+Global live-action rules:
+
+- `linux-command` live actions require explicit operator confirmation and a
+  non-empty PID allowlist. Scenario policy and config may request actions, but
+  they cannot enable a new class of live host write by themselves.
+- The rootless runtime daemon owns policy decisions, leases, audits, and
+  rollback scheduling. It must not gain broad cgroupfs write authority.
+- Each live write class needs an explicit guard, original-state capture,
+  bounded affected process set, rollback path, and tests that show denied paths
+  stay denied.
+
 Current live affinity boundary:
 
 - `agent/actuator/src/cpu_affinity.rs` parses `Cpus_allowed_list`, reads online
@@ -163,6 +174,44 @@ Current Tool Call Booster action boundary:
   can run an explicitly configured warmup command with a positive timeout, and
   rollback remains an audited no-op because cache/process priming is not
   deterministically reversible
+
+Cpuset and background-isolation boundary:
+
+- Current state remains disabled for live writes. `use_cpuset = true` is a
+  policy/audit surface only; live guarded backends must keep reporting cpuset as
+  disabled until a separate cgroup/cpuset applier is implemented and reviewed.
+- A future live applier may touch only cgroup v2 files under an
+  administrator-created AegisAI-owned subtree, for example
+  `/sys/fs/cgroup/aegisai.runtime/`. It must not write the root cgroup,
+  system/user manager cgroups, container-orchestrator-owned cgroups, or arbitrary
+  paths learned from process metadata.
+- The allowed live file surface is limited to creating/removing AegisAI-owned
+  child cgroups and writing `cgroup.procs`, `cgroup.threads`, `cpuset.cpus`,
+  `cpuset.mems`, and, only if background throttling is explicitly approved,
+  `cpu.max` for those child cgroups. No other cgroup controller files are in
+  scope without a new safety issue.
+- The first implementation step is a dry-run planner. It should emit target
+  pids/cgroups, proposed CPU set, original membership/cpuset/cpu.max capture
+  plan, rollback plan, and a rejection reason without writing cgroupfs.
+- Live writes require a dedicated cgroup/cpuset applier or helper with narrower
+  authority than general root. Do not fold this into the eBPF helper unless a
+  separate privilege review proves that combined authority is still minimal.
+- Classification must show both sides of the isolation decision before an action
+  is eligible: protected work must be interactive AI inference or an active tool
+  call, and throttled work must be classified as `BACKGROUND_JOB`/batch with no
+  interactive-latency-sensitive tag. Unknown, mixed, or parent-inferred-only
+  classifications are dry-run or reject-only.
+- The affected set must be bounded before apply: every pid/tid to move must be
+  enumerated, still alive, in the operator allowlist or an AegisAI-owned cgroup,
+  and below a documented maximum process count. Empty CPU sets, offline CPUs,
+  missing `cpuset.mems`, or migrations that would move the daemon/helper itself
+  are hard rejects.
+- Rollback capture must happen before apply and include original cgroup
+  membership, original cpuset/cpu.max values for any AegisAI-owned cgroups that
+  will be changed, and whether temporary cgroups were created. Rollback errors
+  must be audited with the failed file/path and manual restore instruction;
+  repeated rollback failure must disable further live cpuset/background actions
+  for the process set.
 
 ## Production Config Boundaries
 

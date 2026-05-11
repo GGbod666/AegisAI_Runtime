@@ -199,8 +199,9 @@ work slices expected under each open gap.
 ## T9. Define Live Cpuset And Background Isolation Safety Contract
 
 - Issue: `AegisAI_Runtime-otk`
-- Current gap: cpuset/background throttling exists in policy/audit surfaces, but
-  live controls are not enabled.
+- Current decision: live cpuset/background writes remain disabled. The safety
+  contract lives in `docs/architecture.md`; validation entry conditions live in
+  `docs/linux_validation.md`.
 - Scope:
   - define allowed cgroup roots, ownership requirements, rollback capture,
     maximum affected process set, and emergency restore behavior
@@ -218,8 +219,8 @@ work slices expected under each open gap.
 
 ## T10. Implement A Minimal Cpuset/Background Dry-Run Planner
 
-- Issue: `AegisAI_Runtime-otk`
-- Depends on: T9
+- Issue: `AegisAI_Runtime-7h5`
+- Depends on: T9 / `AegisAI_Runtime-otk`
 - Scope:
   - generate planned cpuset/background isolation actions without writing cgroups
   - include target pids/cgroups, proposed CPU set, original state capture plan,

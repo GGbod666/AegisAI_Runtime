@@ -152,6 +152,22 @@ cargo test -p aegisai-actuator
 Focus on original nice capture, original affinity capture, online/allowed CPU
 intersection, cpuset capture, rollback audit fields, and explicit live guards.
 
+Live cpuset and background-isolation writes are not part of the current live
+action set. Before any implementation enables them, validation must prove:
+
+- current `live_guarded` contracts still keep cpuset disabled by default
+- policy/config alone cannot enable cgroupfs writes
+- the host uses a known cgroup v2 layout with an administrator-created
+  AegisAI-owned subtree
+- the proposed applier can read and restore original membership, `cpuset.cpus`,
+  `cpuset.mems`, and any touched `cpu.max`
+- dry-run plans reject unsafe roots, unknown classifications, empty CPU sets,
+  missing rollback state, and overbroad process sets with explicit reasons
+
+The first accepted artifact for this area should be dry-run only. A later live
+artifact must name every cgroup file touched, every pid/tid moved, rollback
+result, and manual restore instruction for any failed restore.
+
 ## Benchmark Entry Conditions
 
 Do not collect benchmark numbers until:
@@ -162,6 +178,8 @@ Do not collect benchmark numbers until:
 - actuator rollback paths are auditable
 - the target runtime process can be identified by classifier rules
 - live experiment window, PID allowlist, and permissions are explicit
+- cpuset/background isolation is either contractually disabled or running only
+  in the reviewed dry-run planner
 
 ## Live Guarded Experiments
 

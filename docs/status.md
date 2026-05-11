@@ -96,8 +96,8 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 - `AegisAI_Runtime-51c` — validate eBPF helper portability across Linux kernels.
 - `AegisAI_Runtime-14r` — decide and implement a real `WarmupExecutor` side
   effect, if the product requires one.
-- `AegisAI_Runtime-otk` — define live cpuset and background isolation safety
-  boundaries.
+- `AegisAI_Runtime-7h5` — add a cpuset/background dry-run planner after the
+  live isolation safety boundary.
 - `AegisAI_Runtime-ufp` — package runtime daemon and helper for production
   deployment.
 - `AegisAI_Runtime-0ry` — plan deferred dashboard, GPU, and adaptive policy
