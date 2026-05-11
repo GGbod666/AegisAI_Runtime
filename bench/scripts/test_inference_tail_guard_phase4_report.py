@@ -102,6 +102,38 @@ def live_daemon_log(action_evidence: str) -> str:
     raise ValueError(f"unknown live action evidence: {action_evidence}")
 
 
+def write_run_env(
+    path: pathlib.Path,
+    *,
+    artifact_dir: pathlib.Path,
+    modes: list[str],
+    samples: int,
+    live_confirm: str,
+    live_pid_allowlist: str,
+    overrides: dict[str, str] | None = None,
+) -> None:
+    values = {
+        "artifact_dir": str(artifact_dir),
+        "modes": " ".join(modes),
+        "model": "qwen2.5:0.5b",
+        "num_predict": "96",
+        "samples_per_mode": str(samples),
+        "concurrency": "1",
+        "stress_cpu": "2",
+        "stress_io": "0",
+        "stress_hdd": "0",
+        "stress_hdd_bytes": "128M",
+        "live_confirm": live_confirm,
+        "live_pid_allowlist": live_pid_allowlist,
+        "live_enable_affinity": "0",
+    }
+    values.update(overrides or {})
+    path.write_text(
+        "".join(f"{key}={value}\n" for key, value in values.items()),
+        encoding="utf-8",
+    )
+
+
 class Phase4ReportGateTests(unittest.TestCase):
     def run_report(
         self,
@@ -117,6 +149,8 @@ class Phase4ReportGateTests(unittest.TestCase):
         live_confirm: str = "1",
         live_pid_allowlist: str = "1234",
         contract_status_by_mode: dict[str, str] | None = None,
+        write_provenance: bool = True,
+        run_env_overrides: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         artifact_dir = root / "artifacts"
         modes = modes or ["baseline", "noop_observation", "dry_run", "live_guarded"]
@@ -162,6 +196,16 @@ class Phase4ReportGateTests(unittest.TestCase):
                 (live_dir / "daemon.log").write_text(
                     live_daemon_log(live_action_evidence),
                     encoding="utf-8",
+                )
+            if write_provenance:
+                write_run_env(
+                    round_dir / "run.env",
+                    artifact_dir=round_dir,
+                    modes=modes,
+                    samples=samples,
+                    live_confirm=live_confirm,
+                    live_pid_allowlist=live_pid_allowlist,
+                    overrides=run_env_overrides,
                 )
 
         env = os.environ.copy()
@@ -308,6 +352,7 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertIn("Failure cause: `none`", report)
             self.assertIn("Evidence batch contract: `PASS`", report)
             self.assertIn("Live metadata contract: `PASS`", report)
+            self.assertIn("Artifact provenance contract: `PASS`", report)
 
     def test_intermittent_live_improvement_is_classified_as_noisy_workload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -398,6 +443,43 @@ class Phase4ReportGateTests(unittest.TestCase):
             self.assertNotIn("Result: `PASS`", report)
             self.assertIn("Mode contract rollup: `FAIL`", report)
             self.assertIn("mode contract FAIL: forced test contract failure", report)
+            self.assertIn("Failure cause: `action_effectiveness`", report)
+
+    def test_missing_run_env_cannot_pass_cached_live_trend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                live_action_evidence="effective_taskset",
+                write_provenance=False,
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertIn("Artifact provenance contract: `FAIL`", report)
+            self.assertIn("run.env missing", report)
+            self.assertIn("Failure cause: `action_effectiveness`", report)
+
+    def test_run_env_control_mismatch_cannot_pass_cached_live_trend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_report(
+                root,
+                control_metric_ms=100.0,
+                live_metric_ms=80.0,
+                live_action_evidence="effective_taskset",
+                run_env_overrides={"samples_per_mode": "9", "model": "different:model"},
+            )
+
+            report = (root / "mvp_benefit_report.md").read_text(encoding="utf-8")
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Result: `FAIL`", report)
+            self.assertIn("Artifact provenance contract: `FAIL`", report)
+            self.assertIn("run.env samples_per_mode=9, expected 3", report)
+            self.assertIn("run.env model=different:model, expected qwen2.5:0.5b", report)
             self.assertIn("Failure cause: `action_effectiveness`", report)
 
 

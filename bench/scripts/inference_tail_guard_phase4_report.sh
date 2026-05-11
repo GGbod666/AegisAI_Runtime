@@ -596,6 +596,31 @@ def is_pid_allowlist(raw):
         count += 1
     return count > 0
 
+def read_run_env(artifact_dir):
+    path = f"{artifact_dir}/run.env"
+    values = {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.rstrip("\n")
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                values[key] = value
+    except FileNotFoundError:
+        return None
+    return values
+
+def expected_stress_for_scenario(scenario):
+    if scenario == "no_interference":
+        return "0", "0", "0"
+    if scenario == "cpu_io":
+        return cpu_workers, io_workers, hdd_workers
+    return cpu_workers, "0", "0"
+
+def env_value(values, key):
+    return values.get(key, "missing")
+
 configured_modes = parse_configured_modes(modes)
 configured_mode_set = set(configured_modes)
 configured_rounds = parse_int(rounds)
@@ -630,6 +655,55 @@ if not is_pid_allowlist(live_pid_allowlist):
 if live_enable_affinity not in ("0", "1"):
     live_metadata_violations.append("AEGISAI_ENABLE_LIVE_AFFINITY must be 0 or 1")
 live_metadata_contract_pass = not live_metadata_violations
+
+provenance_violations = []
+seen_artifacts = set()
+round_artifacts = []
+for row in rows:
+    key = (row["scenario"], row["round"], row["artifact_dir"])
+    if key in seen_artifacts:
+        continue
+    seen_artifacts.add(key)
+    round_artifacts.append(key)
+
+for scenario, round_id, artifact_dir in round_artifacts:
+    label = f'{scenario_labels.get(scenario, scenario)} round {round_id}'
+    run_env = read_run_env(artifact_dir)
+    if run_env is None:
+        provenance_violations.append(f"{label}: run.env missing")
+        continue
+
+    expected_cpu, expected_io, expected_hdd = expected_stress_for_scenario(scenario)
+    expected_values = {
+        "artifact_dir": artifact_dir,
+        "model": model,
+        "num_predict": num_predict,
+        "samples_per_mode": samples,
+        "concurrency": concurrency,
+        "stress_cpu": expected_cpu,
+        "stress_io": expected_io,
+        "stress_hdd": expected_hdd,
+        "stress_hdd_bytes": hdd_bytes,
+        "live_confirm": live_confirm,
+        "live_pid_allowlist": live_pid_allowlist,
+        "live_enable_affinity": live_enable_affinity,
+    }
+    for key, expected in expected_values.items():
+        actual = env_value(run_env, key)
+        if actual != expected:
+            provenance_violations.append(
+                f"{label}: run.env {key}={actual}, expected {expected}"
+            )
+
+    run_env_modes = set(parse_configured_modes(run_env.get("modes", "")))
+    if run_env_modes != configured_mode_set:
+        actual_modes = ",".join(sorted(run_env_modes)) if run_env_modes else "missing"
+        expected_modes = ",".join(sorted(configured_mode_set))
+        provenance_violations.append(
+            f"{label}: run.env modes={actual_modes}, expected {expected_modes}"
+        )
+
+provenance_contract_pass = not provenance_violations
 
 stable_improvements = []
 live_stable_improvements = []
@@ -728,6 +802,7 @@ live_has_any_positive_delta = any(stat["positive_delta"] for stat in live_metric
 benefit_contract_pass = (
     evidence_batch_contract_pass
     and live_metadata_contract_pass
+    and provenance_contract_pass
     and mode_contracts_pass
     and not live_action_contract_failed
 )
@@ -738,6 +813,9 @@ if not evidence_batch_contract_pass:
 elif not live_metadata_contract_pass:
     failure_cause = "action_effectiveness"
     failure_cause_detail = "Live guarded proof metadata is incomplete: " + "; ".join(live_metadata_violations)
+elif not provenance_contract_pass:
+    failure_cause = "action_effectiveness"
+    failure_cause_detail = "Artifact provenance does not match report controls: " + "; ".join(provenance_violations[:3])
 elif not mode_contracts_pass or live_action_contract_failed or not live_host_effective:
     failure_cause = "action_effectiveness"
     if not live_host_effective and live_priority_limited_count > 0:
@@ -891,12 +969,15 @@ contract_lines = [
     f"- Configured evidence modes: `{','.join(configured_modes)}`.",
     f"- Evidence batch contract: `{'PASS' if evidence_batch_contract_pass else 'FAIL'}`.",
     f"- Live metadata contract: `{'PASS' if live_metadata_contract_pass else 'FAIL'}`.",
+    f"- Artifact provenance contract: `{'PASS' if provenance_contract_pass else 'FAIL'}`.",
     f"- Mode contract rollup: `{'PASS' if mode_contracts_pass else 'FAIL'}`.",
 ]
 for violation in evidence_contract_violations:
     contract_lines.append(f"- Evidence contract violation: {violation}.")
 for violation in live_metadata_violations:
     contract_lines.append(f"- Live metadata violation: {violation}.")
+for violation in provenance_violations:
+    contract_lines.append(f"- Provenance violation: {violation}.")
 
 for row in rows:
     if row["mode"] != "live_guarded" or row["run_status"] == "0":

@@ -67,6 +67,7 @@
 - Configured evidence modes: `baseline,noop_observation,dry_run,live_guarded`.
 - Evidence batch contract: `PASS`.
 - Live metadata contract: `PASS`.
+- Artifact provenance contract: `PASS`.
 - Mode contract rollup: `PASS`.
 
 ## Live Guarded Contract
