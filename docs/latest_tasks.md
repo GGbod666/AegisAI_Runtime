@@ -75,8 +75,8 @@ work slices expected under each open gap.
 - Scope:
   - freeze executor workload shape, tool payload, concurrency, modes, and round
     count before running
-  - keep `WarmupExecutor` plan/audit-only unless `AegisAI_Runtime-14r` changes
-    that boundary
+  - keep `WarmupExecutor` warmup counts separate from scheduler benefit; only
+    enable a real warmup side effect with an explicit bounded command
   - capture baseline, noop, dry-run, and live guarded summaries in one artifact
     root
 - Acceptance:
@@ -92,19 +92,19 @@ work slices expected under each open gap.
 ## T4. Decide The Real WarmupExecutor Boundary Before Coding It
 
 - Issue: `AegisAI_Runtime-14r`
-- Current gap: `warmup_executor = true` exists in config examples, but the
-  backend currently records deferred apply and no-op rollback only.
+- Current decision: `warmup_executor = true` remains safe by default because the
+  backend records deferred/no-side-effect audit unless command backends are
+  started with an explicit warmup command and positive timeout.
 - Scope:
-  - identify the concrete target of warmup: process launch, cache priming,
-    connection pool, retrieval index, or explicit no-side-effect decision
-  - define what apply success, rollback/no-op, timeout, and audit fields mean
-  - decide whether the side effect belongs in actuator backend, tool-call
-    harness, or a new narrow executor adapter
+  - concrete warmup target is a caller-provided short command, representing
+    process launch, cache priming, connection pool, or retrieval-index priming
+  - apply success means the command exits zero before timeout; timeout/non-zero
+    exit is an apply audit error; rollback is always no-op audit
+  - side effect lives in the actuator command backend behind daemon/harness CLI
+    flags, not in policy or classifier code
 - Acceptance:
-  - design note or issue update states `implement` or `keep plan/audit-only`
-    with rationale
-  - if implemented, reports distinguish scheduler benefit from warmup benefit
-  - tests cover apply success, timeout/failure, and rollback/audit semantics
+  - reports distinguish scheduler benefit from warmup side-effect counts
+  - tests cover apply success, timeout/failure, rollback no-op, and audit semantics
 - Verification:
   - focused Rust tests for touched actuator/runtime modules
   - `python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py'`

@@ -39,9 +39,11 @@ stdout/stderr 到 `.cache/aegisai/tool_call_booster/<run_id>/`。
   `benefit_verdict`
 
 当前 benefit 证明边界只覆盖 scheduler 侧动作：`nice`，以及显式打开 live affinity
-时的 `taskset`。`WarmupExecutor` 仍是策略/审计意图；当前后端 apply 只记录
-`warmup executor deferred`，rollback 只记录 no-op，不代表真实 executor/cache warmup
-已经上线。
+时的 `taskset`。`WarmupExecutor` 默认仍是 deferred/no-side-effect audit；只有
+daemon 使用 `--warmup-executor-command`、`--warmup-executor-arg` 和正数
+`--warmup-executor-timeout-ms` 显式配置时，command backend 才会运行一个受超时约束
+的 executor/cache warmup 命令。rollback 始终记录 no-op，不尝试反向清理 cache 或
+短命预热进程。
 
 默认 `noop` 与 `dry_run` 只证明识别、触发、审计和 rollback 闭环；它们不会
 单独被判定为主机级收益证明。只有显式加入 guarded/live 档，并在至少三分之二
@@ -76,3 +78,8 @@ AEGISAI_TCB_MIN_BENEFIT_PCT=5 \
 当 modes 包含 live guarded 档且未显式设置 `AEGISAI_ENABLE_LIVE_AFFINITY` 时，
 该 harness 默认启用 live affinity，让受控收益证明包含实际可生效的 `taskset`
 隔离动作；设置 `AEGISAI_ENABLE_LIVE_AFFINITY=0` 可退回 nice-only 验证。
+需要显式测试 warmup side effect 时，设置
+`AEGISAI_TCB_WARMUP_EXECUTOR_COMMAND`、可选
+`AEGISAI_TCB_WARMUP_EXECUTOR_ARGS` 和
+`AEGISAI_TCB_WARMUP_EXECUTOR_TIMEOUT_MS`；报告会把 warmup side effect 计数与
+scheduler benefit verdict 分开。

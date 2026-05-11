@@ -16,10 +16,11 @@ from typing import Any
 CONTRACT_STAGES = ("executor", "retrieval", "rerank")
 GUARDED_MODES = {"guarded", "live_guarded", "linux_command", "linux-command"}
 WARMUP_EXECUTOR_BOUNDARY = (
-    "`WarmupExecutor` is plan/audit-only in the current backend: apply records "
-    "`warmup executor deferred` and rollback records a no-op. No live "
-    "executor/cache warmup side effect is implemented or required for this "
-    "benefit verdict."
+    "`WarmupExecutor` defaults to deferred/no-side-effect audit. A live "
+    "executor/cache warmup side effect exists only when the command backend is "
+    "started with an explicit bounded warmup command; rollback remains an "
+    "audited no-op and warmup counts are reported separately from scheduler "
+    "benefit."
 )
 
 
@@ -44,6 +45,9 @@ DETAIL_COLUMNS = [
     "action_error_count",
     "scheduler_command_count",
     "effective_scheduler_action_count",
+    "warmup_side_effect_count",
+    "warmup_deferred_count",
+    "warmup_rollback_noop_count",
     "guarded_noop_count",
     "live_guard_scope",
     "artifact_prefix",
@@ -69,6 +73,9 @@ SUMMARY_COLUMNS = [
     "action_error_count_total",
     "scheduler_command_count_total",
     "effective_scheduler_action_count_total",
+    "warmup_side_effect_count_total",
+    "warmup_deferred_count_total",
+    "warmup_rollback_noop_count_total",
     "guarded_noop_count_total",
     "latency_trend_verdict",
     "benefit_verdict",
@@ -198,6 +205,9 @@ def parse_daemon_stdout(path: Path, tool_call_id: str) -> dict[str, Any]:
         "action_error_count": 0,
         "scheduler_command_count": 0,
         "effective_scheduler_action_count": 0,
+        "warmup_side_effect_count": 0,
+        "warmup_deferred_count": 0,
+        "warmup_rollback_noop_count": 0,
         "guarded_noop_count": 0,
         "live_guard_scope": "",
     }
@@ -234,6 +244,9 @@ def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
     result: dict[str, Any] = {
         "scheduler_command_count": 0,
         "effective_scheduler_action_count": 0,
+        "warmup_side_effect_count": 0,
+        "warmup_deferred_count": 0,
+        "warmup_rollback_noop_count": 0,
         "guarded_noop_count": 0,
         "live_guard_scope": "",
     }
@@ -275,6 +288,18 @@ def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
             result["scheduler_command_count"] += 1
             if backend == "linux-command":
                 result["effective_scheduler_action_count"] += 1
+            continue
+
+        if "warmup executor applied;side_effect=command" in detail:
+            result["warmup_side_effect_count"] += 1
+            continue
+
+        if "warmup executor dry_run" in detail or "warmup executor deferred" in detail:
+            result["warmup_deferred_count"] += 1
+
+    result["warmup_rollback_noop_count"] = len(
+        re.findall(r"backend\.rollback\.rollback\.[0-9]+\.detail=warmup rollback noop", text)
+    )
 
     return result
 
@@ -339,6 +364,11 @@ def build_detail_rows(artifact_dir: Path, modes: list[str], rounds: int) -> list
                     "scheduler_command_count": str(daemon["scheduler_command_count"]),
                     "effective_scheduler_action_count": str(
                         daemon["effective_scheduler_action_count"]
+                    ),
+                    "warmup_side_effect_count": str(daemon["warmup_side_effect_count"]),
+                    "warmup_deferred_count": str(daemon["warmup_deferred_count"]),
+                    "warmup_rollback_noop_count": str(
+                        daemon["warmup_rollback_noop_count"]
                     ),
                     "guarded_noop_count": str(daemon["guarded_noop_count"]),
                     "live_guard_scope": str(daemon["live_guard_scope"] or "none"),
@@ -489,6 +519,15 @@ def build_summary_rows(
                 "effective_scheduler_action_count_total": str(
                     effective_scheduler_action_count
                 ),
+                "warmup_side_effect_count_total": str(
+                    sum(as_int(row.get("warmup_side_effect_count")) for row in mode_rows)
+                ),
+                "warmup_deferred_count_total": str(
+                    sum(as_int(row.get("warmup_deferred_count")) for row in mode_rows)
+                ),
+                "warmup_rollback_noop_count_total": str(
+                    sum(as_int(row.get("warmup_rollback_noop_count")) for row in mode_rows)
+                ),
                 "guarded_noop_count_total": str(
                     sum(as_int(row.get("guarded_noop_count")) for row in mode_rows)
                 ),
@@ -528,7 +567,7 @@ def verdict_reason(
         return "control mode only; latency trend is not guarded host-level benefit proof"
     return (
         "scheduler-side guarded mode met repeated latency improvement gate; "
-        "executor warmup is plan/audit-only"
+        "executor warmup is reported separately"
     )
 
 
@@ -595,6 +634,9 @@ def write_report(
         "tool_call_booster_triggers",
         "total_rollbacks",
         "effective_scheduler_action_count",
+        "warmup_side_effect_count",
+        "warmup_deferred_count",
+        "warmup_rollback_noop_count",
         "guarded_noop_count",
         "live_guard_scope",
         "stages",
@@ -609,7 +651,7 @@ def write_report(
             "- `baseline` is the unobserved executor sample and anchors latency deltas.",
             "- `noop` and `dry_run` prove recognition, trigger, audit, and rollback closure, but they are controls rather than host-level guarded benefit proof.",
             "- A guarded benefit PASS requires a guarded scheduler mode, clean mode contracts, at least one effective scheduler action, and repeated latency improvement versus same-round baseline.",
-            "- Do not read a Tool Call Booster benefit PASS as proof that executor warmup is live unless a future backend records a real warmup side effect.",
+            "- Do not read a Tool Call Booster benefit PASS as proof of warmup benefit; warmup side effects are counted separately and rollback is an audited no-op.",
         ]
     )
     path.write_text("\n".join(lines) + "\n")

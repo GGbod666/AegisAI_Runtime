@@ -43,7 +43,7 @@ rewriting or appending to `docs/verification_log.md`.
 | 11 | Update MVP benefit report from artifacts | `docs/mvp_benefit_report.md` is artifact-backed and keeps `PASS` restricted to effective live action plus stable repeated benefit. |
 | 12 | Run controlled live guarded Tool Call Booster proof | Closed `AegisAI_Runtime-94s`; latest contract `PASS`, benefit `FAIL`. |
 | 13 | Verify tool-call audit continuity | Runtime/orchestrator and benchmark tests cover lifecycle audit fields, rollback trace preservation, summaries, and benefit interpretation. |
-| 14 | Decide real `WarmupExecutor` boundary | Current boundary is plan/audit-only; real side-effect work is tracked by `AegisAI_Runtime-14r`. |
+| 14 | Decide real `WarmupExecutor` boundary | `AegisAI_Runtime-14r` defines explicit command-backed warmup: default deferred audit, bounded apply command only when configured, rollback no-op audit, and reports separate warmup counts from scheduler benefit. |
 | 15 | Harden actuator rollback tests | Closed `AegisAI_Runtime-03b`; tests cover apply success with rollback failure, missing capture state, leases, live guards, and audit fields. |
 | 16 | Harden Linux source and procfs edge tests | Closed `AegisAI_Runtime-2s3`; tests cover zero-event preflight, partial probes, missing procfs fields, process exits, helper unavailability, and sampling. |
 | 17 | Harden benefit report interpretation tests | Closed `AegisAI_Runtime-n3y`; report tests prevent observation-only, dry-run, priority-limited, or ineffective live actions from producing `PASS`. |

@@ -80,6 +80,9 @@ struct CliConfig {
     confirm_live_actuator: bool,
     enable_live_affinity: bool,
     live_pid_allowlist: BTreeSet<u32>,
+    warmup_executor_program: Option<String>,
+    warmup_executor_args: Vec<String>,
+    warmup_executor_timeout_ms: u64,
     require_all_probes: bool,
     probe_buffer_events: usize,
     probe_poll_timeout_ms: u64,
@@ -101,6 +104,9 @@ impl Default for CliConfig {
             confirm_live_actuator: false,
             enable_live_affinity: false,
             live_pid_allowlist: BTreeSet::new(),
+            warmup_executor_program: None,
+            warmup_executor_args: Vec::new(),
+            warmup_executor_timeout_ms: 250,
             require_all_probes: true,
             probe_buffer_events: 4_096,
             probe_poll_timeout_ms: 100,
@@ -165,6 +171,39 @@ impl CliConfig {
                     })?;
                     config.live_pid_allowlist = parse_pid_allowlist(&value)?;
                 }
+                "--warmup-executor-command" => {
+                    let value = args.next().ok_or_else(|| {
+                        "--warmup-executor-command expects a program path".to_string()
+                    })?;
+                    if value.trim().is_empty() {
+                        return Err("--warmup-executor-command expects a non-empty program path"
+                            .to_string());
+                    }
+                    config.warmup_executor_program = Some(value);
+                }
+                "--warmup-executor-arg" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| "--warmup-executor-arg expects a value".to_string())?;
+                    config.warmup_executor_args.push(value);
+                }
+                "--warmup-executor-timeout-ms" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| {
+                            "--warmup-executor-timeout-ms expects a positive integer".to_string()
+                        })?
+                        .parse::<u64>()
+                        .map_err(|_| {
+                            "--warmup-executor-timeout-ms expects a positive integer".to_string()
+                        })?;
+                    if value == 0 {
+                        return Err(
+                            "--warmup-executor-timeout-ms expects a positive integer".to_string()
+                        );
+                    }
+                    config.warmup_executor_timeout_ms = value;
+                }
                 "--probe-buffer-events" => {
                     config.probe_buffer_events = args
                         .next()
@@ -222,6 +261,10 @@ impl CliConfig {
             }
         }
 
+        if config.warmup_executor_program.is_none() && !config.warmup_executor_args.is_empty() {
+            return Err("--warmup-executor-arg requires --warmup-executor-command".to_string());
+        }
+
         Ok(config)
     }
 
@@ -238,6 +281,9 @@ impl CliConfig {
             "  --confirm-live-actuator  Required before linux-command may execute host renice/taskset",
             "  --enable-live-affinity  Allow linux-command to apply taskset after nice-only validation",
             "  --live-pid-allowlist <pids>  Live actuator PID allowlist override, e.g. 1234,5678",
+            "  --warmup-executor-command <program>  Explicit command for WarmupExecutor side effects",
+            "  --warmup-executor-arg <arg>  Argument for --warmup-executor-command; repeat as needed",
+            "  --warmup-executor-timeout-ms <n>  WarmupExecutor command timeout (default: 250)",
             "  --allow-partial-probes     Continue when some Linux probes cannot attach",
             "  --probe-buffer-events <n>  Linux reader buffered-event hint (default: 4096)",
             "  --probe-poll-timeout-ms <n>  Linux reader poll timeout hint (default: 100)",
@@ -513,11 +559,23 @@ fn procfs_metadata_provider_for_mock() -> Result<ProcfsMetadataProvider, String>
 }
 
 fn build_actuator(cli: &CliConfig, config: &RuntimeOrchestratorConfig) -> Result<Actuator, String> {
+    if cli.warmup_executor_program.is_some()
+        && !matches!(
+            cli.actuator_backend.as_str(),
+            "linux-command" | "linux-command-dry-run"
+        )
+    {
+        return Err(
+            "--warmup-executor-command requires `linux-command` or `linux-command-dry-run`"
+                .to_string(),
+        );
+    }
+
     match cli.actuator_backend.as_str() {
         "noop" => Ok(Actuator::with_backend(NoopActuatorBackend)),
         "linux-skeleton" => Ok(Actuator::with_backend(LinuxActuatorBackend::default())),
         "linux-command" => build_linux_command_actuator(cli, config),
-        "linux-command-dry-run" => build_linux_command_dry_run_actuator(),
+        "linux-command-dry-run" => build_linux_command_dry_run_actuator(cli),
         other => Err(format!(
             "unsupported actuator backend `{other}`; expected `noop`, `linux-skeleton`, `linux-command`, or `linux-command-dry-run`"
         )),
@@ -556,10 +614,14 @@ fn build_linux_command_actuator(
     } else {
         guard.without_priority_raise()
     };
+    let mut applier = aegisai_actuator::CommandLinuxSyscallApplier::live(guard.clone());
+    if let Some(command) = warmup_executor_command(cli) {
+        applier = applier.with_system_warmup_executor(command, cli.warmup_executor_timeout_ms);
+    }
     let executor =
         aegisai_actuator::PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
             aegisai_actuator::ProcfsLinuxProcessStateProvider,
-            aegisai_actuator::CommandLinuxSyscallApplier::live(guard.clone()),
+            applier,
         )
         .with_live_guard(guard);
     Ok(Actuator::with_backend(
@@ -576,11 +638,15 @@ fn build_linux_command_actuator(
 }
 
 #[cfg(target_os = "linux")]
-fn build_linux_command_dry_run_actuator() -> Result<Actuator, String> {
+fn build_linux_command_dry_run_actuator(cli: &CliConfig) -> Result<Actuator, String> {
+    let mut applier = aegisai_actuator::CommandLinuxSyscallApplier::dry_run();
+    if let Some(command) = warmup_executor_command(cli) {
+        applier = applier.with_dry_run_warmup_executor(command, cli.warmup_executor_timeout_ms);
+    }
     let executor =
         aegisai_actuator::PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
             aegisai_actuator::ProcfsLinuxProcessStateProvider,
-            aegisai_actuator::CommandLinuxSyscallApplier::dry_run(),
+            applier,
         );
     Ok(Actuator::with_backend(
         LinuxActuatorBackend::with_named_executor("linux-command-dry-run", executor),
@@ -588,8 +654,17 @@ fn build_linux_command_dry_run_actuator() -> Result<Actuator, String> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn build_linux_command_dry_run_actuator() -> Result<Actuator, String> {
+fn build_linux_command_dry_run_actuator(_cli: &CliConfig) -> Result<Actuator, String> {
     Err("`linux-command-dry-run` actuator backend is only available on Linux".to_string())
+}
+
+fn warmup_executor_command(cli: &CliConfig) -> Option<aegisai_actuator::WarmupExecutorCommand> {
+    cli.warmup_executor_program.as_ref().map(|program| {
+        aegisai_actuator::WarmupExecutorCommand::new(
+            program.clone(),
+            cli.warmup_executor_args.clone(),
+        )
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -826,6 +901,66 @@ mod tests {
     }
 
     #[test]
+    fn cli_accepts_explicit_warmup_executor_command_boundary() {
+        let cli = CliConfig::parse(
+            [
+                "--actuator-backend",
+                "linux-command-dry-run",
+                "--warmup-executor-command",
+                "python3",
+                "--warmup-executor-arg",
+                "bench/tool_call_booster/real_tool_executor.py",
+                "--warmup-executor-arg",
+                "retrieval-worker",
+                "--warmup-executor-timeout-ms",
+                "125",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        assert_eq!(cli.warmup_executor_program, Some("python3".to_string()));
+        assert_eq!(
+            cli.warmup_executor_args,
+            [
+                "bench/tool_call_booster/real_tool_executor.py".to_string(),
+                "retrieval-worker".to_string()
+            ]
+        );
+        assert_eq!(cli.warmup_executor_timeout_ms, 125);
+    }
+
+    #[test]
+    fn cli_rejects_warmup_executor_arg_without_command() {
+        let error = CliConfig::parse(
+            ["--warmup-executor-arg", "retrieval-worker"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect_err("warmup arg without command should fail");
+
+        assert!(error.contains("--warmup-executor-command"));
+    }
+
+    #[test]
+    fn cli_rejects_zero_warmup_executor_timeout() {
+        let error = CliConfig::parse(
+            [
+                "--warmup-executor-command",
+                "prime-cache",
+                "--warmup-executor-timeout-ms",
+                "0",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect_err("zero warmup timeout should fail");
+
+        assert!(error.contains("positive integer"));
+    }
+
+    #[test]
     fn cli_rejects_invalid_live_pid_allowlist() {
         let error = CliConfig::parse(
             ["--live-pid-allowlist", "0,abc"]
@@ -854,8 +989,26 @@ mod tests {
 
     #[test]
     fn linux_command_dry_run_backend_uses_named_backend() {
-        let actuator = build_linux_command_dry_run_actuator().expect("backend should build");
+        let cli = CliConfig::default();
+        let actuator = build_linux_command_dry_run_actuator(&cli).expect("backend should build");
         assert_eq!(actuator.backend_name(), "linux-command-dry-run");
+    }
+
+    #[test]
+    fn warmup_executor_command_requires_command_backend() {
+        let config = sample_config();
+        let cli = CliConfig::parse(
+            ["--warmup-executor-command", "prime-cache"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect("cli should parse");
+
+        let error = match build_actuator(&cli, &config) {
+            Ok(_) => panic!("warmup side effect should require command backend"),
+            Err(error) => error,
+        };
+        assert!(error.contains("linux-command"));
     }
 
     #[cfg(target_os = "linux")]

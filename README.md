@@ -268,7 +268,7 @@ io_latency
 RaiseNice       # nice/priority delta
 SetAffinity     # CPU affinity strategy + max CPU ratio
 UseCpuset       # cpuset intent, live path mostly guarded/placeholder
-WarmupExecutor  # tool-call executor warmup intent, current backend records/defer
+WarmupExecutor  # tool-call executor/cache warmup intent, default deferred unless an explicit command backend warmup command is provided
 ```
 
 ## 配置接口
@@ -644,16 +644,17 @@ live command 当前实际会执行：
 ```text
 renice <target_nice> -p <pid>
 taskset -pc <cpu-list> <pid>   # only with --enable-live-affinity
+<warmup command>               # only with explicit --warmup-executor-command and timeout
 ```
 
 当前不会真正实现：
 
 ```text
 cpuset cgroup write
-executor warmup side effect
 ```
 
-这些动作现在主要作为 plan/audit/rollback surface 存在。
+`WarmupExecutor` 的 rollback 仍是审计 no-op：cache/process priming 不做反向清理，
+报告会把 warmup side effect 与 scheduler benefit 分开统计。
 
 ### 10. Metrics 和 Explain/Tune
 
@@ -779,7 +780,7 @@ bash bench/scripts/tool_call_booster_real_executor_harness.sh
 - bpftrace I/O 程序依赖 host block tracepoint 字段，跨 kernel 可移植性仍需实测。
 - `linux-command` 通过 `renice`/`taskset` 命令执行，而不是直接 syscall 或 cgroup API。
 - cpuset/background throttling 在 policy/audit surface 中存在，但 live 控制基本未启用。
-- warmup executor 现在是审计/计划语义，尚未接入真实 executor warmup side effect。
+- warmup executor 默认仍是 deferred audit；只有显式 CLI warmup command 才会产生受超时约束的真实 side effect，且 rollback 是 no-op audit。
 - 配置加载固定读取 `configs/*/*.example.toml`，没有生产配置 profile、动态 reload 或完整 TOML
   schema 校验。
 - Linux source preflight smoke 可能处理 0 个事件；它证明启动、权限降级和 partial-probe

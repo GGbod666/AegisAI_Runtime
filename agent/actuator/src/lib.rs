@@ -14,13 +14,15 @@ mod model;
 pub use actuator::Actuator;
 pub use backend::{
     ActuatorBackend, BackendApplyResult, BackendExecution, BackendLease, BackendOperation,
-    BackendOperationKind, CommandLinuxSyscallApplier, DryRunLinuxCommandRunner,
-    LinuxActuatorBackend, LinuxAffinityState, LinuxCapturedState, LinuxCommandRunner,
-    LinuxCpusetState, LinuxNiceState, LinuxProcessStateProvider, LinuxRollbackReport,
-    LinuxSyscallApplier, LinuxSyscallExecutor, LinuxSyscallOperation, LinuxSyscallPhase,
-    LinuxSyscallPlan, LiveLinuxCommandGuard, NoopActuatorBackend, PlannedLinuxSyscallApplier,
-    PlannedOnlyLinuxSyscallExecutor, ProcfsLinuxProcessStateProvider, RecordingActuatorBackend,
-    SystemLinuxCommandRunner, UnavailableLinuxProcessStateProvider, UnconfirmedLinuxCommandRunner,
+    BackendOperationKind, CommandLinuxSyscallApplier, DisabledWarmupExecutorRunner,
+    DryRunLinuxCommandRunner, DryRunWarmupExecutorRunner, LinuxActuatorBackend, LinuxAffinityState,
+    LinuxCapturedState, LinuxCommandRunner, LinuxCpusetState, LinuxNiceState,
+    LinuxProcessStateProvider, LinuxRollbackReport, LinuxSyscallApplier, LinuxSyscallExecutor,
+    LinuxSyscallOperation, LinuxSyscallPhase, LinuxSyscallPlan, LiveLinuxCommandGuard,
+    NoopActuatorBackend, PlannedLinuxSyscallApplier, PlannedOnlyLinuxSyscallExecutor,
+    ProcfsLinuxProcessStateProvider, RecordingActuatorBackend, SystemLinuxCommandRunner,
+    SystemWarmupExecutorRunner, UnavailableLinuxProcessStateProvider,
+    UnconfirmedLinuxCommandRunner, WarmupExecutorCommand, WarmupExecutorRunner,
 };
 pub use cpu_affinity::{CpuAffinityCapture, CpuAffinityPlanner, CpuAffinityTarget, CpuTopology};
 pub use model::{Action, ActionPlan, AppliedAction, AppliedActionState, PinStrategy, ScenarioKind};
@@ -37,6 +39,7 @@ mod tests {
         LinuxNiceState, LinuxProcessStateProvider, LinuxSyscallApplier, LinuxSyscallOperation,
         LiveLinuxCommandGuard, NoopActuatorBackend, PinStrategy, PlannedOnlyLinuxSyscallExecutor,
         RecordingActuatorBackend, ScenarioKind, UnavailableLinuxProcessStateProvider,
+        WarmupExecutorCommand, WarmupExecutorRunner,
     };
 
     fn sample_plan() -> ActionPlan {
@@ -443,6 +446,38 @@ mod tests {
         }
     }
 
+    struct FakeWarmupExecutorRunner {
+        calls: Rc<RefCell<Vec<String>>>,
+        result: Result<String, String>,
+    }
+
+    impl FakeWarmupExecutorRunner {
+        fn new(calls: Rc<RefCell<Vec<String>>>, result: Result<String, String>) -> Self {
+            Self { calls, result }
+        }
+    }
+
+    impl WarmupExecutorRunner for FakeWarmupExecutorRunner {
+        fn runner_name(&self) -> &str {
+            "fake-warmup-runner"
+        }
+
+        fn run_warmup(
+            &mut self,
+            command: &WarmupExecutorCommand,
+            timeout_ms: u64,
+        ) -> Result<String, String> {
+            self.calls.borrow_mut().push(format!(
+                "timeout_ms={timeout_ms};command={}",
+                std::iter::once(command.program.clone())
+                    .chain(command.args.iter().cloned())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ));
+            self.result.clone()
+        }
+    }
+
     struct DenyingPriorityRaiseCommandRunner {
         calls: Rc<RefCell<Vec<String>>>,
     }
@@ -763,6 +798,117 @@ mod tests {
             .audit_fields
             .values()
             .any(|value| value.contains("cpuset restore requires")));
+    }
+
+    #[test]
+    fn warmup_executor_runs_configured_side_effect_and_rolls_back_as_noop() {
+        let warmup_calls = Rc::new(RefCell::new(Vec::new()));
+        let applier = CommandLinuxSyscallApplier::dry_run().with_warmup_executor_runner(
+            FakeWarmupExecutorRunner::new(
+                warmup_calls.clone(),
+                Ok("warmup executor applied;side_effect=command;elapsed_ms=7".to_string()),
+            ),
+            WarmupExecutorCommand::new(
+                "python3",
+                [
+                    "bench/tool_call_booster/real_tool_executor.py".to_string(),
+                    "retrieval-worker".to_string(),
+                ],
+            ),
+            125,
+        );
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            applier,
+        );
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_executor(executor));
+        let mut plan = sample_plan();
+        plan.actions = vec![Action::WarmupExecutor];
+
+        let applied = actuator.apply(plan, 6_575, true);
+
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.result"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.0.detail"),
+            Some(
+                &"runner=fake-warmup-runner;warmup executor applied;side_effect=command;elapsed_ms=7"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            warmup_calls.borrow().as_slice(),
+            ["timeout_ms=125;command=python3 bench/tool_call_booster/real_tool_executor.py retrieval-worker"]
+        );
+
+        let rollbacks = actuator.expire(7_375);
+        assert_eq!(rollbacks.len(), 1);
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.skipped"),
+            Some(&"warmup_executor".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.0.status"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.0.detail"),
+            Some(&"warmup rollback noop".to_string())
+        );
+        assert_eq!(
+            rollbacks[0]
+                .audit_fields
+                .get("backend.rollback.rollback.restored"),
+            None
+        );
+    }
+
+    #[test]
+    fn warmup_executor_timeout_is_audited_as_apply_failure() {
+        let warmup_calls = Rc::new(RefCell::new(Vec::new()));
+        let applier = CommandLinuxSyscallApplier::dry_run().with_warmup_executor_runner(
+            FakeWarmupExecutorRunner::new(
+                warmup_calls.clone(),
+                Err("warmup executor command `prime-cache` timed out after 10ms".to_string()),
+            ),
+            WarmupExecutorCommand::new("prime-cache", []),
+            10,
+        );
+        let executor = PlannedOnlyLinuxSyscallExecutor::with_state_provider_and_applier(
+            FakeLinuxProcessStateProvider,
+            applier,
+        );
+        let mut actuator = Actuator::with_backend(LinuxActuatorBackend::with_executor(executor));
+        let mut plan = sample_plan();
+        plan.actions = vec![Action::WarmupExecutor];
+
+        let applied = actuator.apply(plan, 6_590, true);
+
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.result"),
+            Some(&"error".to_string())
+        );
+        assert_eq!(
+            applied.audit_fields.get("backend.apply.apply.failed_count"),
+            Some(&"1".to_string())
+        );
+        assert!(applied
+            .audit_fields
+            .get("backend.apply.apply.0.error")
+            .is_some_and(|value| value
+                .contains("warmup executor command `prime-cache` timed out after 10ms")));
+        assert_eq!(
+            warmup_calls.borrow().as_slice(),
+            ["timeout_ms=10;command=prime-cache"]
+        );
     }
 
     #[test]

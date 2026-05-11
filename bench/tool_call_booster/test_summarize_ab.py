@@ -41,6 +41,9 @@ def detail_row(round_no: int, mode: str, latency_ms: float) -> dict[str, str]:
         "action_error_count": "0",
         "scheduler_command_count": "0" if is_baseline else "3",
         "effective_scheduler_action_count": "3" if is_live_guarded else "0",
+        "warmup_side_effect_count": "0",
+        "warmup_deferred_count": "0" if is_baseline else "3",
+        "warmup_rollback_noop_count": "0" if is_baseline else "3",
         "guarded_noop_count": "0",
         "live_guard_scope": "affinity,nice" if is_live_guarded else "none",
         "artifact_prefix": f"round{round_no}.{mode}",
@@ -104,6 +107,7 @@ class SummarizeAbTests(unittest.TestCase):
 
         self.assertEqual(effects["scheduler_command_count"], 1)
         self.assertEqual(effects["effective_scheduler_action_count"], 0)
+        self.assertEqual(effects["warmup_side_effect_count"], 0)
         self.assertEqual(effects["guarded_noop_count"], 2)
         self.assertEqual(effects["live_guard_scope"], "nice")
 
@@ -122,6 +126,24 @@ class SummarizeAbTests(unittest.TestCase):
         self.assertEqual(effects["scheduler_command_count"], 1)
         self.assertEqual(effects["effective_scheduler_action_count"], 1)
         self.assertEqual(effects["guarded_noop_count"], 0)
+
+    def test_warmup_side_effect_counts_separately_from_scheduler_actions(self) -> None:
+        daemon_text = "\n".join(
+            [
+                "actuator_backend: linux-command",
+                "audit_highlights:",
+                "  pid=42;scenario=tool_call_booster;backend.apply.apply.0.detail=runner=system-warmup-runner;warmup executor applied;side_effect=command;elapsed_ms=7;command=prime-cache",
+                "  pid=42;scenario=tool_call_booster;backend.rollback.rollback.0.detail=warmup rollback noop",
+            ]
+        )
+
+        effects = summarize_ab.parse_action_effects(daemon_text, "linux-command")
+
+        self.assertEqual(effects["scheduler_command_count"], 0)
+        self.assertEqual(effects["effective_scheduler_action_count"], 0)
+        self.assertEqual(effects["warmup_side_effect_count"], 1)
+        self.assertEqual(effects["warmup_deferred_count"], 0)
+        self.assertEqual(effects["warmup_rollback_noop_count"], 1)
 
     def test_only_guarded_repeated_improvement_counts_as_benefit(self) -> None:
         rows: list[dict[str, str]] = []
@@ -151,7 +173,7 @@ class SummarizeAbTests(unittest.TestCase):
             by_mode["live_guarded"]["effective_scheduler_action_count_total"], "9"
         )
         self.assertIn(
-            "executor warmup is plan/audit-only",
+            "executor warmup is reported separately",
             by_mode["live_guarded"]["verdict_reason"],
         )
 
@@ -208,8 +230,8 @@ class SummarizeAbTests(unittest.TestCase):
             report = report_path.read_text(encoding="utf-8")
 
         self.assertIn("Benefit scope: guarded scheduler actions only", report)
-        self.assertIn("`WarmupExecutor` is plan/audit-only", report)
-        self.assertIn("No live executor/cache warmup side effect is implemented", report)
+        self.assertIn("`WarmupExecutor` defaults to deferred/no-side-effect audit", report)
+        self.assertIn("warmup counts are reported separately", report)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,9 @@ ACTUATOR_BACKEND="${AEGISAI_TCB_ACTUATOR_BACKEND:-noop}"
 LIVE_CONFIRM="${AEGISAI_CONFIRM_LIVE_ACTUATOR:-0}"
 LIVE_PID_ALLOWLIST="${AEGISAI_LIVE_PID_ALLOWLIST:-}"
 LIVE_ENABLE_AFFINITY="${AEGISAI_ENABLE_LIVE_AFFINITY:-}"
+WARMUP_EXECUTOR_COMMAND="${AEGISAI_TCB_WARMUP_EXECUTOR_COMMAND:-}"
+WARMUP_EXECUTOR_ARGS="${AEGISAI_TCB_WARMUP_EXECUTOR_ARGS:-}"
+WARMUP_EXECUTOR_TIMEOUT_MS="${AEGISAI_TCB_WARMUP_EXECUTOR_TIMEOUT_MS:-250}"
 RUN_DRY_RUN="${AEGISAI_TCB_RUN_DRY_RUN:-1}"
 ROUNDS="${AEGISAI_TCB_ROUNDS:-3}"
 if [[ -n "${AEGISAI_TCB_MODES:-}" ]]; then
@@ -72,6 +75,9 @@ Common overrides:
   AEGISAI_TCB_REQUIRE_BENEFIT=0
   AEGISAI_CONFIRM_LIVE_ACTUATOR=1
   AEGISAI_LIVE_PID_ALLOWLIST=1234  # optional; derived per round when omitted
+  AEGISAI_TCB_WARMUP_EXECUTOR_COMMAND=/path/to/prime-cache
+  AEGISAI_TCB_WARMUP_EXECUTOR_ARGS='--cache /tmp/cache'
+  AEGISAI_TCB_WARMUP_EXECUTOR_TIMEOUT_MS=250
   AEGISAI_TCB_ARTIFACT_DIR=/path/to/results
 USAGE
 }
@@ -302,6 +308,9 @@ write_run_env() {
     printf 'live_confirm=%s\n' "${LIVE_CONFIRM}"
     printf 'live_pid_allowlist=%s\n' "${LIVE_PID_ALLOWLIST}"
     printf 'live_enable_affinity=%s\n' "${LIVE_ENABLE_AFFINITY}"
+    printf 'warmup_executor_command=%s\n' "${WARMUP_EXECUTOR_COMMAND}"
+    printf 'warmup_executor_args=%s\n' "${WARMUP_EXECUTOR_ARGS}"
+    printf 'warmup_executor_timeout_ms=%s\n' "${WARMUP_EXECUTOR_TIMEOUT_MS}"
     printf 'run_dry_run=%s\n' "${RUN_DRY_RUN}"
     printf 'rounds=%s\n' "${ROUNDS}"
     printf 'modes=%s\n' "${MODES}"
@@ -333,11 +342,28 @@ run_daemon() {
   local stdout="$3"
   local stderr="$4"
   local -a live_args=()
+  local -a warmup_args=()
 
   if [[ "${backend}" == "linux-command" ]]; then
     live_args=(--confirm-live-actuator --live-pid-allowlist "${live_pid_allowlist}")
     if [[ "${LIVE_ENABLE_AFFINITY}" == "1" ]]; then
       live_args+=(--enable-live-affinity)
+    fi
+  fi
+  if [[ "${backend}" == "linux-command" || "${backend}" == "linux-command-dry-run" ]]; then
+    if [[ -n "${WARMUP_EXECUTOR_COMMAND}" ]]; then
+      warmup_args=(
+        --warmup-executor-command "${WARMUP_EXECUTOR_COMMAND}"
+        --warmup-executor-timeout-ms "${WARMUP_EXECUTOR_TIMEOUT_MS}"
+      )
+      if [[ -n "${WARMUP_EXECUTOR_ARGS}" ]]; then
+        # shellcheck disable=SC2206
+        local split_warmup_args=(${WARMUP_EXECUTOR_ARGS})
+        local warmup_arg
+        for warmup_arg in "${split_warmup_args[@]}"; do
+          warmup_args+=(--warmup-executor-arg "${warmup_arg}")
+        done
+      fi
     fi
   fi
 
@@ -353,6 +379,7 @@ run_daemon() {
     --tick-ms "${DAEMON_TICK_MS}" \
     --drain-ms "${DAEMON_DRAIN_MS}" \
     "${live_args[@]}" \
+    "${warmup_args[@]}" \
     >"${stdout}" 2>"${stderr}" &
   daemon_pid="$!"
 }
@@ -476,8 +503,12 @@ validate_uint_env AEGISAI_TCB_WORKER_CPU_MS "${WORKER_CPU_MS}"
 validate_uint_env AEGISAI_TCB_WORKER_IO_KB "${WORKER_IO_KB}"
 validate_uint_env AEGISAI_TCB_WORKER_START_DELAY_MS "${WORKER_START_DELAY_MS}"
 validate_uint_env AEGISAI_TCB_DAEMON_MAX_EVENTS "${DAEMON_MAX_EVENTS}"
+validate_uint_env AEGISAI_TCB_WARMUP_EXECUTOR_TIMEOUT_MS "${WARMUP_EXECUTOR_TIMEOUT_MS}"
 validate_uint_env AEGISAI_TCB_ROUNDS "${ROUNDS}"
 validate_number_env AEGISAI_TCB_MIN_BENEFIT_PCT "${MIN_BENEFIT_PCT}"
+if [[ "${WARMUP_EXECUTOR_TIMEOUT_MS}" == "0" ]]; then
+  fail "AEGISAI_TCB_WARMUP_EXECUTOR_TIMEOUT_MS must be positive"
+fi
 if has_live_mode; then
   if [[ "${LIVE_CONFIRM}" != "1" ]]; then
     fail "live_guarded requires AEGISAI_CONFIRM_LIVE_ACTUATOR=1"

@@ -159,8 +159,10 @@ Current Tool Call Booster action boundary:
 
 - benefit proof covers guarded scheduler actions: `nice`, plus explicitly
   enabled `affinity`
-- `WarmupExecutor` remains plan/audit-only; current backend records deferred
-  apply and no-op rollback, not real executor/cache warmup
+- `WarmupExecutor` defaults to deferred/no-side-effect audit; command backends
+  can run an explicitly configured warmup command with a positive timeout, and
+  rollback remains an audited no-op because cache/process priming is not
+  deterministically reversible
 
 ## Production Config Boundaries
 

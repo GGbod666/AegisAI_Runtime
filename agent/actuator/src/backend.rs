@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use crate::cpu_affinity::{parse_status_cpu_list, CpuAffinityPlanner};
 use crate::model::{Action, ActionPlan, AppliedAction, ScenarioKind};
@@ -273,6 +275,147 @@ pub trait LinuxCommandRunner {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WarmupExecutorCommand {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+impl WarmupExecutorCommand {
+    pub fn new(program: impl Into<String>, args: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            program: program.into(),
+            args: args.into_iter().collect(),
+        }
+    }
+
+    fn command_line(&self) -> String {
+        command_line(&self.program, &self.args)
+    }
+}
+
+pub trait WarmupExecutorRunner {
+    fn runner_name(&self) -> &str;
+
+    fn run_warmup(
+        &mut self,
+        command: &WarmupExecutorCommand,
+        timeout_ms: u64,
+    ) -> Result<String, String>;
+}
+
+#[derive(Default)]
+pub struct DisabledWarmupExecutorRunner;
+
+impl WarmupExecutorRunner for DisabledWarmupExecutorRunner {
+    fn runner_name(&self) -> &str {
+        "disabled-warmup-runner"
+    }
+
+    fn run_warmup(
+        &mut self,
+        _command: &WarmupExecutorCommand,
+        _timeout_ms: u64,
+    ) -> Result<String, String> {
+        Ok("warmup executor deferred;side_effect=disabled".to_string())
+    }
+}
+
+#[derive(Default)]
+pub struct DryRunWarmupExecutorRunner;
+
+impl WarmupExecutorRunner for DryRunWarmupExecutorRunner {
+    fn runner_name(&self) -> &str {
+        "dry-run-warmup-runner"
+    }
+
+    fn run_warmup(
+        &mut self,
+        command: &WarmupExecutorCommand,
+        timeout_ms: u64,
+    ) -> Result<String, String> {
+        Ok(format!(
+            "warmup executor dry_run;side_effect=none;timeout_ms={timeout_ms};command={}",
+            command.command_line()
+        ))
+    }
+}
+
+#[derive(Default)]
+pub struct SystemWarmupExecutorRunner;
+
+impl WarmupExecutorRunner for SystemWarmupExecutorRunner {
+    fn runner_name(&self) -> &str {
+        "system-warmup-runner"
+    }
+
+    fn run_warmup(
+        &mut self,
+        command: &WarmupExecutorCommand,
+        timeout_ms: u64,
+    ) -> Result<String, String> {
+        if command.program.trim().is_empty() {
+            return Err("warmup executor command program is empty".to_string());
+        }
+        if timeout_ms == 0 {
+            return Err("warmup executor timeout must be positive".to_string());
+        }
+
+        let started = Instant::now();
+        let mut child = Command::new(&command.program)
+            .args(&command.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| {
+                format!(
+                    "failed to start warmup executor command `{}`: {error}",
+                    command.command_line()
+                )
+            })?;
+
+        let timeout = Duration::from_millis(timeout_ms);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let elapsed_ms = started.elapsed().as_millis();
+                    if status.success() {
+                        return Ok(format!(
+                            "warmup executor applied;side_effect=command;elapsed_ms={elapsed_ms};command={}",
+                            command.command_line()
+                        ));
+                    }
+
+                    return Err(format!(
+                        "warmup executor command `{}` exited with status {status}",
+                        command.command_line(),
+                    ));
+                }
+                Ok(None) => {
+                    if started.elapsed() >= timeout {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(format!(
+                            "warmup executor command `{}` timed out after {timeout_ms}ms",
+                            command.command_line()
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "failed to poll warmup executor command `{}`: {error}",
+                        command.command_line()
+                    ));
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LiveLinuxCommandGuard {
     allowed_pids: BTreeSet<u32>,
     explicit_confirmation: bool,
@@ -535,6 +678,9 @@ fn captured_affinity(captured_state: &LinuxCapturedState) -> Result<&[u32], Stri
 
 pub struct CommandLinuxSyscallApplier {
     runner: Box<dyn LinuxCommandRunner>,
+    warmup_runner: Box<dyn WarmupExecutorRunner>,
+    warmup_command: Option<WarmupExecutorCommand>,
+    warmup_timeout_ms: u64,
     live_guard: Option<LiveLinuxCommandGuard>,
 }
 
@@ -559,6 +705,9 @@ impl CommandLinuxSyscallApplier {
     {
         Self {
             runner: Box::new(runner),
+            warmup_runner: Box::new(DisabledWarmupExecutorRunner),
+            warmup_command: None,
+            warmup_timeout_ms: 250,
             live_guard: None,
         }
     }
@@ -569,12 +718,46 @@ impl CommandLinuxSyscallApplier {
     {
         Self {
             runner: Box::new(runner),
+            warmup_runner: Box::new(DisabledWarmupExecutorRunner),
+            warmup_command: None,
+            warmup_timeout_ms: 250,
             live_guard: Some(guard),
         }
     }
 
     pub fn live(guard: LiveLinuxCommandGuard) -> Self {
         Self::guarded_live(SystemLinuxCommandRunner, guard)
+    }
+
+    pub fn with_warmup_executor_runner<R>(
+        mut self,
+        runner: R,
+        command: WarmupExecutorCommand,
+        timeout_ms: u64,
+    ) -> Self
+    where
+        R: WarmupExecutorRunner + 'static,
+    {
+        self.warmup_runner = Box::new(runner);
+        self.warmup_command = Some(command);
+        self.warmup_timeout_ms = timeout_ms;
+        self
+    }
+
+    pub fn with_system_warmup_executor(
+        self,
+        command: WarmupExecutorCommand,
+        timeout_ms: u64,
+    ) -> Self {
+        self.with_warmup_executor_runner(SystemWarmupExecutorRunner, command, timeout_ms)
+    }
+
+    pub fn with_dry_run_warmup_executor(
+        self,
+        command: WarmupExecutorCommand,
+        timeout_ms: u64,
+    ) -> Self {
+        self.with_warmup_executor_runner(DryRunWarmupExecutorRunner, command, timeout_ms)
     }
 
     fn run_audited(&mut self, program: &str, args: &[String]) -> Result<String, String> {
@@ -593,6 +776,21 @@ impl CommandLinuxSyscallApplier {
 
     fn live_guard(&self) -> Option<&LiveLinuxCommandGuard> {
         self.live_guard.as_ref()
+    }
+
+    fn run_warmup_executor(&mut self) -> Result<String, String> {
+        let runner_name = self.warmup_runner.runner_name().to_string();
+        let timeout_ms = self.warmup_timeout_ms;
+
+        match self.warmup_command.as_ref() {
+            Some(command) => match self.warmup_runner.run_warmup(command, timeout_ms) {
+                Ok(detail) => Ok(format!("runner={runner_name};{detail}")),
+                Err(error) => Err(format!("runner={runner_name};error={error}")),
+            },
+            None => Ok(format!(
+                "runner={runner_name};warmup executor deferred;side_effect=disabled"
+            )),
+        }
     }
 }
 
@@ -658,7 +856,7 @@ impl LinuxSyscallApplier for CommandLinuxSyscallApplier {
                     Ok("cpuset disabled by policy".to_string())
                 }
             }
-            LinuxSyscallOperation::WarmupExecutor => Ok("warmup executor deferred".to_string()),
+            LinuxSyscallOperation::WarmupExecutor => self.run_warmup_executor(),
             LinuxSyscallOperation::RestoreNice => {
                 let original_nice = captured_nice(captured_state)?;
                 self.run_audited(
@@ -1635,7 +1833,7 @@ fn build_linux_rollback_report(
                 match applier.rollback_operation(plan.target_pid, operation, captured_state, now_ms)
                 {
                     Ok(detail) => {
-                        report.restored.push("warmup_executor".to_string());
+                        report.skipped.push("warmup_executor".to_string());
                         *execution = std::mem::take(execution)
                             .with_field(format!("rollback.{index}.status"), "ok")
                             .with_field(format!("rollback.{index}.detail"), detail);

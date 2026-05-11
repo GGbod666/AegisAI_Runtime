@@ -92,8 +92,9 @@ Goal:
   artifact
 - determine whether guarded scheduler actions can produce repeated tool-call
   latency benefit on this host
-- preserve the current `WarmupExecutor` plan/audit-only boundary unless a
-  separate issue changes it
+- keep `WarmupExecutor` benefit accounting separate from scheduler benefit; the
+  default remains deferred audit unless an explicit bounded warmup command is
+  configured
 
 Exit checks:
 
@@ -168,7 +169,7 @@ AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
 | 0. Framework reset | project definition, dual-axis skeleton, config and safety boundaries | complete |
 | 1. Awareness foundation | stable AI workload labels for scenario policies | basic loop complete |
 | 2. Inference Tail Guard MVP | prove or falsify live guarded tail-latency benefit | latest controlled run `PASS` |
-| 3. Tool Calling Booster | prove or falsify guarded tool-call latency benefit | active: `AegisAI_Runtime-79d`; `WarmupExecutor` remains plan/audit-only |
+| 3. Tool Calling Booster | prove or falsify guarded tool-call latency benefit | active: `AegisAI_Runtime-79d`; `WarmupExecutor` has explicit command-backed side-effect boundaries and separate reporting |
 | 4. AI-aware isolation | define live cpuset/background throttling boundary | deferred: `AegisAI_Runtime-otk` |
 | 5. Explain/Tune | useful offline reports and threshold suggestions | offline basics exist; online learning deferred |
 | 6. Productionization | config profiles, schema validation, daemon/helper packaging | deferred: `AegisAI_Runtime-cqv`, `AegisAI_Runtime-ufp` |
@@ -180,7 +181,7 @@ AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
 - treating noop or dry-run deltas as host-level benefit
 - broad module decomposition without an active behavior issue
 - enabling live cpuset writes by configuration alone
-- claiming `WarmupExecutor` is live while it remains plan/audit-only
+- treating warmup side-effect counts as scheduler benefit proof
 
 This stage exits when artifacts support one honest statement: benefit proven, or
 benefit not proven with a reproducible failure reason.

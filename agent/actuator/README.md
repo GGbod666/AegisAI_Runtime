@@ -36,6 +36,10 @@ For the Linux path, the backend is split one level further:
 
 - `CommandLinuxSyscallApplier`
   Linux-oriented applier that maps action plans onto host commands such as `renice` and `taskset`. It bounds nice / affinity inputs, refuses uncaptured restore state and PID 0, and emits per-command audit details for validation.
+  `WarmupExecutor` is disabled by default; when a command backend is explicitly
+  given a warmup command and positive timeout, it runs that bounded command and
+  audits success, timeout, or failure. Rollback remains a no-op audit because
+  cache/process priming is not reversible.
 
 - `DryRunLinuxCommandRunner`
   Command runner for Linux VM preflight rehearsals. It builds the same command arguments as the host runner but returns auditable `dry_run:` details without invoking host commands.

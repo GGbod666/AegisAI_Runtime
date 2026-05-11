@@ -80,6 +80,10 @@ Current actuator backend modes:
 - `linux-skeleton`: planning/audit backend for Linux source validation without live host changes
 - `linux-command-dry-run`: command-backed audit path that records planned `renice` / `taskset` apply and rollback without changing host state
 - `linux-command`: guarded Linux-only live path. It requires `--confirm-live-actuator` plus a non-empty PID allowlist from `--live-pid-allowlist <pids>` or `[selection].pid_allowlist`. The default live scope is `nice`; add `--enable-live-affinity` to allow `taskset` through the CPU affinity planner. `cpuset` remains disabled.
+- `WarmupExecutor`: deferred by default. `linux-command` and
+  `linux-command-dry-run` accept `--warmup-executor-command`,
+  repeated `--warmup-executor-arg`, and `--warmup-executor-timeout-ms` to audit
+  an explicit bounded warmup command; rollback is always a no-op audit.
 
 Current mock source behavior:
 
