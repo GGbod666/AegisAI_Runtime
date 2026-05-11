@@ -212,6 +212,12 @@ class SummarizeAbTests(unittest.TestCase):
             ["baseline", "noop", "live_guarded"],
             rounds=3,
             min_benefit_pct=5.0,
+            stage_effectiveness_rows=summarize_ab.build_stage_effectiveness_rows(
+                rows,
+                ["baseline", "noop", "live_guarded"],
+                rounds=3,
+                min_benefit_pct=5.0,
+            ),
         )
         by_mode = {row["mode"]: row for row in summary_rows}
 
@@ -227,6 +233,41 @@ class SummarizeAbTests(unittest.TestCase):
         )
         self.assertIn(
             "executor warmup is reported separately",
+            by_mode["live_guarded"]["verdict_reason"],
+        )
+
+    def test_guarded_benefit_requires_stage_effectiveness_pass(self) -> None:
+        rows: list[dict[str, str]] = []
+        for round_no in range(1, 4):
+            rows.append(detail_row(round_no, "baseline", 100.0))
+            row = detail_row(round_no, "live_guarded", 90.0)
+            row["stage_effective_scheduler_actions"] = "retrieval:1"
+            rows.append(row)
+
+        stage_rows = summarize_ab.build_stage_effectiveness_rows(
+            rows,
+            ["baseline", "live_guarded"],
+            rounds=3,
+            min_benefit_pct=5.0,
+        )
+        summary_rows = summarize_ab.build_summary_rows(
+            rows,
+            ["baseline", "live_guarded"],
+            rounds=3,
+            min_benefit_pct=5.0,
+            stage_effectiveness_rows=stage_rows,
+        )
+        by_mode = {row["mode"]: row for row in summary_rows}
+        by_mode_stage = {(row["mode"], row["stage"]): row for row in stage_rows}
+
+        self.assertEqual(
+            by_mode_stage[("live_guarded", "retrieval")]["stage_effectiveness"],
+            "LATENCY_NOT_IMPROVED",
+        )
+        self.assertEqual(by_mode["live_guarded"]["latency_trend_verdict"], "PASS")
+        self.assertEqual(by_mode["live_guarded"]["benefit_verdict"], "FAIL")
+        self.assertIn(
+            "no stage effectiveness PASS",
             by_mode["live_guarded"]["verdict_reason"],
         )
 

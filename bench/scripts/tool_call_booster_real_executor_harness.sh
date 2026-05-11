@@ -496,6 +496,9 @@ generate_report() {
   if [[ "${status}" -ne 0 ]]; then
     fail "Tool Call Booster A/B report exited with status ${status}"
   fi
+  if [[ ! -s "${STAGE_EFFECTIVENESS_CSV}" ]]; then
+    fail "Tool Call Booster A/B report did not write ${STAGE_EFFECTIVENESS_CSV}"
+  fi
 }
 
 require_command cargo

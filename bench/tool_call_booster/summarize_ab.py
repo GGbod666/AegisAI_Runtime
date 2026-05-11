@@ -549,9 +549,14 @@ def median(values: list[float]) -> float | None:
 
 
 def build_summary_rows(
-    rows: list[dict[str, str]], modes: list[str], rounds: int, min_benefit_pct: float
+    rows: list[dict[str, str]],
+    modes: list[str],
+    rounds: int,
+    min_benefit_pct: float,
+    stage_effectiveness_rows: list[dict[str, str]] | None = None,
 ) -> list[dict[str, str]]:
     summary_rows: list[dict[str, str]] = []
+    stage_effectiveness_by_mode = stage_effectiveness_pass_by_mode(stage_effectiveness_rows or [])
     baseline_by_round = {
         row["round"]: row for row in rows if row["mode"] == "baseline" and row["contract"] == "PASS"
     }
@@ -595,8 +600,14 @@ def build_summary_rows(
             and avg_delta <= -min_benefit_pct
         )
         guarded_mode = mode in GUARDED_MODES
+        stage_effectiveness_pass = (
+            not guarded_mode or stage_effectiveness_by_mode.get(mode, False)
+        )
         benefit_pass = (
-            latency_trend_pass and guarded_mode and effective_scheduler_action_count > 0
+            latency_trend_pass
+            and guarded_mode
+            and effective_scheduler_action_count > 0
+            and stage_effectiveness_pass
         )
 
         if mode == "baseline":
@@ -616,6 +627,7 @@ def build_summary_rows(
                 avg_delta,
                 effective_scheduler_action_count,
                 min_benefit_pct,
+                stage_effectiveness_pass,
             )
 
         summary_rows.append(
@@ -659,6 +671,17 @@ def build_summary_rows(
             }
         )
     return summary_rows
+
+
+def stage_effectiveness_pass_by_mode(
+    stage_effectiveness_rows: list[dict[str, str]],
+) -> dict[str, bool]:
+    result: dict[str, bool] = {}
+    for row in stage_effectiveness_rows:
+        mode = row.get("mode", "")
+        if mode in GUARDED_MODES:
+            result[mode] = result.get(mode, False) or row.get("stage_effectiveness") == "PASS"
+    return result
 
 
 def build_stage_effectiveness_rows(
@@ -755,6 +778,7 @@ def verdict_reason(
     avg_delta: float | None,
     effective_scheduler_action_count: int,
     min_benefit_pct: float,
+    stage_effectiveness_pass: bool,
 ) -> str:
     if not mode_contract_pass:
         return "mode contract failed"
@@ -769,6 +793,8 @@ def verdict_reason(
         )
     if avg_delta is None or avg_delta > -min_benefit_pct:
         return f"average delta did not improve by >={min_benefit_pct:.1f}%"
+    if guarded_mode and not stage_effectiveness_pass:
+        return "no stage effectiveness PASS recorded for guarded mode"
     if not guarded_mode:
         return "control mode only; latency trend is not guarded host-level benefit proof"
     return (
@@ -898,11 +924,19 @@ def main() -> int:
         raise SystemExit("rounds must be positive")
     if args.min_benefit_pct < 0:
         raise SystemExit("min benefit pct must be non-negative")
+    if args.require_benefit and args.stage_effectiveness_csv is None:
+        raise SystemExit("require-benefit requires --stage-effectiveness-csv")
 
     detail_rows = build_detail_rows(args.artifact_dir, modes, args.rounds)
-    summary_rows = build_summary_rows(detail_rows, modes, args.rounds, args.min_benefit_pct)
     stage_effectiveness_rows = build_stage_effectiveness_rows(
         detail_rows, modes, args.rounds, args.min_benefit_pct
+    )
+    summary_rows = build_summary_rows(
+        detail_rows,
+        modes,
+        args.rounds,
+        args.min_benefit_pct,
+        stage_effectiveness_rows,
     )
 
     write_csv(args.detail_csv, DETAIL_COLUMNS, detail_rows)

@@ -53,9 +53,9 @@ daemon 使用 `--warmup-executor-command`、`--warmup-executor-arg` 和正数
 短命预热进程。
 
 默认 `noop` 与 `dry_run` 只证明识别、触发、审计和 rollback 闭环；它们不会
-单独被判定为主机级收益证明。只有显式加入 guarded/live 档，并在至少三分之二
-可比较轮次中相对 baseline 改善达到 `AEGISAI_TCB_MIN_BENEFIT_PCT`，报告才会给
-出 benefit `PASS`。
+单独被判定为主机级收益证明。只有显式加入 guarded/live 档，至少一个 guarded
+stage 的 `stage_effectiveness` 为 `PASS`，并在至少三分之二可比较轮次中相对
+baseline 改善达到 `AEGISAI_TCB_MIN_BENEFIT_PCT`，报告才会给出 benefit `PASS`。
 
 最新稳定 executor-control artifact：
 

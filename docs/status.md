@@ -45,6 +45,9 @@ Latest product-evidence status:
 - Tool Call Booster: `FAIL`. The stable executor-control live guarded run
   passed contracts and audit checks, but reproducibly achieved `0/3`
   comparable rounds above the configured `5.0%` latency-improvement threshold.
+  Current hard acceptance also requires
+  `tool_call_booster_stage_effectiveness.csv` and at least one guarded stage
+  with `stage_effectiveness=PASS`.
 
 ## Latest Verification Baseline
 
@@ -80,6 +83,8 @@ Tool Call Booster:
 
 | run id | artifact | contract verdict | benefit verdict |
 | --- | --- | --- | --- |
+| `live_guarded_tcb_stage_effectiveness_gate_20260511T132616Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stage_effectiveness_gate_20260511T132616Z/tool_call_booster_stage_effectiveness.csv` | `PASS` | `FAIL`: artifact present; `live_guarded` executor/retrieval/rerank stages all reported `LATENCY_NOT_IMPROVED` |
+| `live_guarded_tcb_stage_effectiveness_gate_20260511T132616Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stage_effectiveness_gate_20260511T132616Z/tool_call_booster_summary.csv` | `PASS` | `FAIL`: `live_guarded` improved `0/3` comparable rounds by at least `5.0%` |
 | `live_guarded_tcb_stable_executor_20260511T000000Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stable_executor_20260511T000000Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`: `live_guarded` improved `0/3` comparable rounds by at least `5.0%`; average delta `1.077%`, median delta `0.200%` |
 | `live_guarded_tcb_stable_executor_20260511T000000Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stable_executor_20260511T000000Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`: `live_guarded` improved `0/3` comparable rounds by at least `5.0%` |
