@@ -63,11 +63,12 @@ baseline 改善达到 `AEGISAI_TCB_MIN_BENEFIT_PCT`，报告才会给出 benefit
 
 最新 fixed-work guarded benefit artifact：
 
-- run id: `live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z`
+- run id: `codex_fixed_work_guarded_final_20260511T141942Z`
 - modes: `baseline,live_guarded`
 - verdict: contract `PASS`, benefit `PASS`
 - result: `live_guarded` 3/3 comparable rounds improved by at least `5.0%`;
-  avg delta `-21.495%`; executor/retrieval/rerank stage effectiveness all `PASS`
+  avg delta `-26.832%`; executor/retrieval/rerank stage effectiveness all
+  `PASS`
 
 最新 stable executor-control artifact：
 
@@ -108,7 +109,7 @@ AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
 critical-chain affinity on CPUs `0,1`、background contention on CPUs `0,1`、
 live guarded `nice+affinity`、3 轮、`5%` benefit hard gate。它适合验收
 scheduler 隔离收益，不替代 stable executor-control artifact 对非受控工作量的
-FAIL 边界。
+FAIL 边界；该历史 `FAIL` 不再代表当前 Tool Call Booster 总体收益状态。
 
 需要把 benefit verdict 作为 shell hard gate 时，设置
 `AEGISAI_TCB_REQUIRE_BENEFIT=1`。这通常只适合显式受控的 guarded/live 实验窗口。

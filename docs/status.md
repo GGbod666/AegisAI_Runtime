@@ -44,8 +44,9 @@ Latest product-evidence status:
   live-guarded jitter benefit with effective host-level actions.
 - Tool Call Booster: `PASS`. The fixed-work live guarded run passed contracts,
   generated `tool_call_booster_stage_effectiveness.csv`, improved `3/3`
-  comparable rounds above the configured `5.0%` latency-improvement threshold,
-  and recorded executor/retrieval/rerank `stage_effectiveness=PASS`.
+  comparable rounds above the configured `5.0%` latency-improvement threshold
+  with average delta `-26.832%`, and recorded executor/retrieval/rerank
+  `stage_effectiveness=PASS`.
 
 ## Latest Verification Baseline
 
@@ -81,6 +82,9 @@ Tool Call Booster:
 
 | run id | artifact | contract verdict | benefit verdict |
 | --- | --- | --- | --- |
+| `codex_fixed_work_guarded_final_20260511T141942Z` | `.cache/aegisai/tool_call_booster/codex_fixed_work_guarded_final_20260511T141942Z/tool_call_booster_benefit_report.md` | `PASS` | `PASS`: `live_guarded` improved `3/3` comparable rounds; average delta `-26.832%`, median delta `-26.367%` |
+| `codex_fixed_work_guarded_final_20260511T141942Z` | `.cache/aegisai/tool_call_booster/codex_fixed_work_guarded_final_20260511T141942Z/tool_call_booster_summary.csv` | `PASS` | `PASS` |
+| `codex_fixed_work_guarded_final_20260511T141942Z` | `.cache/aegisai/tool_call_booster/codex_fixed_work_guarded_final_20260511T141942Z/tool_call_booster_stage_effectiveness.csv` | `PASS` | `PASS`: executor, retrieval, and rerank stages all reported `stage_effectiveness=PASS` |
 | `live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z/tool_call_booster_summary.csv` | `PASS` | `PASS`: `live_guarded` improved `3/3` comparable rounds; average delta `-21.495%`, median delta `-23.040%` |
 | `live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z/tool_call_booster_stage_effectiveness.csv` | `PASS` | `PASS`: executor, retrieval, and rerank stages all reported `stage_effectiveness=PASS` |
 | `live_guarded_tcb_stage_effectiveness_gate_20260511T132616Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_stage_effectiveness_gate_20260511T132616Z/tool_call_booster_stage_effectiveness.csv` | `PASS` | `FAIL`: artifact present; `live_guarded` executor/retrieval/rerank stages all reported `LATENCY_NOT_IMPROVED` |
@@ -138,6 +142,7 @@ action and stable repeated benefit are both required.
   `--confirm-live-actuator` and PID allowlist mandatory.
 - `docs/mvp_benefit_report.md` is a generated `PASS` from a live guarded run;
   keep `PASS` restricted to effective live action plus stable repeated benefit.
-- The Tool Call Booster live guarded report is also intentionally a `FAIL`:
-  contracts and audit passed, but the latest stable executor-control run
-  reproducibly showed no repeated latency benefit.
+- The latest Tool Call Booster fixed-work guarded report is a scheduler-benefit
+  `PASS`; the older stable executor-control `FAIL` remains useful as a
+  non-controlled workload boundary, not the current overall Tool Call Booster
+  verdict.

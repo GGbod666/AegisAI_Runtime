@@ -25,8 +25,10 @@ Current baseline:
   `gg-vm`
 - live guarded Inference Tail Guard has effective host-level action evidence and
   stable MVP benefit for `live_guarded_phase4_sample_sizing_20260511T000000Z`
-- live guarded Tool Call Booster has contract `PASS` but benefit `FAIL` for
-  `live_guarded_tcb_stable_executor_20260511T000000Z`
+- live guarded Tool Call Booster has contract `PASS` and benefit `PASS` for
+  `codex_fixed_work_guarded_final_20260511T141942Z`; the older
+  `live_guarded_tcb_stable_executor_20260511T000000Z` run remains a historical
+  non-controlled workload `FAIL`
 
 ## Base Host Checks
 

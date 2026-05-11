@@ -68,12 +68,12 @@ and `tool_call_booster_benefit_report.md` under
 ## Current Evidence
 
 Latest fixed-work guarded run:
-`live_guarded_tcb_fixed_work_verified_pass_20260511T135213Z`.
+`codex_fixed_work_guarded_final_20260511T141942Z`.
 
 - contract verdict: `PASS`
 - benefit verdict: `PASS`
 - `live_guarded` improved `3/3` comparable rounds by at least `5.0%`
-- average delta versus same-round baseline: `-21.495%`
+- average delta versus same-round baseline: `-26.832%`
 - executor / retrieval / rerank stage effectiveness: all `PASS`
 
 Latest stable executor-control run:
@@ -87,5 +87,6 @@ Latest stable executor-control run:
 
 The fixed-work profile is the current scheduler isolation benefit proof for
 this host shape. The stable executor-control run remains a reproducible
-falsification for its workload shape, so `noop` and `dry_run` remain control
-evidence only and should not be treated as host-level benefit proof.
+falsification for its non-controlled workload shape, not the current overall
+Tool Call Booster verdict. `noop` and `dry_run` remain control evidence only and
+should not be treated as host-level benefit proof.

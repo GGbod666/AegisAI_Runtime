@@ -11,10 +11,11 @@ expected under each open gap.
 
 - Inference Tail Guard: strict live guarded benefit proof is accepted for
   `live_guarded_phase4_sample_sizing_20260511T000000Z`.
-- Tool Call Booster: the stable executor-control run
-  `live_guarded_tcb_stable_executor_20260511T000000Z` has contract `PASS` and
-  benefit `FAIL`; this is the current reproducible falsification for guarded
-  scheduler benefit on this host/run shape.
+- Tool Call Booster: the latest fixed-work guarded run
+  `codex_fixed_work_guarded_final_20260511T141942Z` has contract `PASS`,
+  benefit `PASS`, and executor/retrieval/rerank stage effectiveness `PASS`.
+  The older stable executor-control run remains a historical falsification for
+  its non-controlled workload shape, not the current overall verdict.
 - `WarmupExecutor` has an implemented explicit command boundary and remains
   reported separately from scheduler benefit.
 - Live cpuset/background writes remain disabled; only the follow-up dry-run
