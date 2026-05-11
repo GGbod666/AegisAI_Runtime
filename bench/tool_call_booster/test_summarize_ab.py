@@ -19,6 +19,7 @@ SPEC.loader.exec_module(summarize_ab)
 
 def detail_row(round_no: int, mode: str, latency_ms: float) -> dict[str, str]:
     is_baseline = mode == "baseline"
+    is_live_guarded = mode == "live_guarded"
     return {
         "round": str(round_no),
         "mode": mode,
@@ -38,6 +39,10 @@ def detail_row(round_no: int, mode: str, latency_ms: float) -> dict[str, str]:
         "executor_roles": "4",
         "stages": "none" if is_baseline else "executor:1,retrieval:1,rerank:1",
         "action_error_count": "0",
+        "scheduler_command_count": "0" if is_baseline else "3",
+        "effective_scheduler_action_count": "3" if is_live_guarded else "0",
+        "guarded_noop_count": "0",
+        "live_guard_scope": "affinity,nice" if is_live_guarded else "none",
         "artifact_prefix": f"round{round_no}.{mode}",
         "contract_reason": "ok",
     }
@@ -83,6 +88,41 @@ class SummarizeAbTests(unittest.TestCase):
 
         self.assertIn("missing_retrieval_latency", reasons)
 
+    def test_live_guard_noop_actions_are_not_counted_as_effective(self) -> None:
+        daemon_text = "\n".join(
+            [
+                "actuator_backend: linux-command",
+                "audit_highlights:",
+                "  pid=42;scenario=tool_call_booster;backend.apply.live_guard.scope=nice",
+                "  pid=42;scenario=tool_call_booster;backend.apply.apply.0.detail=runner=system-command-runner;command=renice 0 -p 42;output=42 (process ID) old priority 0, new priority 0;priority_raise_limited=true;requested_nice=-3;applied_nice=0",
+                "  pid=42;scenario=tool_call_booster;backend.apply.apply.1.detail=affinity command disabled by live guard",
+                "  pid=42;scenario=tool_call_booster;backend.apply.apply.result=ok",
+            ]
+        )
+
+        effects = summarize_ab.parse_action_effects(daemon_text, "linux-command")
+
+        self.assertEqual(effects["scheduler_command_count"], 1)
+        self.assertEqual(effects["effective_scheduler_action_count"], 0)
+        self.assertEqual(effects["guarded_noop_count"], 2)
+        self.assertEqual(effects["live_guard_scope"], "nice")
+
+    def test_live_guard_taskset_counts_as_effective_scheduler_action(self) -> None:
+        daemon_text = "\n".join(
+            [
+                "actuator_backend: linux-command",
+                "audit_highlights:",
+                "  pid=42;scenario=tool_call_booster;backend.apply.live_guard.scope=nice,affinity",
+                "  pid=42;scenario=tool_call_booster;backend.apply.apply.0.detail=runner=system-command-runner;command=taskset -pc 0,1 42;output=pid 42's current affinity list: 0-7\npid 42's new affinity list: 0,1",
+            ]
+        )
+
+        effects = summarize_ab.parse_action_effects(daemon_text, "linux-command")
+
+        self.assertEqual(effects["scheduler_command_count"], 1)
+        self.assertEqual(effects["effective_scheduler_action_count"], 1)
+        self.assertEqual(effects["guarded_noop_count"], 0)
+
     def test_only_guarded_repeated_improvement_counts_as_benefit(self) -> None:
         rows: list[dict[str, str]] = []
         for round_no in range(1, 4):
@@ -107,8 +147,35 @@ class SummarizeAbTests(unittest.TestCase):
         self.assertEqual(by_mode["live_guarded"]["benefit_verdict"], "PASS")
         self.assertEqual(by_mode["live_guarded"]["improved_rounds"], "2")
         self.assertEqual(by_mode["live_guarded"]["comparable_rounds"], "3")
+        self.assertEqual(
+            by_mode["live_guarded"]["effective_scheduler_action_count_total"], "9"
+        )
         self.assertIn(
             "executor warmup is plan/audit-only",
+            by_mode["live_guarded"]["verdict_reason"],
+        )
+
+    def test_guarded_latency_improvement_without_effective_action_fails_benefit(self) -> None:
+        rows: list[dict[str, str]] = []
+        for round_no in range(1, 4):
+            rows.append(detail_row(round_no, "baseline", 100.0))
+            row = detail_row(round_no, "live_guarded", 90.0)
+            row["effective_scheduler_action_count"] = "0"
+            row["guarded_noop_count"] = "3"
+            rows.append(row)
+
+        summary_rows = summarize_ab.build_summary_rows(
+            rows,
+            ["baseline", "live_guarded"],
+            rounds=3,
+            min_benefit_pct=5.0,
+        )
+        by_mode = {row["mode"]: row for row in summary_rows}
+
+        self.assertEqual(by_mode["live_guarded"]["latency_trend_verdict"], "PASS")
+        self.assertEqual(by_mode["live_guarded"]["benefit_verdict"], "FAIL")
+        self.assertIn(
+            "no effective scheduler action",
             by_mode["live_guarded"]["verdict_reason"],
         )
 

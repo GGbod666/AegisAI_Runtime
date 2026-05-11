@@ -42,6 +42,10 @@ DETAIL_COLUMNS = [
     "executor_roles",
     "stages",
     "action_error_count",
+    "scheduler_command_count",
+    "effective_scheduler_action_count",
+    "guarded_noop_count",
+    "live_guard_scope",
     "artifact_prefix",
     "contract_reason",
 ]
@@ -63,6 +67,9 @@ SUMMARY_COLUMNS = [
     "trigger_count_total",
     "rollback_count_total",
     "action_error_count_total",
+    "scheduler_command_count_total",
+    "effective_scheduler_action_count_total",
+    "guarded_noop_count_total",
     "latency_trend_verdict",
     "benefit_verdict",
     "verdict_reason",
@@ -189,6 +196,10 @@ def parse_daemon_stdout(path: Path, tool_call_id: str) -> dict[str, Any]:
         "daemon_lifecycle_ms": None,
         "stages": "",
         "action_error_count": 0,
+        "scheduler_command_count": 0,
+        "effective_scheduler_action_count": 0,
+        "guarded_noop_count": 0,
+        "live_guard_scope": "",
     }
     if not path.exists():
         return result
@@ -209,11 +220,61 @@ def parse_daemon_stdout(path: Path, tool_call_id: str) -> dict[str, Any]:
             "action_error_count": count_action_errors(text),
         }
     )
+    result.update(parse_action_effects(text, str(result["backend"])))
 
     lifecycle = parse_lifecycle(text, tool_call_id)
     if lifecycle:
         result["daemon_lifecycle_ms"] = lifecycle["daemon_lifecycle_ms"]
         result["stages"] = lifecycle["stages"]
+
+    return result
+
+
+def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "scheduler_command_count": 0,
+        "effective_scheduler_action_count": 0,
+        "guarded_noop_count": 0,
+        "live_guard_scope": "",
+    }
+    scopes = sorted(set(re.findall(r"backend\.apply\.live_guard\.scope=([^;\s]+)", text)))
+    result["live_guard_scope"] = ",".join(scopes)
+
+    for line in text.splitlines():
+        if "backend.apply.apply." not in line or ".detail=" not in line:
+            continue
+
+        detail = line.split(".detail=", 1)[1]
+        if " command disabled by live guard" in detail:
+            result["guarded_noop_count"] += 1
+            continue
+
+        if "command=renice " in detail:
+            result["scheduler_command_count"] += 1
+            if backend != "linux-command":
+                continue
+            if "priority_raise_limited=true" in detail:
+                result["guarded_noop_count"] += 1
+                continue
+            priority_change = re.search(
+                r"old priority\s+(-?[0-9]+),\s+new priority\s+(-?[0-9]+)",
+                detail,
+            )
+            if priority_change:
+                old_priority = int(priority_change.group(1))
+                new_priority = int(priority_change.group(2))
+                if old_priority != new_priority:
+                    result["effective_scheduler_action_count"] += 1
+                else:
+                    result["guarded_noop_count"] += 1
+            else:
+                result["effective_scheduler_action_count"] += 1
+            continue
+
+        if "command=taskset " in detail:
+            result["scheduler_command_count"] += 1
+            if backend == "linux-command":
+                result["effective_scheduler_action_count"] += 1
 
     return result
 
@@ -275,6 +336,12 @@ def build_detail_rows(artifact_dir: Path, modes: list[str], rounds: int) -> list
                     "executor_roles": str(executor["role_count"]),
                     "stages": str(daemon["stages"] or "none"),
                     "action_error_count": str(daemon["action_error_count"]),
+                    "scheduler_command_count": str(daemon["scheduler_command_count"]),
+                    "effective_scheduler_action_count": str(
+                        daemon["effective_scheduler_action_count"]
+                    ),
+                    "guarded_noop_count": str(daemon["guarded_noop_count"]),
+                    "live_guard_scope": str(daemon["live_guard_scope"] or "none"),
                     "artifact_prefix": prefix,
                     "contract_reason": ";".join(reasons) if reasons else "ok",
                 }
@@ -364,6 +431,9 @@ def build_summary_rows(
         avg_delta = mean(deltas)
         median_delta = median(deltas)
         mode_contract_pass = len(pass_rows) == rounds
+        effective_scheduler_action_count = sum(
+            as_int(row.get("effective_scheduler_action_count")) for row in mode_rows
+        )
         latency_trend_pass = (
             mode != "baseline"
             and mode_contract_pass
@@ -373,7 +443,9 @@ def build_summary_rows(
             and avg_delta <= -min_benefit_pct
         )
         guarded_mode = mode in GUARDED_MODES
-        benefit_pass = latency_trend_pass and guarded_mode
+        benefit_pass = (
+            latency_trend_pass and guarded_mode and effective_scheduler_action_count > 0
+        )
 
         if mode == "baseline":
             trend_verdict = "BASELINE"
@@ -390,6 +462,7 @@ def build_summary_rows(
                 required_improved_rounds,
                 improved_rounds,
                 avg_delta,
+                effective_scheduler_action_count,
                 min_benefit_pct,
             )
 
@@ -410,6 +483,15 @@ def build_summary_rows(
                 "trigger_count_total": str(sum(as_int(row["tool_call_booster_triggers"]) for row in mode_rows)),
                 "rollback_count_total": str(sum(as_int(row["total_rollbacks"]) for row in mode_rows)),
                 "action_error_count_total": str(sum(as_int(row["action_error_count"]) for row in mode_rows)),
+                "scheduler_command_count_total": str(
+                    sum(as_int(row.get("scheduler_command_count")) for row in mode_rows)
+                ),
+                "effective_scheduler_action_count_total": str(
+                    effective_scheduler_action_count
+                ),
+                "guarded_noop_count_total": str(
+                    sum(as_int(row.get("guarded_noop_count")) for row in mode_rows)
+                ),
                 "latency_trend_verdict": trend_verdict,
                 "benefit_verdict": benefit_verdict,
                 "verdict_reason": reason,
@@ -426,12 +508,15 @@ def verdict_reason(
     required_improved_rounds: int,
     improved_rounds: int,
     avg_delta: float | None,
+    effective_scheduler_action_count: int,
     min_benefit_pct: float,
 ) -> str:
     if not mode_contract_pass:
         return "mode contract failed"
     if comparable_rounds == 0:
         return "no comparable baseline rounds"
+    if guarded_mode and effective_scheduler_action_count <= 0:
+        return "no effective scheduler action recorded in guarded mode"
     if improved_rounds < required_improved_rounds:
         return (
             f"only {improved_rounds}/{comparable_rounds} comparable rounds improved by "
@@ -509,6 +594,9 @@ def write_report(
         "tool_call_latency_ms",
         "tool_call_booster_triggers",
         "total_rollbacks",
+        "effective_scheduler_action_count",
+        "guarded_noop_count",
+        "live_guard_scope",
         "stages",
         "contract_reason",
     ]
@@ -520,7 +608,7 @@ def write_report(
             "",
             "- `baseline` is the unobserved executor sample and anchors latency deltas.",
             "- `noop` and `dry_run` prove recognition, trigger, audit, and rollback closure, but they are controls rather than host-level guarded benefit proof.",
-            "- A guarded benefit PASS requires a guarded scheduler mode, clean mode contracts, and repeated latency improvement versus same-round baseline.",
+            "- A guarded benefit PASS requires a guarded scheduler mode, clean mode contracts, at least one effective scheduler action, and repeated latency improvement versus same-round baseline.",
             "- Do not read a Tool Call Booster benefit PASS as proof that executor warmup is live unless a future backend records a real warmup side effect.",
         ]
     )

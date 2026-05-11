@@ -20,7 +20,7 @@ DAEMON_TICK_MS="${AEGISAI_TCB_DAEMON_TICK_MS:-100}"
 ACTUATOR_BACKEND="${AEGISAI_TCB_ACTUATOR_BACKEND:-noop}"
 LIVE_CONFIRM="${AEGISAI_CONFIRM_LIVE_ACTUATOR:-0}"
 LIVE_PID_ALLOWLIST="${AEGISAI_LIVE_PID_ALLOWLIST:-}"
-LIVE_ENABLE_AFFINITY="${AEGISAI_ENABLE_LIVE_AFFINITY:-0}"
+LIVE_ENABLE_AFFINITY="${AEGISAI_ENABLE_LIVE_AFFINITY:-}"
 RUN_DRY_RUN="${AEGISAI_TCB_RUN_DRY_RUN:-1}"
 ROUNDS="${AEGISAI_TCB_ROUNDS:-3}"
 if [[ -n "${AEGISAI_TCB_MODES:-}" ]]; then
@@ -195,6 +195,18 @@ has_live_mode() {
     fi
   done
   return 1
+}
+
+resolve_live_affinity_default() {
+  if [[ -n "${LIVE_ENABLE_AFFINITY}" ]]; then
+    return
+  fi
+
+  if has_live_mode; then
+    LIVE_ENABLE_AFFINITY="1"
+  else
+    LIVE_ENABLE_AFFINITY="0"
+  fi
 }
 
 copy_config() {
@@ -474,6 +486,7 @@ if has_live_mode; then
     fail "AEGISAI_LIVE_PID_ALLOWLIST must be a comma-separated list of positive PIDs when set"
   fi
 fi
+resolve_live_affinity_default
 
 if [[ "${overall_status}" -ne 0 ]]; then
   exit "${overall_status}"

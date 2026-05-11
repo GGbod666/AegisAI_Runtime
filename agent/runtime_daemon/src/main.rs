@@ -287,10 +287,7 @@ fn config_for_actuator_scope(
     mut config: RuntimeOrchestratorConfig,
 ) -> RuntimeOrchestratorConfig {
     if cli.actuator_backend == "linux-command" && !cli.enable_live_affinity {
-        if let Some(policy) = config
-            .scenarios
-            .get_mut(&runtime_orchestrator::ScenarioKind::InferenceTailGuard)
-        {
+        for policy in config.scenarios.values_mut() {
             policy.actions.pin_strategy = None;
         }
     }
@@ -720,14 +717,20 @@ mod tests {
         .expect("cli should parse");
 
         let scoped = config_for_actuator_scope(&cli, config);
-        let policy = scoped
+        let inference_policy = scoped
             .scenarios
             .get(&runtime_orchestrator::ScenarioKind::InferenceTailGuard)
             .expect("inference policy");
+        let tool_call_policy = scoped
+            .scenarios
+            .get(&runtime_orchestrator::ScenarioKind::ToolCallBooster)
+            .expect("tool call policy");
 
-        assert!(policy.actions.raise_nice.is_some());
-        assert!(policy.actions.pin_strategy.is_none());
-        assert_eq!(policy.actions.use_cpuset, Some(false));
+        assert!(inference_policy.actions.raise_nice.is_some());
+        assert!(inference_policy.actions.pin_strategy.is_none());
+        assert_eq!(inference_policy.actions.use_cpuset, Some(false));
+        assert!(tool_call_policy.actions.raise_nice.is_some());
+        assert!(tool_call_policy.actions.pin_strategy.is_none());
     }
 
     #[test]
@@ -748,12 +751,17 @@ mod tests {
         .expect("cli should parse");
 
         let scoped = config_for_actuator_scope(&cli, config);
-        let policy = scoped
+        let inference_policy = scoped
             .scenarios
             .get(&runtime_orchestrator::ScenarioKind::InferenceTailGuard)
             .expect("inference policy");
+        let tool_call_policy = scoped
+            .scenarios
+            .get(&runtime_orchestrator::ScenarioKind::ToolCallBooster)
+            .expect("tool call policy");
 
-        assert!(policy.actions.pin_strategy.is_some());
+        assert!(inference_policy.actions.pin_strategy.is_some());
+        assert!(tool_call_policy.actions.pin_strategy.is_some());
     }
 
     #[test]
