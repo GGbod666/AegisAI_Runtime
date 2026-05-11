@@ -42,6 +42,7 @@ touch "${LOG_PATH}"
 CONFIG_ROOT="${ARTIFACT_DIR}/repo-config"
 DETAIL_CSV="${ARTIFACT_DIR}/tool_call_booster_detail.csv"
 SUMMARY_CSV="${ARTIFACT_DIR}/tool_call_booster_summary.csv"
+STAGE_EFFECTIVENESS_CSV="${ARTIFACT_DIR}/tool_call_booster_stage_effectiveness.csv"
 REPORT_MD="${ARTIFACT_DIR}/tool_call_booster_benefit_report.md"
 RUN_ENV="${ARTIFACT_DIR}/run.env"
 DAEMON_BIN="${REPO_ROOT}/target/debug/aegisai-runtime-daemon"
@@ -487,6 +488,7 @@ generate_report() {
     --min-benefit-pct "${MIN_BENEFIT_PCT}" \
     --detail-csv "${DETAIL_CSV}" \
     --summary-csv "${SUMMARY_CSV}" \
+    --stage-effectiveness-csv "${STAGE_EFFECTIVENESS_CSV}" \
     --report-md "${REPORT_MD}" \
     ${require_arg} \
     >"${REPORT_STDOUT}" 2>"${REPORT_STDERR}"
@@ -567,6 +569,8 @@ append "- Report verdict:"
 append_block "${REPORT_STDOUT}"
 append "- Aggregate summary:"
 append_block "${SUMMARY_CSV}"
+append "- Stage effectiveness:"
+append_block "${STAGE_EFFECTIVENESS_CSV}"
 append "- Detail:"
 append_block "${DETAIL_CSV}"
 append "- Report: \`${REPORT_MD}\`"

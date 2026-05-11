@@ -41,6 +41,9 @@ def detail_row(round_no: int, mode: str, latency_ms: float) -> dict[str, str]:
         "action_error_count": "0",
         "scheduler_command_count": "0" if is_baseline else "3",
         "effective_scheduler_action_count": "3" if is_live_guarded else "0",
+        "stage_effective_scheduler_actions": "executor:1,retrieval:1,rerank:1"
+        if is_live_guarded
+        else "none",
         "warmup_side_effect_count": "0",
         "warmup_deferred_count": "0" if is_baseline else "3",
         "warmup_rollback_noop_count": "0" if is_baseline else "3",
@@ -116,6 +119,7 @@ class SummarizeAbTests(unittest.TestCase):
             [
                 "actuator_backend: linux-command",
                 "audit_highlights:",
+                "  pid=42;scenario=tool_call_booster;tool_call_stage=retrieval",
                 "  pid=42;scenario=tool_call_booster;backend.apply.live_guard.scope=nice,affinity",
                 "  pid=42;scenario=tool_call_booster;backend.apply.apply.0.detail=runner=system-command-runner;command=taskset -pc 0,1 42;output=pid 42's current affinity list: 0-7\npid 42's new affinity list: 0,1",
             ]
@@ -125,6 +129,7 @@ class SummarizeAbTests(unittest.TestCase):
 
         self.assertEqual(effects["scheduler_command_count"], 1)
         self.assertEqual(effects["effective_scheduler_action_count"], 1)
+        self.assertEqual(effects["stage_effective_scheduler_actions"], {"retrieval": 1})
         self.assertEqual(effects["guarded_noop_count"], 0)
 
     def test_warmup_side_effect_counts_separately_from_scheduler_actions(self) -> None:
@@ -144,6 +149,38 @@ class SummarizeAbTests(unittest.TestCase):
         self.assertEqual(effects["warmup_side_effect_count"], 1)
         self.assertEqual(effects["warmup_deferred_count"], 0)
         self.assertEqual(effects["warmup_rollback_noop_count"], 1)
+
+    def test_stage_effectiveness_correlates_stage_actions_and_latency_delta(self) -> None:
+        rows: list[dict[str, str]] = []
+        for round_no in range(1, 4):
+            baseline = detail_row(round_no, "baseline", 100.0)
+            baseline["retrieval_ms"] = "100.000"
+            baseline["rerank_ms"] = "100.000"
+            rows.append(baseline)
+
+            guarded = detail_row(round_no, "live_guarded", 90.0)
+            guarded["retrieval_ms"] = "90.000"
+            guarded["rerank_ms"] = "102.000"
+            guarded["stage_effective_scheduler_actions"] = "retrieval:1"
+            rows.append(guarded)
+
+        stage_rows = summarize_ab.build_stage_effectiveness_rows(
+            rows,
+            ["baseline", "live_guarded"],
+            rounds=3,
+            min_benefit_pct=5.0,
+        )
+        by_mode_stage = {(row["mode"], row["stage"]): row for row in stage_rows}
+
+        retrieval = by_mode_stage[("live_guarded", "retrieval")]
+        self.assertEqual(retrieval["effective_scheduler_action_count_total"], "3")
+        self.assertEqual(retrieval["improved_rounds"], "3")
+        self.assertEqual(retrieval["avg_delta_vs_baseline_pct"], "-10.000")
+        self.assertEqual(retrieval["stage_effectiveness"], "PASS")
+
+        rerank = by_mode_stage[("live_guarded", "rerank")]
+        self.assertEqual(rerank["effective_scheduler_action_count_total"], "0")
+        self.assertEqual(rerank["stage_effectiveness"], "NO_EFFECTIVE_ACTION")
 
     def test_only_guarded_repeated_improvement_counts_as_benefit(self) -> None:
         rows: list[dict[str, str]] = []
@@ -225,11 +262,18 @@ class SummarizeAbTests(unittest.TestCase):
                 min_benefit_pct=5.0,
                 detail_rows=rows,
                 summary_rows=summary_rows,
+                stage_effectiveness_rows=summarize_ab.build_stage_effectiveness_rows(
+                    rows,
+                    ["baseline", "live_guarded"],
+                    rounds=3,
+                    min_benefit_pct=5.0,
+                ),
             )
 
             report = report_path.read_text(encoding="utf-8")
 
         self.assertIn("Benefit scope: guarded scheduler actions only", report)
+        self.assertIn("## Stage Effectiveness", report)
         self.assertIn("`WarmupExecutor` defaults to deferred/no-side-effect audit", report)
         self.assertIn("warmup counts are reported separately", report)
 

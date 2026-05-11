@@ -434,10 +434,19 @@ fn collect_audit_highlights(
         "backend.rollback.lease.",
         "backend.rollback.rollback.",
     ];
+    const ACTION_AUDIT_FIELDS: [&str; 5] = [
+        "tool_call_id",
+        "tool_call_stage",
+        "action_plan",
+        "isolation_mode",
+        "isolation_scope",
+    ];
 
     for action in actions {
         for (key, value) in &action.audit_fields {
-            if AUDIT_PREFIXES.iter().any(|prefix| key.starts_with(prefix)) {
+            if AUDIT_PREFIXES.iter().any(|prefix| key.starts_with(prefix))
+                || ACTION_AUDIT_FIELDS.contains(&key.as_str())
+            {
                 highlights.insert(format!(
                     "pid={};scenario={};{}={}",
                     action.target_pid,
@@ -639,5 +648,9 @@ mod tests {
             .audit_highlights
             .iter()
             .any(|highlight| highlight.contains("backend.apply.lease.")));
+        assert!(summary
+            .audit_highlights
+            .iter()
+            .any(|highlight| highlight.contains("tool_call_stage=")));
     }
 }

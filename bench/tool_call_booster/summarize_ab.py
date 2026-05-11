@@ -45,6 +45,7 @@ DETAIL_COLUMNS = [
     "action_error_count",
     "scheduler_command_count",
     "effective_scheduler_action_count",
+    "stage_effective_scheduler_actions",
     "warmup_side_effect_count",
     "warmup_deferred_count",
     "warmup_rollback_noop_count",
@@ -83,6 +84,24 @@ SUMMARY_COLUMNS = [
 ]
 
 
+STAGE_EFFECTIVENESS_COLUMNS = [
+    "mode",
+    "stage",
+    "rounds",
+    "contract_pass_rounds",
+    "stage_latency_median_ms",
+    "stage_latency_avg_ms",
+    "baseline_stage_latency_median_ms",
+    "comparable_rounds",
+    "improved_rounds",
+    "avg_delta_vs_baseline_pct",
+    "median_delta_vs_baseline_pct",
+    "trigger_count_total",
+    "effective_scheduler_action_count_total",
+    "stage_effectiveness",
+]
+
+
 def as_float(value: Any) -> float | None:
     try:
         return float(value)
@@ -101,6 +120,25 @@ def fmt_float(value: float | None) -> str:
     if value is None or math.isnan(value):
         return ""
     return f"{value:.3f}"
+
+
+def fmt_stage_counts(counts: dict[str, int]) -> str:
+    parts = [f"{stage}:{counts[stage]}" for stage in sorted(counts) if counts[stage] > 0]
+    return ",".join(parts) if parts else "none"
+
+
+def parse_count_map(raw_counts: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    if raw_counts in {"", "none"}:
+        return counts
+    for item in raw_counts.split(","):
+        if ":" not in item:
+            continue
+        key, value = item.split(":", 1)
+        key = key.strip()
+        if key:
+            counts[key] = as_int(value)
+    return counts
 
 
 def critical_chain_latency_ms(durations: dict[str, Any]) -> float | None:
@@ -205,6 +243,7 @@ def parse_daemon_stdout(path: Path, tool_call_id: str) -> dict[str, Any]:
         "action_error_count": 0,
         "scheduler_command_count": 0,
         "effective_scheduler_action_count": 0,
+        "stage_effective_scheduler_actions": {},
         "warmup_side_effect_count": 0,
         "warmup_deferred_count": 0,
         "warmup_rollback_noop_count": 0,
@@ -240,10 +279,40 @@ def parse_daemon_stdout(path: Path, tool_call_id: str) -> dict[str, Any]:
     return result
 
 
+def parse_audit_record(line: str) -> dict[str, str] | None:
+    text = line.strip()
+    if text.startswith("- "):
+        text = text[2:].strip()
+    parts = text.split(";", 2)
+    if len(parts) != 3:
+        return None
+    pid_part, scenario_part, field_part = parts
+    if (
+        not pid_part.startswith("pid=")
+        or not scenario_part.startswith("scenario=")
+        or "=" not in field_part
+    ):
+        return None
+    key, value = field_part.split("=", 1)
+    return {
+        "pid": pid_part.removeprefix("pid="),
+        "scenario": scenario_part.removeprefix("scenario="),
+        "key": key,
+        "value": value,
+    }
+
+
+def record_effective_scheduler_action(result: dict[str, Any], stage: str) -> None:
+    result["effective_scheduler_action_count"] += 1
+    stage_counts = result["stage_effective_scheduler_actions"]
+    stage_counts[stage] = stage_counts.get(stage, 0) + 1
+
+
 def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
     result: dict[str, Any] = {
         "scheduler_command_count": 0,
         "effective_scheduler_action_count": 0,
+        "stage_effective_scheduler_actions": {},
         "warmup_side_effect_count": 0,
         "warmup_deferred_count": 0,
         "warmup_rollback_noop_count": 0,
@@ -253,11 +322,33 @@ def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
     scopes = sorted(set(re.findall(r"backend\.apply\.live_guard\.scope=([^;\s]+)", text)))
     result["live_guard_scope"] = ",".join(scopes)
 
+    stage_by_pid: dict[str, str] = {}
     for line in text.splitlines():
-        if "backend.apply.apply." not in line or ".detail=" not in line:
-            continue
+        record = parse_audit_record(line)
+        if (
+            record
+            and record["scenario"] == "tool_call_booster"
+            and record["key"] == "tool_call_stage"
+        ):
+            stage_by_pid[record["pid"]] = record["value"] or "unknown"
 
-        detail = line.split(".detail=", 1)[1]
+    for line in text.splitlines():
+        record = parse_audit_record(line)
+        if record:
+            if record["scenario"] != "tool_call_booster":
+                continue
+            if not (
+                record["key"].startswith("backend.apply.apply.")
+                and record["key"].endswith(".detail")
+            ):
+                continue
+            detail = record["value"]
+            stage = stage_by_pid.get(record["pid"], "unknown")
+        elif "backend.apply.apply." in line and ".detail=" in line:
+            detail = line.split(".detail=", 1)[1]
+            stage = "unknown"
+        else:
+            continue
         if " command disabled by live guard" in detail:
             result["guarded_noop_count"] += 1
             continue
@@ -277,17 +368,17 @@ def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
                 old_priority = int(priority_change.group(1))
                 new_priority = int(priority_change.group(2))
                 if old_priority != new_priority:
-                    result["effective_scheduler_action_count"] += 1
+                    record_effective_scheduler_action(result, stage)
                 else:
                     result["guarded_noop_count"] += 1
             else:
-                result["effective_scheduler_action_count"] += 1
+                record_effective_scheduler_action(result, stage)
             continue
 
         if "command=taskset " in detail:
             result["scheduler_command_count"] += 1
             if backend == "linux-command":
-                result["effective_scheduler_action_count"] += 1
+                record_effective_scheduler_action(result, stage)
             continue
 
         if "warmup executor applied;side_effect=command" in detail:
@@ -365,6 +456,9 @@ def build_detail_rows(artifact_dir: Path, modes: list[str], rounds: int) -> list
                     "effective_scheduler_action_count": str(
                         daemon["effective_scheduler_action_count"]
                     ),
+                    "stage_effective_scheduler_actions": fmt_stage_counts(
+                        daemon["stage_effective_scheduler_actions"]
+                    ),
                     "warmup_side_effect_count": str(daemon["warmup_side_effect_count"]),
                     "warmup_deferred_count": str(daemon["warmup_deferred_count"]),
                     "warmup_rollback_noop_count": str(
@@ -412,6 +506,10 @@ def contract_reasons(mode: str, executor: dict[str, Any], daemon: dict[str, Any]
 
 def latency(row: dict[str, str]) -> float | None:
     return as_float(row["tool_call_latency_ms"])
+
+
+def stage_latency(row: dict[str, str], stage: str) -> float | None:
+    return as_float(row.get(f"{stage}_ms"))
 
 
 def mean(values: list[float]) -> float | None:
@@ -539,6 +637,90 @@ def build_summary_rows(
     return summary_rows
 
 
+def build_stage_effectiveness_rows(
+    rows: list[dict[str, str]], modes: list[str], rounds: int, min_benefit_pct: float
+) -> list[dict[str, str]]:
+    stage_rows: list[dict[str, str]] = []
+    baseline_by_round = {
+        row["round"]: row for row in rows if row["mode"] == "baseline" and row["contract"] == "PASS"
+    }
+
+    for mode in modes:
+        for stage in CONTRACT_STAGES:
+            mode_rows = [row for row in rows if row["mode"] == mode]
+            pass_rows = [row for row in mode_rows if row["contract"] == "PASS"]
+            stage_latencies = [
+                value for row in pass_rows if (value := stage_latency(row, stage)) is not None
+            ]
+            baseline_stage_latencies = [
+                value
+                for baseline in baseline_by_round.values()
+                if (value := stage_latency(baseline, stage)) is not None
+            ]
+            deltas: list[float] = []
+            for row in pass_rows:
+                if mode == "baseline":
+                    continue
+                baseline = baseline_by_round.get(row["round"])
+                if baseline is None:
+                    continue
+                base_latency = stage_latency(baseline, stage)
+                mode_latency = stage_latency(row, stage)
+                if base_latency is None or mode_latency is None or base_latency <= 0:
+                    continue
+                deltas.append(((mode_latency - base_latency) / base_latency) * 100.0)
+
+            comparable_rounds = len(deltas)
+            required_improved_rounds = (
+                math.ceil(comparable_rounds * 2 / 3) if comparable_rounds else 0
+            )
+            improved_rounds = sum(1 for delta in deltas if delta <= -min_benefit_pct)
+            avg_delta = mean(deltas)
+            stage_action_count = sum(
+                parse_count_map(row.get("stage_effective_scheduler_actions", "")).get(stage, 0)
+                for row in mode_rows
+            )
+            trigger_count = sum(
+                parse_count_map(row.get("stages", "")).get(stage, 0) for row in mode_rows
+            )
+            if mode == "baseline":
+                stage_effectiveness = "BASELINE"
+            elif stage_action_count <= 0:
+                stage_effectiveness = "NO_EFFECTIVE_ACTION"
+            elif (
+                comparable_rounds > 0
+                and improved_rounds >= required_improved_rounds
+                and avg_delta is not None
+                and avg_delta <= -min_benefit_pct
+            ):
+                stage_effectiveness = "PASS"
+            else:
+                stage_effectiveness = "LATENCY_NOT_IMPROVED"
+
+            stage_rows.append(
+                {
+                    "mode": mode,
+                    "stage": stage,
+                    "rounds": str(len(mode_rows)),
+                    "contract_pass_rounds": str(len(pass_rows)),
+                    "stage_latency_median_ms": fmt_float(median(stage_latencies)),
+                    "stage_latency_avg_ms": fmt_float(mean(stage_latencies)),
+                    "baseline_stage_latency_median_ms": fmt_float(
+                        median(baseline_stage_latencies)
+                    ),
+                    "comparable_rounds": str(comparable_rounds),
+                    "improved_rounds": str(improved_rounds),
+                    "avg_delta_vs_baseline_pct": fmt_float(avg_delta),
+                    "median_delta_vs_baseline_pct": fmt_float(median(deltas)),
+                    "trigger_count_total": str(trigger_count),
+                    "effective_scheduler_action_count_total": str(stage_action_count),
+                    "stage_effectiveness": stage_effectiveness,
+                }
+            )
+
+    return stage_rows
+
+
 def verdict_reason(
     mode: str,
     mode_contract_pass: bool,
@@ -597,6 +779,7 @@ def write_report(
     min_benefit_pct: float,
     detail_rows: list[dict[str, str]],
     summary_rows: list[dict[str, str]],
+    stage_effectiveness_rows: list[dict[str, str]] | None = None,
 ) -> tuple[str, str]:
     overall_contract = "PASS" if all(row["contract"] == "PASS" for row in detail_rows) else "FAIL"
     overall_benefit = (
@@ -619,6 +802,15 @@ def write_report(
         "",
     ]
     lines.extend(markdown_table(SUMMARY_COLUMNS, summary_rows))
+    if stage_effectiveness_rows is not None:
+        lines.extend(
+            [
+                "",
+                "## Stage Effectiveness",
+                "",
+            ]
+        )
+        lines.extend(markdown_table(STAGE_EFFECTIVENESS_COLUMNS, stage_effectiveness_rows))
     lines.extend(
         [
             "",
@@ -634,6 +826,7 @@ def write_report(
         "tool_call_booster_triggers",
         "total_rollbacks",
         "effective_scheduler_action_count",
+        "stage_effective_scheduler_actions",
         "warmup_side_effect_count",
         "warmup_deferred_count",
         "warmup_rollback_noop_count",
@@ -651,6 +844,7 @@ def write_report(
             "- `baseline` is the unobserved executor sample and anchors latency deltas.",
             "- `noop` and `dry_run` prove recognition, trigger, audit, and rollback closure, but they are controls rather than host-level guarded benefit proof.",
             "- A guarded benefit PASS requires a guarded scheduler mode, clean mode contracts, at least one effective scheduler action, and repeated latency improvement versus same-round baseline.",
+            "- Stage effectiveness only attributes effective scheduler actions when daemon audit ties the action PID to a `tool_call_stage`; older artifacts without that audit show no per-stage effective action attribution.",
             "- Do not read a Tool Call Booster benefit PASS as proof of warmup benefit; warmup side effects are counted separately and rollback is an audited no-op.",
         ]
     )
@@ -667,6 +861,7 @@ def parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-benefit-pct", type=float, default=5.0)
     parser.add_argument("--detail-csv", type=Path, required=True)
     parser.add_argument("--summary-csv", type=Path, required=True)
+    parser.add_argument("--stage-effectiveness-csv", type=Path)
     parser.add_argument("--report-md", type=Path, required=True)
     parser.add_argument("--require-benefit", action="store_true")
     return parser
@@ -682,9 +877,18 @@ def main() -> int:
 
     detail_rows = build_detail_rows(args.artifact_dir, modes, args.rounds)
     summary_rows = build_summary_rows(detail_rows, modes, args.rounds, args.min_benefit_pct)
+    stage_effectiveness_rows = build_stage_effectiveness_rows(
+        detail_rows, modes, args.rounds, args.min_benefit_pct
+    )
 
     write_csv(args.detail_csv, DETAIL_COLUMNS, detail_rows)
     write_csv(args.summary_csv, SUMMARY_COLUMNS, summary_rows)
+    if args.stage_effectiveness_csv:
+        write_csv(
+            args.stage_effectiveness_csv,
+            STAGE_EFFECTIVENESS_COLUMNS,
+            stage_effectiveness_rows,
+        )
     overall_contract, overall_benefit = write_report(
         args.report_md,
         args.run_id,
@@ -694,6 +898,7 @@ def main() -> int:
         args.min_benefit_pct,
         detail_rows,
         summary_rows,
+        stage_effectiveness_rows,
     )
 
     print(f"overall_contract_verdict={overall_contract}")
