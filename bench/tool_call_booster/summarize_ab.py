@@ -302,6 +302,18 @@ def parse_audit_record(line: str) -> dict[str, str] | None:
     }
 
 
+def parse_detail_fields(detail: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for item in detail.split(";"):
+        if "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        key = key.strip()
+        if key:
+            fields[key] = value.strip()
+    return fields
+
+
 def record_effective_scheduler_action(result: dict[str, Any], stage: str) -> None:
     result["effective_scheduler_action_count"] += 1
     stage_counts = result["stage_effective_scheduler_actions"]
@@ -349,6 +361,8 @@ def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
             stage = "unknown"
         else:
             continue
+        fields = parse_detail_fields(detail)
+        stage = fields.get("tool_call_stage") or stage
         if " command disabled by live guard" in detail:
             result["guarded_noop_count"] += 1
             continue
@@ -356,6 +370,12 @@ def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
         if "command=renice " in detail:
             result["scheduler_command_count"] += 1
             if backend != "linux-command":
+                continue
+            if fields.get("effective") == "true":
+                record_effective_scheduler_action(result, stage)
+                continue
+            if fields.get("effective") == "false":
+                result["guarded_noop_count"] += 1
                 continue
             if "priority_raise_limited=true" in detail:
                 result["guarded_noop_count"] += 1
@@ -377,8 +397,12 @@ def parse_action_effects(text: str, backend: str) -> dict[str, Any]:
 
         if "command=taskset " in detail:
             result["scheduler_command_count"] += 1
-            if backend == "linux-command":
+            if backend != "linux-command":
+                continue
+            if fields.get("effective") != "false":
                 record_effective_scheduler_action(result, stage)
+            else:
+                result["guarded_noop_count"] += 1
             continue
 
         if "warmup executor applied;side_effect=command" in detail:

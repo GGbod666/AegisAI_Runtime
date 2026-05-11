@@ -132,6 +132,22 @@ class SummarizeAbTests(unittest.TestCase):
         self.assertEqual(effects["stage_effective_scheduler_actions"], {"retrieval": 1})
         self.assertEqual(effects["guarded_noop_count"], 0)
 
+    def test_apply_detail_attribution_drives_stage_effectiveness(self) -> None:
+        daemon_text = "\n".join(
+            [
+                "actuator_backend: linux-command",
+                "audit_highlights:",
+                "  pid=42;scenario=tool_call_booster;backend.apply.apply.0.detail=tool_call_stage=rerank;tool_call_id=tc-001;action_kind=set_affinity;effective=true;runner=system-command-runner;command=taskset -pc 0,1 42;output=pid 42's current affinity list: 0-7",
+                "pid 42's new affinity list: 0,1",
+            ]
+        )
+
+        effects = summarize_ab.parse_action_effects(daemon_text, "linux-command")
+
+        self.assertEqual(effects["scheduler_command_count"], 1)
+        self.assertEqual(effects["effective_scheduler_action_count"], 1)
+        self.assertEqual(effects["stage_effective_scheduler_actions"], {"rerank": 1})
+
     def test_warmup_side_effect_counts_separately_from_scheduler_actions(self) -> None:
         daemon_text = "\n".join(
             [

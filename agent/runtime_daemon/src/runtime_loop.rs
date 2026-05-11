@@ -447,6 +447,7 @@ fn collect_audit_highlights(
             if AUDIT_PREFIXES.iter().any(|prefix| key.starts_with(prefix))
                 || ACTION_AUDIT_FIELDS.contains(&key.as_str())
             {
+                let value = audit_highlight_value(action, key, value);
                 highlights.insert(format!(
                     "pid={};scenario={};{}={}",
                     action.target_pid,
@@ -459,8 +460,137 @@ fn collect_audit_highlights(
     }
 }
 
+fn audit_highlight_value(
+    action: &runtime_orchestrator::AppliedAction,
+    key: &str,
+    value: &str,
+) -> String {
+    if action.scenario.as_str() != "tool_call_booster" {
+        return value.to_string();
+    }
+    let Some(action_index) = apply_detail_index(key) else {
+        return value.to_string();
+    };
+
+    let tool_call_stage = action
+        .audit_fields
+        .get("tool_call_stage")
+        .map(String::as_str)
+        .unwrap_or("unknown");
+    let tool_call_id = action
+        .audit_fields
+        .get("tool_call_id")
+        .map(String::as_str)
+        .unwrap_or("unknown");
+    let action_kind = action_kind(action.actions.get(action_index));
+    let effective = action_effective(action, action_index, value);
+    let detail = value.replace('\r', "\\r").replace('\n', "\\n");
+
+    format!(
+        "tool_call_stage={tool_call_stage};tool_call_id={tool_call_id};action_kind={action_kind};effective={effective};{detail}"
+    )
+}
+
+fn apply_detail_index(key: &str) -> Option<usize> {
+    let rest = key.strip_prefix("backend.apply.apply.")?;
+    let index = rest.strip_suffix(".detail")?;
+    index.parse::<usize>().ok()
+}
+
+fn action_kind(action: Option<&runtime_orchestrator::Action>) -> &'static str {
+    match action {
+        Some(runtime_orchestrator::Action::RaiseNice { .. }) => "raise_nice",
+        Some(runtime_orchestrator::Action::SetAffinity { .. }) => "set_affinity",
+        Some(runtime_orchestrator::Action::UseCpuset { .. }) => "use_cpuset",
+        Some(runtime_orchestrator::Action::WarmupExecutor) => "warmup_executor",
+        None => "unknown",
+    }
+}
+
+fn action_effective(
+    action: &runtime_orchestrator::AppliedAction,
+    action_index: usize,
+    detail: &str,
+) -> bool {
+    if action
+        .audit_fields
+        .get("backend.apply.backend")
+        .map(String::as_str)
+        != Some("linux-command")
+    {
+        return false;
+    }
+
+    match action.actions.get(action_index) {
+        Some(runtime_orchestrator::Action::RaiseNice { .. }) => {
+            renice_priority_changed(detail).unwrap_or(false)
+        }
+        Some(runtime_orchestrator::Action::SetAffinity { .. }) => {
+            taskset_affinity_changed(detail).unwrap_or(false)
+        }
+        Some(runtime_orchestrator::Action::UseCpuset { .. })
+        | Some(runtime_orchestrator::Action::WarmupExecutor)
+        | None => false,
+    }
+}
+
+fn renice_priority_changed(detail: &str) -> Option<bool> {
+    let old_priority = parse_i32_after(detail, "old priority")?;
+    let new_priority = parse_i32_after(detail, "new priority")?;
+    Some(old_priority != new_priority)
+}
+
+fn parse_i32_after(value: &str, marker: &str) -> Option<i32> {
+    let rest = value.split(marker).nth(1)?;
+    rest.split(|ch: char| !(ch == '-' || ch.is_ascii_digit()))
+        .find(|item| !item.is_empty())
+        .and_then(|item| item.parse::<i32>().ok())
+}
+
+fn taskset_affinity_changed(detail: &str) -> Option<bool> {
+    let current = affinity_list_after(detail, "current affinity list:")?;
+    let new = affinity_list_after(detail, "new affinity list:")?;
+    let current = parse_cpu_set(current)?;
+    let new = parse_cpu_set(new)?;
+    Some(current != new)
+}
+
+fn affinity_list_after<'a>(value: &'a str, marker: &str) -> Option<&'a str> {
+    value
+        .split(marker)
+        .nth(1)?
+        .lines()
+        .next()?
+        .split(';')
+        .next()
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+}
+
+fn parse_cpu_set(raw: &str) -> Option<BTreeSet<u32>> {
+    let mut cpus = BTreeSet::new();
+    for segment in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+    {
+        if let Some((start, end)) = segment.split_once('-') {
+            let start = start.trim().parse::<u32>().ok()?;
+            let end = end.trim().parse::<u32>().ok()?;
+            if start > end {
+                return None;
+            }
+            cpus.extend(start..=end);
+        } else {
+            cpus.insert(segment.parse::<u32>().ok()?);
+        }
+    }
+    (!cpus.is_empty()).then_some(cpus)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::path::{Path, PathBuf};
 
     use crate::{
@@ -471,7 +601,12 @@ mod tests {
         Actuator, CommandLinuxSyscallApplier, LinuxActuatorBackend,
         PlannedOnlyLinuxSyscallExecutor, UnavailableLinuxProcessStateProvider,
     };
-    use runtime_orchestrator::{RuntimeOrchestrator, RuntimeOrchestratorConfig, SignalKind};
+    use runtime_orchestrator::{
+        Action, AppliedAction, AppliedActionState, PinStrategy, RuntimeOrchestrator,
+        RuntimeOrchestratorConfig, ScenarioKind, SignalKind,
+    };
+
+    use super::collect_audit_highlights;
 
     fn repo_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -652,5 +787,53 @@ mod tests {
             .audit_highlights
             .iter()
             .any(|highlight| highlight.contains("tool_call_stage=")));
+        assert!(summary.audit_highlights.iter().any(|highlight| {
+            highlight.contains("scenario=tool_call_booster;backend.apply.apply.")
+                && highlight.contains(".detail=tool_call_stage=")
+                && highlight.contains(";tool_call_id=")
+                && highlight.contains(";action_kind=")
+                && highlight.contains(";effective=false;")
+        }));
+    }
+
+    #[test]
+    fn tool_call_apply_details_carry_inline_attribution_and_effectiveness() {
+        let mut audit_fields = BTreeMap::new();
+        audit_fields.insert("tool_call_stage".to_string(), "retrieval".to_string());
+        audit_fields.insert("tool_call_id".to_string(), "tc-001".to_string());
+        audit_fields.insert(
+            "backend.apply.backend".to_string(),
+            "linux-command".to_string(),
+        );
+        audit_fields.insert(
+            "backend.apply.apply.0.detail".to_string(),
+            "runner=system-command-runner;command=taskset -pc 0,1 42;output=pid 42's current affinity list: 0-7\npid 42's new affinity list: 0,1".to_string(),
+        );
+
+        let action = AppliedAction {
+            scenario: ScenarioKind::ToolCallBooster,
+            target_pid: 42,
+            target_process_name: "python".to_string(),
+            actions: vec![Action::SetAffinity {
+                strategy: PinStrategy::PreferReservedCores,
+                max_cpu_ratio: 0.5,
+            }],
+            applied_at_ms: 1_000,
+            expires_at_ms: 1_500,
+            state: AppliedActionState::Applied,
+            audit_fields,
+        };
+        let mut highlights = BTreeSet::new();
+
+        collect_audit_highlights(&mut highlights, &[action]);
+
+        let detail = highlights
+            .iter()
+            .find(|highlight| highlight.contains("backend.apply.apply.0.detail="))
+            .expect("apply detail highlight");
+        assert!(!detail.contains('\n'));
+        assert!(detail.contains(
+            "backend.apply.apply.0.detail=tool_call_stage=retrieval;tool_call_id=tc-001;action_kind=set_affinity;effective=true;"
+        ));
     }
 }
