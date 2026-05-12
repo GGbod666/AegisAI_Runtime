@@ -835,14 +835,15 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 
 `bd` 是任务源，最新精细任务清单见 `docs/latest_tasks.md`。当前 open issue 分两层：
 
-- 父级 gap：`AegisAI_Runtime-vv2`、`AegisAI_Runtime-cqv`、`AegisAI_Runtime-51c`、
-  `AegisAI_Runtime-7h5`、`AegisAI_Runtime-ufp`、`AegisAI_Runtime-0ry`。
-- 审计新增执行项：`AegisAI_Runtime-vv2.1`、`AegisAI_Runtime-cqv.1`、
-  `AegisAI_Runtime-cqv.2`、`AegisAI_Runtime-cqv.3`、`AegisAI_Runtime-51c.1`、
-  `AegisAI_Runtime-51c.2`、`AegisAI_Runtime-51c.3`、`AegisAI_Runtime-51c.4`、
-  `AegisAI_Runtime-ufp.1`、`AegisAI_Runtime-0ry.1`、`AegisAI_Runtime-yxb`、
-  `AegisAI_Runtime-d42`、`AegisAI_Runtime-fp6`。`AegisAI_Runtime-7h5.1`
-  已完成 cpuset/background dry-run rejection matrix。
+- 父级 gap：`AegisAI_Runtime-cqv`、`AegisAI_Runtime-51c`、
+  `AegisAI_Runtime-ufp`、`AegisAI_Runtime-0ry`。
+- 审计新增执行项：`AegisAI_Runtime-cqv.1`、`AegisAI_Runtime-cqv.2`、
+  `AegisAI_Runtime-cqv.3`、`AegisAI_Runtime-51c.1`、
+  `AegisAI_Runtime-51c.2`、`AegisAI_Runtime-51c.4`、
+  `AegisAI_Runtime-ufp.1`、`AegisAI_Runtime-0ry.1`、
+  `AegisAI_Runtime-fp6`、`AegisAI_Runtime-8le`。`AegisAI_Runtime-vv2` /
+  `AegisAI_Runtime-vv2.1` and `AegisAI_Runtime-7h5` /
+  `AegisAI_Runtime-7h5.1` are closed after P1 acceptance.
 
 源码和设计层面的限制：
 
@@ -852,8 +853,8 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
   信号来自 procfs 派生，offcpu/io 来自 helper-backed bpftrace。
 - bpftrace I/O 程序依赖 host block tracepoint 字段，跨 kernel 可移植性仍需实测。
 - `linux-command` 通过 `renice`/`taskset` 命令执行，而不是直接 syscall 或 cgroup API。
-- cpuset/background throttling 在 policy/audit surface 中存在；当前已有 dry-run-only
-  rejection matrix，但 live cgroup write 仍未启用。
+- cpuset/background throttling 在 policy/audit surface 中存在；当前 dry-run-only
+  planner 已完成并覆盖 rejection matrix，但 live cgroup write 仍未启用。
 - warmup executor 默认仍是 deferred audit；只有显式 CLI warmup command 才会产生受超时约束的真实 side effect，且 rollback 是 no-op audit。
 - 配置加载固定读取 `configs/*/*.example.toml`，没有生产配置 profile、动态 reload 或完整 TOML
   schema 校验。
@@ -862,6 +863,8 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 - 项目 readiness gate 已由 `bash bench/scripts/project_preflight.sh` 统一列出
   Cargo、Python unittest、shell 语法和 bench preflight 组合。上游
   `bd preflight` 的 Go/Nix 输出只适用于 Beads 自身模板，不代表本仓库质量门。
+- Beads Dolt remote 尚未配置；`bd dolt remote list` 当前返回 no remotes
+  configured，后续由 `AegisAI_Runtime-8le` 选择并配置同步目标。
 - 当前热点大文件仍包括 `agent/runtime_daemon/src/source.rs`、
   `agent/actuator/src/backend.rs`、`bench/scripts/inference_tail_guard_ollama_smoke.sh`、
   `agent/actuator/src/lib.rs`、`agent/runtime_daemon/src/main.rs`、

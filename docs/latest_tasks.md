@@ -17,8 +17,9 @@ The order below is deliberate:
    conclusions false, widen live actions, or hide a rollback/CLI safety bug.
 2. **P2: production-readiness blockers**. Add the config, helper, and artifact
    evidence needed before packaging or unattended operation.
-3. **P3: packaging boundary**. Define install/service boundaries only after
-   config and live-safety semantics are explicit.
+3. **P3: packaging and handoff sync boundary**. Define install/service and
+   project sync boundaries only after config and live-safety semantics are
+   explicit.
 4. **P4: deferred extensions**. Dashboard, GPU, and adaptive policy stay behind
    the safety, config, helper, and packaging gates.
 
@@ -369,10 +370,11 @@ cross-host validation, and unattended operation.
 - Verification:
   - `cargo test -p aegisai-runtime-orchestrator`
 
-## P3. Packaging Boundary
+## P3. Packaging And Handoff Sync Boundary
 
 Packaging should not start before P1/P2 gates clarify safety, config, and helper
-semantics.
+semantics. Handoff sync policy should also be explicit before relying on
+automated session-close pushes.
 
 ### 14. Define Debian/Systemd Packaging Contract
 
@@ -397,13 +399,33 @@ semantics.
   - docs-only review
   - no code verification unless files/scripts are added
 
+### 15. Configure Beads Dolt Remote Sync
+
+- Issue: `AegisAI_Runtime-8le`
+- Why P3: session close tries to run `bd dolt push`, but no Beads Dolt remote
+  is configured yet. The sync target needs an explicit project decision before
+  automation can make that command succeed.
+- Scope:
+  - choose the intended Beads Dolt remote URL and storage backend
+  - configure it with `bd dolt remote add`
+  - verify `bd dolt push` succeeds
+  - document the chosen sync target or the solo-local policy
+- Acceptance:
+  - `bd dolt remote list` shows the intended remote, or the project explicitly
+    records that Beads Dolt remote sync is intentionally local-only
+  - `bd dolt push` succeeds when a remote is configured
+  - no git remote or Beads issue data is rewritten
+- Verification:
+  - `bd dolt remote list`
+  - `bd dolt push`
+
 ## P4. Deferred Extensions
 
 These remain deliberately last. They should not consume implementation effort
 until the control loop has production config, Linux ingestion proof, helper
-portability evidence, and packaging boundaries.
+portability evidence, packaging boundaries, and Beads sync policy clarity.
 
-### 15. Split Deferred Extensions Into Evidence-Gated Epics
+### 16. Split Deferred Extensions Into Evidence-Gated Epics
 
 - Issue: `AegisAI_Runtime-0ry.1`
 - Parent: `AegisAI_Runtime-0ry`

@@ -188,7 +188,7 @@ AEGISAI_CONFIRM_LIVE_ACTUATOR=1 \
 | 1. Awareness foundation | stable AI workload labels for scenario policies | basic loop complete |
 | 2. Inference Tail Guard MVP | prove or falsify live guarded tail-latency benefit | latest controlled run `PASS` |
 | 3. Tool Calling Booster | prove or falsify guarded tool-call latency benefit | latest fixed-work guarded run is `PASS`; older stable executor-control run remains a non-controlled workload `FAIL`; `WarmupExecutor` has explicit command-backed side-effect boundaries and separate reporting |
-| 4. AI-aware isolation | define live cpuset/background throttling boundary | safety boundary documented; dry-run planner deferred: `AegisAI_Runtime-7h5` |
+| 4. AI-aware isolation | define live cpuset/background throttling boundary | safety boundary and dry-run planner complete; live cgroup writes remain disabled |
 | 5. Explain/Tune | useful offline reports and threshold suggestions | offline basics exist; online learning deferred |
 | 6. Productionization | config profiles, schema validation, daemon/helper packaging | deferred: `AegisAI_Runtime-cqv`, `AegisAI_Runtime-ufp` |
 | 7. Advanced extensions | RAG, multi-agent isolation, GPU host coordination, cold start, adaptive policy, dashboard | deferred: `AegisAI_Runtime-0ry` |

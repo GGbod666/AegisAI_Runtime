@@ -147,8 +147,6 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 - `AegisAI_Runtime-fp6` — add deterministic tests for inference smoke run-env
   artifact output.
-- `AegisAI_Runtime-vv2` / `AegisAI_Runtime-vv2.1` — harden generic policy
-  safety cap normalization.
 - `AegisAI_Runtime-cqv` / `AegisAI_Runtime-cqv.1` /
   `AegisAI_Runtime-cqv.2` / `AegisAI_Runtime-cqv.3` — add production config
   profile selection, schema validation, and cross-file safety checks.
@@ -157,9 +155,8 @@ Future helper conclusions should use these buckets: `helper unavailable`,
   portability, classify helper compatibility, and harden helper startup failure
   tests. `AegisAI_Runtime-51c.3` is complete: controlled Linux ingestion smoke
   records nonzero procfs-derived daemon events.
-- `AegisAI_Runtime-7h5` — complete the remaining cpuset/background dry-run
-  planner integration after `AegisAI_Runtime-7h5.1` added the deterministic
-  rejection matrix and kept live cgroup writes disabled.
+- `AegisAI_Runtime-8le` — configure the intended Beads Dolt remote sync target;
+  `bd dolt remote list` currently reports no remotes configured.
 - `AegisAI_Runtime-ufp` / `AegisAI_Runtime-ufp.1` — define and then implement
   daemon/helper packaging boundaries.
 - `AegisAI_Runtime-0ry` / `AegisAI_Runtime-0ry.1` — split deferred dashboard,
@@ -167,6 +164,14 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 Recently closed:
 
+- `AegisAI_Runtime-vv2` / `AegisAI_Runtime-vv2.1` — shared policy safety cap
+  normalization is complete: generic and scenario policy paths use normalized
+  priority delta and affinity ratio caps, invalid caps cannot widen scheduler
+  actions, and Tool Call Booster audit behavior is preserved.
+- `AegisAI_Runtime-7h5` / `AegisAI_Runtime-7h5.1` — cpuset/background dry-run
+  planning is complete for the current safety boundary: deterministic target,
+  capture, rollback, and rejection context is test-covered, and live cgroup
+  writes remain disabled.
 - `AegisAI_Runtime-d42` — expanded runtime daemon CLI parser edge-case coverage
   for duplicate and empty PID allowlists, unknown source/backend values,
   missing verification log paths, and warmup command boundaries; source/backend

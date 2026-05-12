@@ -58,13 +58,14 @@ created, Inference Tail Guard benefit has been proven for the latest controlled
 run shape, Tool Call Booster guarded latency benefit has been proven for the
 latest fixed-work guarded run shape while the older stable executor-control run
 remains a historical non-controlled workload `FAIL`, the `WarmupExecutor`
-boundary has been implemented, and the live cpuset/background safety boundary
-has been documented. The remaining blockers are:
+boundary has been implemented, the live cpuset/background safety boundary has
+been documented, policy safety cap normalization has been completed, and the
+cpuset/background dry-run planner has been completed. The remaining blockers
+are:
 
-- policy safety consistency: `AegisAI_Runtime-vv2`
 - productionization and portability: `AegisAI_Runtime-cqv`,
   `AegisAI_Runtime-51c`, `AegisAI_Runtime-ufp`
-- cpuset/background dry-run planning: `AegisAI_Runtime-7h5`
+- Beads Dolt remote sync: `AegisAI_Runtime-8le`
 - deferred runtime extensions: `AegisAI_Runtime-0ry`
 
 See `docs/status.md` for the current issue index and `bd ready` for executable
