@@ -192,22 +192,29 @@ trusted or whether live-control boundaries are safe.
 ### 6. Expand CLI Parser Edge-Case Tests
 
 - Issue: `AegisAI_Runtime-d42`
+- Status: `DONE` on 2026-05-12.
 - Why P1: `CliConfig::parse` is the second graph hub (`degree=101`) and guards
   live actuator confirmation, PID allowlists, warmup side effects, and future
   profile selection.
 - Scope:
-  - add parser tests only
+  - added focused parser tests and deterministic validation for advertised
+    source/backend choice values
   - cover live actuator and warmup command boundaries
-  - cover production profile interactions if that flag lands first
+  - production profile interactions remain out of scope because no production
+    profile CLI flag exists yet
 - Acceptance:
-  - duplicate `--live-pid-allowlist` behavior is deterministic
-  - whitespace and empty PID elements are rejected or normalized by a tested rule
-  - unknown source/backend names produce deterministic errors
-  - `--verification-log` missing value is rejected
-  - warmup command argument boundaries are covered
-  - production profile flag interactions are covered if available
+  - duplicate `--live-pid-allowlist` behavior is deterministic: `PASS`
+  - whitespace and empty PID elements are normalized or rejected by a tested
+    rule: `PASS`
+  - unknown source/backend names produce deterministic errors: `PASS`
+  - `--verification-log` missing value is rejected: `PASS`
+  - warmup command argument boundaries are covered: `PASS`
+  - production profile flag interactions are covered if available: `N/A`, flag
+    not present
 - Verification:
-  - `cargo test -p aegisai-runtime-daemon`
+  - `cargo fmt --all -- --check`: `PASS`
+  - `cargo test -p aegisai-runtime-daemon`: `PASS`; `67` tests
+  - `git diff --check`: `PASS`
 
 ## P2. Production-Readiness Blockers
 

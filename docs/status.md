@@ -145,8 +145,6 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-d42` — expand CLI parser edge-case tests for live and
-  warmup flags.
 - `AegisAI_Runtime-fp6` — add deterministic tests for inference smoke run-env
   artifact output.
 - `AegisAI_Runtime-vv2` / `AegisAI_Runtime-vv2.1` — harden generic policy
@@ -169,6 +167,11 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 Recently closed:
 
+- `AegisAI_Runtime-d42` — expanded runtime daemon CLI parser edge-case coverage
+  for duplicate and empty PID allowlists, unknown source/backend values,
+  missing verification log paths, and warmup command boundaries; source/backend
+  choice validation now fails deterministically in `CliConfig::parse`;
+  `cargo test -p aegisai-runtime-daemon` passed with `67` tests.
 - `AegisAI_Runtime-yxb` — added direct rollback report builder tests for
   successful and failed nice restore, successful and failed affinity restore,
   mixed report output, missing captured state, and disabled cpuset rollback

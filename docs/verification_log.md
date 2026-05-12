@@ -19077,3 +19077,39 @@ No output.
   successful affinity rollback, failed affinity rollback, mixed nice/affinity
   report output, missing captured state, and disabled cpuset rollback noise
   suppression all have direct deterministic assertions.
+
+### 2026-05-12T03:48:43Z - Runtime daemon CLI parser edge cases
+
+- Scope: expanded `AegisAI_Runtime-d42` coverage for runtime daemon CLI live
+  flags and made unknown source/backend names fail deterministically during
+  `CliConfig::parse`.
+- Command: `cargo fmt --all -- --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo test -p aegisai-runtime-daemon`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/runtime_daemon/src/lib.rs: 36 passed; 0 failed
+agent/runtime_daemon/src/main.rs: 31 passed; 0 failed
+Doc-tests aegisai_runtime_daemon: 0 passed; 0 failed
+```
+
+- Command: `git diff --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Acceptance coverage: duplicate `--live-pid-allowlist` uses the last value
+  with set de-duplication, whitespace/empty PID elements are normalized unless
+  no PID remains, unknown source/backend values return exact errors,
+  `--verification-log` without a path is rejected, warmup command boundaries
+  include empty commands and argument values that look like flags, and
+  production profile coverage is `N/A` because no production-profile CLI flag
+  exists yet.

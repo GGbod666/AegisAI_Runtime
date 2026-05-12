@@ -136,9 +136,17 @@ impl CliConfig {
                     config.repo_root = PathBuf::from(value);
                 }
                 "--source" => {
-                    config.source = args
+                    let value = args
                         .next()
                         .ok_or_else(|| "--source expects `mock` or `linux`".to_string())?;
+                    match value.as_str() {
+                        "mock" | "linux" => config.source = value,
+                        other => {
+                            return Err(format!(
+                                "unsupported source mode `{other}`; expected `mock` or `linux`"
+                            ));
+                        }
+                    }
                 }
                 "--mock-profile" => {
                     config.mock_profile = args.next().ok_or_else(|| {
@@ -151,10 +159,20 @@ impl CliConfig {
                     })?;
                 }
                 "--actuator-backend" => {
-                    config.actuator_backend = args.next().ok_or_else(|| {
+                    let value = args.next().ok_or_else(|| {
                         "--actuator-backend expects `noop`, `linux-skeleton`, `linux-command`, or `linux-command-dry-run`"
                             .to_string()
                     })?;
+                    match value.as_str() {
+                        "noop" | "linux-skeleton" | "linux-command" | "linux-command-dry-run" => {
+                            config.actuator_backend = value;
+                        }
+                        other => {
+                            return Err(format!(
+                                "unsupported actuator backend `{other}`; expected `noop`, `linux-skeleton`, `linux-command`, or `linux-command-dry-run`"
+                            ));
+                        }
+                    }
                 }
                 "--allow-partial-probes" => {
                     config.require_all_probes = false;
@@ -901,6 +919,73 @@ mod tests {
     }
 
     #[test]
+    fn cli_replaces_duplicate_live_pid_allowlist_with_last_value() {
+        let cli = CliConfig::parse(
+            [
+                "--live-pid-allowlist",
+                "42,77",
+                "--live-pid-allowlist",
+                "77,99,99",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("duplicate pid allowlist flag should parse deterministically");
+
+        assert_eq!(cli.live_pid_allowlist, [77, 99].into_iter().collect());
+    }
+
+    #[test]
+    fn cli_normalizes_whitespace_and_empty_pid_allowlist_elements() {
+        let cli = CliConfig::parse(
+            ["--live-pid-allowlist", " 42, , 77,  "]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect("empty pid elements should be ignored when at least one pid remains");
+
+        assert_eq!(cli.live_pid_allowlist, [42, 77].into_iter().collect());
+    }
+
+    #[test]
+    fn cli_rejects_empty_live_pid_allowlist_after_normalization() {
+        let error = CliConfig::parse(
+            ["--live-pid-allowlist", " , , "]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect_err("empty pid allowlist should fail");
+
+        assert_eq!(error, "--live-pid-allowlist expects at least one PID");
+    }
+
+    #[test]
+    fn cli_rejects_unknown_source_name() {
+        let error = CliConfig::parse(["--source", "tracefs"].into_iter().map(str::to_string))
+            .expect_err("unknown source should fail");
+
+        assert_eq!(
+            error,
+            "unsupported source mode `tracefs`; expected `mock` or `linux`"
+        );
+    }
+
+    #[test]
+    fn cli_rejects_unknown_actuator_backend_name() {
+        let error = CliConfig::parse(
+            ["--actuator-backend", "linux-live"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect_err("unknown backend should fail");
+
+        assert_eq!(
+            error,
+            "unsupported actuator backend `linux-live`; expected `noop`, `linux-skeleton`, `linux-command`, or `linux-command-dry-run`"
+        );
+    }
+
+    #[test]
     fn cli_accepts_explicit_warmup_executor_command_boundary() {
         let cli = CliConfig::parse(
             [
@@ -941,6 +1026,39 @@ mod tests {
         .expect_err("warmup arg without command should fail");
 
         assert!(error.contains("--warmup-executor-command"));
+    }
+
+    #[test]
+    fn cli_rejects_empty_warmup_executor_command() {
+        let error = CliConfig::parse(
+            ["--warmup-executor-command", "  "]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect_err("empty warmup command should fail");
+
+        assert_eq!(
+            error,
+            "--warmup-executor-command expects a non-empty program path"
+        );
+    }
+
+    #[test]
+    fn cli_accepts_warmup_executor_arg_that_looks_like_flag_after_command() {
+        let cli = CliConfig::parse(
+            [
+                "--warmup-executor-command",
+                "prime-cache",
+                "--warmup-executor-arg",
+                "--worker",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .expect("warmup arg values may look like flags");
+
+        assert_eq!(cli.warmup_executor_program, Some("prime-cache".to_string()));
+        assert_eq!(cli.warmup_executor_args, ["--worker".to_string()]);
     }
 
     #[test]
@@ -985,6 +1103,14 @@ mod tests {
             cli.verification_log.as_deref(),
             Some(std::path::Path::new("docs/verification_log.md"))
         );
+    }
+
+    #[test]
+    fn cli_rejects_verification_log_without_path() {
+        let error = CliConfig::parse(["--verification-log"].into_iter().map(str::to_string))
+            .expect_err("verification log should require a path");
+
+        assert_eq!(error, "--verification-log expects a path");
     }
 
     #[test]

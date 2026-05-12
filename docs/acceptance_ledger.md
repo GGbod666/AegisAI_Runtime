@@ -49,6 +49,7 @@ rewriting or appending to `docs/verification_log.md`.
 | 17 | Harden benefit report interpretation tests | Closed `AegisAI_Runtime-n3y`; report tests prevent observation-only, dry-run, priority-limited, or ineffective live actions from producing `PASS`. |
 | 18 | Define production config profile boundaries | Closed `AegisAI_Runtime-5bx`; durable boundaries now live in `docs/architecture.md`. |
 | 19 | Split hotspot files only with active behavior work | Closed `AegisAI_Runtime-5bx`; hotspot split boundaries now live in `docs/architecture.md`. |
+| 20 | Expand CLI parser edge-case tests | Closed `AegisAI_Runtime-d42`; runtime daemon tests cover duplicate and empty PID allowlists, unknown source/backend values, missing verification log paths, and warmup command boundaries. |
 
 ## Remaining Gap Classes
 
