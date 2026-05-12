@@ -9,6 +9,20 @@ pub struct SafetyConfig {
     pub max_affinity_change_ratio: f32,
 }
 
+impl SafetyConfig {
+    pub fn normalized_max_priority_delta(&self) -> i32 {
+        self.max_priority_delta.max(0)
+    }
+
+    pub fn normalized_max_affinity_change_ratio(&self) -> f32 {
+        if self.max_affinity_change_ratio.is_finite() {
+            self.max_affinity_change_ratio.clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TriggerThresholds {
     pub run_queue_delay_us: Option<u64>,

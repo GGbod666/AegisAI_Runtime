@@ -113,7 +113,7 @@ fn build_actions(
     let mut actions = Vec::new();
 
     if let Some(delta) = policy.actions.raise_nice {
-        let bounded_delta = clamp_priority_delta(delta, safety.max_priority_delta);
+        let bounded_delta = clamp_priority_delta(delta, safety.normalized_max_priority_delta());
         if bounded_delta != 0 {
             if bounded_delta != delta {
                 audit_fields.insert(
@@ -125,22 +125,34 @@ fn build_actions(
             actions.push(Action::RaiseNice {
                 delta: bounded_delta,
             });
+        } else if delta != 0 {
+            audit_fields.insert("priority_delta_clamped".to_string(), format!("{delta}->0"));
         }
     }
 
     if let Some(strategy) = &policy.actions.pin_strategy {
-        let max_cpu_ratio = safety.max_affinity_change_ratio.clamp(0.0, 1.0);
-        if (max_cpu_ratio - safety.max_affinity_change_ratio).abs() > f32::EPSILON {
+        let requested_cpu_ratio = safety.max_affinity_change_ratio;
+        let max_cpu_ratio = safety.normalized_max_affinity_change_ratio();
+        if !requested_cpu_ratio.is_finite()
+            || (max_cpu_ratio - requested_cpu_ratio).abs() > f32::EPSILON
+        {
             audit_fields.insert(
                 "affinity_ratio_clamped".to_string(),
-                format!("{}->{max_cpu_ratio}", safety.max_affinity_change_ratio),
+                format!("{requested_cpu_ratio}->{max_cpu_ratio}"),
             );
         }
 
-        actions.push(Action::SetAffinity {
-            strategy: strategy.clone(),
-            max_cpu_ratio,
-        });
+        if max_cpu_ratio > 0.0 {
+            actions.push(Action::SetAffinity {
+                strategy: strategy.clone(),
+                max_cpu_ratio,
+            });
+        } else {
+            audit_fields.insert(
+                "affinity_action_skipped".to_string(),
+                "max_cpu_ratio_zero".to_string(),
+            );
+        }
     }
 
     if let Some(use_cpuset) = policy.actions.use_cpuset {

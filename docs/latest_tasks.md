@@ -120,19 +120,25 @@ trusted or whether live-control boundaries are safe.
 
 - Issue: `AegisAI_Runtime-vv2.1`
 - Parent: `AegisAI_Runtime-vv2`
+- Status: `DONE` on 2026-05-12.
 - Why P1: invalid global safety caps can affect action breadth. This must be
   fixed before production config work makes more paths selectable.
 - Scope:
-  - normalize priority delta caps in shared policy code
-  - normalize affinity ratio caps in shared policy code
-  - preserve Tool Call Booster audit output and existing benefit interpretation
+  - added shared `SafetyConfig` normalization helpers for priority delta and
+    affinity ratio caps
+  - applied normalized caps in generic policy code and scenario policy code
+  - preserved Tool Call Booster audit output and existing benefit interpretation
 - Acceptance:
   - negative `max_priority_delta` cannot widen scheduler actions
   - zero, non-finite, or invalid affinity ratios cannot widen scheduler actions
   - valid caps still produce expected plans
   - existing Tool Call Booster policy tests keep passing
 - Verification:
-  - `cargo test -p aegisai-policy-engine`
+  - `cargo fmt --all -- --check`: `PASS`
+  - `cargo test -p aegisai-policy-engine`: `PASS`; `14` tests
+  - `cargo test -p aegisai-runtime-contracts`: `PASS`
+  - `cargo test -p runtime_orchestrator tool_call_trace_preserves_safety_clamp_audit_fields`:
+    `PASS`
 
 ### 4. Implement Cpuset Dry-Run Rejection Matrix
 

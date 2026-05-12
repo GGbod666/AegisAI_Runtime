@@ -244,7 +244,7 @@ fn build_actions(
     let mut actions = Vec::new();
 
     if let Some(delta) = policy.actions.raise_nice {
-        let bounded_delta = clamp_priority_delta(delta, safety.max_priority_delta);
+        let bounded_delta = clamp_priority_delta(delta, safety.normalized_max_priority_delta());
         if bounded_delta != 0 {
             if bounded_delta != delta {
                 audit_fields.insert(
@@ -256,22 +256,34 @@ fn build_actions(
             actions.push(Action::RaiseNice {
                 delta: bounded_delta,
             });
+        } else if delta != 0 {
+            audit_fields.insert("priority_delta_clamped".to_string(), format!("{delta}->0"));
         }
     }
 
     if let Some(strategy) = &policy.actions.pin_strategy {
-        let max_cpu_ratio = safety.max_affinity_change_ratio.clamp(0.0, 1.0);
-        if (max_cpu_ratio - safety.max_affinity_change_ratio).abs() > f32::EPSILON {
+        let requested_cpu_ratio = safety.max_affinity_change_ratio;
+        let max_cpu_ratio = safety.normalized_max_affinity_change_ratio();
+        if !requested_cpu_ratio.is_finite()
+            || (max_cpu_ratio - requested_cpu_ratio).abs() > f32::EPSILON
+        {
             audit_fields.insert(
                 "affinity_ratio_clamped".to_string(),
-                format!("{}->{max_cpu_ratio}", safety.max_affinity_change_ratio),
+                format!("{requested_cpu_ratio}->{max_cpu_ratio}"),
             );
         }
 
-        actions.push(Action::SetAffinity {
-            strategy: strategy.clone(),
-            max_cpu_ratio,
-        });
+        if max_cpu_ratio > 0.0 {
+            actions.push(Action::SetAffinity {
+                strategy: strategy.clone(),
+                max_cpu_ratio,
+            });
+        } else {
+            audit_fields.insert(
+                "affinity_action_skipped".to_string(),
+                "max_cpu_ratio_zero".to_string(),
+            );
+        }
     }
 
     if let Some(use_cpuset) = policy.actions.use_cpuset {
@@ -466,6 +478,128 @@ mod tests {
             plan.audit_fields.get("priority_delta_clamped"),
             Some(&"-9->-2".to_string())
         );
+    }
+
+    #[test]
+    fn normalizes_invalid_safety_caps_on_generic_policy_path() {
+        let mut engine = PolicyEngine::new(
+            BTreeMap::from([(
+                ScenarioKind::AiWorkloadAwareness,
+                generic_policy(ScenarioActions {
+                    raise_nice: Some(-3),
+                    pin_strategy: Some(PinStrategy::PreferLowContentionCores),
+                    warmup_executor: Some(true),
+                    ..ScenarioActions::default()
+                }),
+            )]),
+            SafetyConfig {
+                require_revert: true,
+                allow_background_throttle: false,
+                max_priority_delta: -2,
+                max_boost_duration_ms: 500,
+                max_affinity_change_ratio: f32::NAN,
+            },
+        );
+
+        let plan = engine
+            .evaluate(&generic_context())
+            .expect("warmup fallback should keep the plan observable");
+
+        assert!(!plan
+            .actions
+            .iter()
+            .any(|action| matches!(action, Action::RaiseNice { .. })));
+        assert!(!plan
+            .actions
+            .iter()
+            .any(|action| matches!(action, Action::SetAffinity { .. })));
+        assert!(plan.actions.contains(&Action::WarmupExecutor));
+        assert_eq!(
+            plan.audit_fields.get("priority_delta_clamped"),
+            Some(&"-3->0".to_string())
+        );
+        assert_eq!(
+            plan.audit_fields.get("affinity_ratio_clamped"),
+            Some(&"NaN->0".to_string())
+        );
+        assert_eq!(
+            plan.audit_fields.get("affinity_action_skipped"),
+            Some(&"max_cpu_ratio_zero".to_string())
+        );
+    }
+
+    #[test]
+    fn zero_affinity_ratio_skips_generic_affinity_actions() {
+        let mut engine = PolicyEngine::new(
+            BTreeMap::from([(
+                ScenarioKind::AiWorkloadAwareness,
+                generic_policy(ScenarioActions {
+                    pin_strategy: Some(PinStrategy::PreferReservedCores),
+                    warmup_executor: Some(true),
+                    ..ScenarioActions::default()
+                }),
+            )]),
+            SafetyConfig {
+                max_affinity_change_ratio: 0.0,
+                ..default_safety()
+            },
+        );
+
+        let plan = engine
+            .evaluate(&generic_context())
+            .expect("warmup fallback should keep the plan observable");
+
+        assert!(!plan
+            .actions
+            .iter()
+            .any(|action| matches!(action, Action::SetAffinity { .. })));
+        assert_eq!(plan.actions, vec![Action::WarmupExecutor]);
+        assert_eq!(
+            plan.audit_fields.get("affinity_action_skipped"),
+            Some(&"max_cpu_ratio_zero".to_string())
+        );
+    }
+
+    #[test]
+    fn valid_generic_safety_caps_still_emit_bounded_actions() {
+        let mut engine = PolicyEngine::new(
+            BTreeMap::from([(
+                ScenarioKind::AiWorkloadAwareness,
+                generic_policy(ScenarioActions {
+                    raise_nice: Some(-7),
+                    pin_strategy: Some(PinStrategy::PreferReservedCores),
+                    ..ScenarioActions::default()
+                }),
+            )]),
+            SafetyConfig {
+                require_revert: true,
+                allow_background_throttle: false,
+                max_priority_delta: 3,
+                max_boost_duration_ms: 500,
+                max_affinity_change_ratio: 0.25,
+            },
+        );
+
+        let plan = engine
+            .evaluate(&generic_context())
+            .expect("generic policy should trigger");
+
+        assert!(plan.actions.contains(&Action::RaiseNice { delta: -3 }));
+        assert!(plan.actions.iter().any(|action| {
+            matches!(
+                action,
+                Action::SetAffinity {
+                    strategy: PinStrategy::PreferReservedCores,
+                    max_cpu_ratio
+                } if (*max_cpu_ratio - 0.25).abs() < f32::EPSILON
+            )
+        }));
+        assert_eq!(
+            plan.audit_fields.get("priority_delta_clamped"),
+            Some(&"-7->-3".to_string())
+        );
+        assert!(!plan.audit_fields.contains_key("affinity_ratio_clamped"));
+        assert!(!plan.audit_fields.contains_key("affinity_action_skipped"));
     }
 
     #[test]
@@ -670,6 +804,33 @@ mod tests {
             max_boost_duration_ms: 800,
             max_affinity_change_ratio: 0.5,
         }
+    }
+
+    fn generic_policy(actions: ScenarioActions) -> ScenarioPolicy {
+        ScenarioPolicy {
+            scenario: ScenarioKind::AiWorkloadAwareness,
+            enabled: true,
+            evaluation_window_ms: 500,
+            cooldown_ms: 0,
+            max_boost_duration_ms: 800,
+            triggers: TriggerThresholds {
+                run_queue_delay_us: Some(2_000),
+                ..TriggerThresholds::default()
+            },
+            actions,
+        }
+    }
+
+    fn generic_context() -> PolicyContext {
+        policy_context(
+            ScenarioKind::AiWorkloadAwareness,
+            [WorkloadTag::AiInference],
+            FeatureWindow {
+                pid: 42,
+                run_queue_delay_us_max: 2_500,
+                ..FeatureWindow::empty(42, 1_000)
+            },
+        )
     }
 
     fn policy_context<const N: usize>(

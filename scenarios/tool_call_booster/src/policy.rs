@@ -283,8 +283,7 @@ fn build_actions(
     let mut actions = Vec::new();
 
     if let Some(delta) = policy.actions.raise_nice {
-        let max_priority_delta = safety.max_priority_delta.max(0);
-        let bounded_delta = clamp_priority_delta(delta, max_priority_delta);
+        let bounded_delta = clamp_priority_delta(delta, safety.normalized_max_priority_delta());
         if bounded_delta != 0 {
             if bounded_delta != delta {
                 audit_fields.insert(
@@ -303,11 +302,7 @@ fn build_actions(
 
     if let Some(strategy) = &policy.actions.pin_strategy {
         let requested_cpu_ratio = safety.max_affinity_change_ratio;
-        let max_cpu_ratio = if requested_cpu_ratio.is_finite() {
-            requested_cpu_ratio.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
+        let max_cpu_ratio = safety.normalized_max_affinity_change_ratio();
         if !requested_cpu_ratio.is_finite()
             || (max_cpu_ratio - requested_cpu_ratio).abs() > f32::EPSILON
         {
