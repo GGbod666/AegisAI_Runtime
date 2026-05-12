@@ -9,6 +9,7 @@
 mod actuator;
 mod backend;
 pub mod cpu_affinity;
+mod cpuset_dry_run;
 mod model;
 
 pub use actuator::Actuator;
@@ -25,6 +26,12 @@ pub use backend::{
     UnconfirmedLinuxCommandRunner, WarmupExecutorCommand, WarmupExecutorRunner,
 };
 pub use cpu_affinity::{CpuAffinityCapture, CpuAffinityPlanner, CpuAffinityTarget, CpuTopology};
+pub use cpuset_dry_run::{
+    plan_cpuset_dry_run, CpusetCapturePlan, CpusetDryRunMode, CpusetDryRunPlan,
+    CpusetDryRunRejection, CpusetDryRunRejectionReason, CpusetDryRunRequest,
+    CpusetDryRunTargetContext, CpusetProcessClassification, CpusetProcessTarget,
+    CpusetRollbackCapture, CpusetRollbackPlan,
+};
 pub use model::{Action, ActionPlan, AppliedAction, AppliedActionState, PinStrategy, ScenarioKind};
 
 #[cfg(test)]

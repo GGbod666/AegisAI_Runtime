@@ -161,9 +161,9 @@ Future helper conclusions should use these buckets: `helper unavailable`,
   portability, classify helper compatibility, and harden helper startup failure
   tests. `AegisAI_Runtime-51c.3` is complete: controlled Linux ingestion smoke
   records nonzero procfs-derived daemon events.
-- `AegisAI_Runtime-7h5` / `AegisAI_Runtime-7h5.1` — add a deterministic
-  cpuset/background dry-run rejection matrix while live cgroup writes remain
-  disabled.
+- `AegisAI_Runtime-7h5` — complete the remaining cpuset/background dry-run
+  planner integration after `AegisAI_Runtime-7h5.1` added the deterministic
+  rejection matrix and kept live cgroup writes disabled.
 - `AegisAI_Runtime-ufp` / `AegisAI_Runtime-ufp.1` — define and then implement
   daemon/helper packaging boundaries.
 - `AegisAI_Runtime-0ry` / `AegisAI_Runtime-0ry.1` — split deferred dashboard,
@@ -175,6 +175,10 @@ Recently closed:
   project readiness path for Cargo, Python unittest, shell syntax, workspace,
   toolchain, and inference preflight gates; marked upstream `bd preflight`
   Go/Nix output irrelevant to this repository.
+- `AegisAI_Runtime-7h5.1` — added the dry-run-only cpuset/background rejection
+  matrix for unsafe roots, missing classification, empty CPU sets, missing
+  rollback capture, overbroad process sets, and unsupported live write mode;
+  `cargo test -p aegisai-actuator` passed with `44` tests.
 
 Use:
 

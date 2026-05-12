@@ -19019,3 +19019,30 @@ This output is documented as irrelevant to AegisAI_Runtime readiness.
 ```text
 No template warnings found.
 ```
+
+### 2026-05-12T03:09:35Z - Cpuset dry-run rejection matrix
+
+- Scope: implemented the dry-run-only cpuset/background isolation rejection
+  planner for `AegisAI_Runtime-7h5.1`; no cgroupfs write path was added.
+- Influencing reference: Linux kernel cgroup v2 documentation for
+  `cgroup.procs`, `cpuset.cpus`, `cpuset.cpus.effective`, and `cpuset.mems`.
+- Command: `cargo fmt --all -- --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo test -p aegisai-actuator`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/actuator/src/lib.rs: 44 passed; 0 failed
+Doc-tests aegisai_actuator: 0 passed; 0 failed
+```
+
+- Acceptance coverage: unsafe cgroup root, missing process classification,
+  empty computed CPU set, missing rollback capture, overbroad process set, and
+  unsupported live write mode all produce exact rejection reasons with target
+  context. Valid dry-run planning records target, capture, and rollback context.
+  Live cpuset/background writes remain disabled.

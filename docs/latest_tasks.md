@@ -144,23 +144,26 @@ trusted or whether live-control boundaries are safe.
 
 - Issue: `AegisAI_Runtime-7h5.1`
 - Parent: `AegisAI_Runtime-7h5`
+- Status: `DONE` on 2026-05-12.
 - Why P1: cpuset/background writes are disabled, but the next safe step is a
   deterministic rejection planner. Without it, future cgroup work lacks a test
   boundary.
 - Scope:
-  - produce dry-run rejection reasons without writing cgroupfs
-  - include target pid/cgroup context
-  - include capture and rollback plan context where available
+  - added `agent/actuator/src/cpuset_dry_run.rs` as a dry-run-only planner
+    with no cgroupfs write path
+  - emits deterministic rejection reason strings plus target pid/cgroup context
+  - emits capture and rollback plan context when rollback capture is available
 - Acceptance:
-  - unsafe cgroup root is rejected
-  - missing classification is rejected
-  - empty computed CPU set is rejected
-  - missing rollback capture is rejected
-  - overbroad process set is rejected
-  - unsupported live write mode is rejected
-  - live writes remain disabled
+  - unsafe cgroup root is rejected: `PASS`
+  - missing classification is rejected: `PASS`
+  - empty computed CPU set is rejected: `PASS`
+  - missing rollback capture is rejected: `PASS`
+  - overbroad process set is rejected: `PASS`
+  - unsupported live write mode is rejected: `PASS`
+  - live writes remain disabled: `PASS`
 - Verification:
-  - `cargo test -p aegisai-actuator`
+  - `cargo fmt --all -- --check`: `PASS`
+  - `cargo test -p aegisai-actuator`: `PASS`; `44` tests
 
 ### 5. Directly Test Linux Rollback Report Builder
 
