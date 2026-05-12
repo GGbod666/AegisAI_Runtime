@@ -252,21 +252,25 @@ cross-host validation, and unattended operation.
 
 - Issue: `AegisAI_Runtime-51c.1`
 - Parent: `AegisAI_Runtime-51c`
+- Status: `DONE` on 2026-05-12.
 - Why P2: current helper checks can conflate helper unavailability, tracepoint
   incompatibility, and no workload events.
 - Scope:
-  - inspect helper availability
-  - inspect tracefs root and tracepoint field inventory
+  - added helper compatibility diagnostics before helper stream start
+  - inspect helper availability, kernel version, bpftrace version, tracefs root,
+    requested probes, and required tracepoint field inventory
   - classify compatibility before long daemon runs
   - keep procfs fallback available under `--allow-partial-probes`
 - Acceptance:
-  - helper unavailable and tracepoint incompatible are distinct results
-  - missing block tracepoint fields name the missing field
-  - compatible inventory is recorded
-  - no workload events remains separate from compatibility failure
+  - helper unavailable and tracepoint incompatible are distinct results: `PASS`
+  - missing block tracepoint fields name the missing field: `PASS`
+  - compatible inventory is recorded: `PASS`
+  - no workload events remains separate from compatibility failure: `PASS`
 - Verification:
-  - `cargo test -p aegisai-runtime-daemon`
-  - helper preflight command from `docs/linux_validation.md`
+  - `cargo test -p aegisai-runtime-daemon`: `PASS`; `80` tests
+  - helper preflight command from `docs/linux_validation.md`: documented;
+    current unit coverage validates the compatibility buckets without requiring
+    a privileged helper on this host
 
 ### 9. Run Two-Kernel Helper Portability Matrix
 

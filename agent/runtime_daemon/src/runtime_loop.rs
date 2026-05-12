@@ -73,6 +73,7 @@ pub struct RuntimeRunSummary {
     pub tool_call_lifecycles: Vec<ToolCallLifecycleSummary>,
     pub signal_observations: BTreeMap<String, SignalObservationSummary>,
     pub feature_window_maxima: BTreeMap<String, u64>,
+    pub source_diagnostics: Vec<String>,
 }
 
 impl RuntimeRunSummary {
@@ -238,6 +239,7 @@ impl RuntimeLoop {
         summary.trace_records = orchestrator.traces().len();
         summary.audit_highlights = audit_highlights.into_iter().collect();
         summary.tool_call_lifecycles = lifecycle_tracker.finish();
+        summary.source_diagnostics = source.diagnostics();
 
         Ok(summary)
     }
@@ -594,8 +596,8 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use crate::{
-        MockEventSource, NoopMetadataProvider, RuntimeLoop, RuntimeLoopConfig, SourceEvent,
-        StaticMetadataProvider,
+        EventSource, MockEventSource, NoopMetadataProvider, RuntimeLoop, RuntimeLoopConfig,
+        SourceError, SourceEvent, StaticMetadataProvider,
     };
     use aegisai_actuator::{
         Actuator, CommandLinuxSyscallApplier, LinuxActuatorBackend,
@@ -658,6 +660,45 @@ mod tests {
             .expect("runtime loop should succeed");
 
         assert_eq!(summary.processed_events, 1);
+    }
+
+    struct DiagnosticSource {
+        diagnostics: Vec<String>,
+    }
+
+    impl EventSource for DiagnosticSource {
+        fn source_name(&self) -> &str {
+            "diagnostic-source"
+        }
+
+        fn next_event(&mut self) -> Result<Option<SourceEvent>, SourceError> {
+            Ok(None)
+        }
+
+        fn diagnostics(&self) -> Vec<String> {
+            self.diagnostics.clone()
+        }
+    }
+
+    #[test]
+    fn runtime_loop_records_source_diagnostics_even_without_events() {
+        let mut orchestrator =
+            RuntimeOrchestrator::from_repo_root(repo_root()).expect("config should load");
+        let mut source = DiagnosticSource {
+            diagnostics: vec!["helper compatibility: status=compatible".to_string()],
+        };
+        let mut metadata = NoopMetadataProvider;
+        let runtime_loop = RuntimeLoop::new(RuntimeLoopConfig::default()).expect("valid config");
+
+        let summary = runtime_loop
+            .run(&mut orchestrator, &mut source, &mut metadata)
+            .expect("runtime loop should succeed");
+
+        assert_eq!(summary.processed_events, 0);
+        assert_eq!(
+            summary.source_diagnostics,
+            vec!["helper compatibility: status=compatible".to_string()]
+        );
     }
 
     #[test]

@@ -13,7 +13,8 @@ pub use runtime_loop::{
     ToolCallLifecycleSummary,
 };
 pub use source::{
-    BpfTracePipe, BpfTraceProbeDriver, DriverBackedProbeEventReader, EventSource, LinuxProbeDriver,
+    BpfTraceCompatibilityReport, BpfTraceCompatibilityStatus, BpfTracePipe, BpfTraceProbeDriver,
+    BpfTraceRequiredField, DriverBackedProbeEventReader, EventSource, LinuxProbeDriver,
     LinuxProbeHost, LinuxProbePlan, LinuxProbeSource, MockEventSource, PlannedProbe,
     PreflightLinuxProbeDriver, ProbeAttachment, ProbeAttachmentStatus, ProbeEventReader,
     ProbeReaderConfig, ProbeReaderShutdown, ProbeReaderStartup, ProcfsSchedstatProbeDriver,

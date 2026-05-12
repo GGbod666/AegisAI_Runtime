@@ -435,6 +435,12 @@ fn append_summary_to_log(
             writeln!(file, "  - `{highlight}`")?;
         }
     }
+    if !summary.source_diagnostics.is_empty() {
+        writeln!(file, "- Source diagnostics:")?;
+        for diagnostic in &summary.source_diagnostics {
+            writeln!(file, "  - `{diagnostic}`")?;
+        }
+    }
     if !summary.tool_call_lifecycles.is_empty() {
         writeln!(file, "- Tool call lifecycles:")?;
         for lifecycle in &summary.tool_call_lifecycles {
@@ -504,6 +510,12 @@ fn print_summary(summary: &aegisai_runtime_daemon::RuntimeRunSummary) {
         println!("audit_highlights:");
         for highlight in &summary.audit_highlights {
             println!("  {highlight}");
+        }
+    }
+    if !summary.source_diagnostics.is_empty() {
+        println!("source_diagnostics:");
+        for diagnostic in &summary.source_diagnostics {
+            println!("  {diagnostic}");
         }
     }
     if !summary.tool_call_lifecycles.is_empty() {
@@ -1251,6 +1263,33 @@ mod tests {
         assert!(
             contents.contains("pid=42;scenario=inference_tail_guard;backend.apply.apply.result=ok")
         );
+    }
+
+    #[test]
+    fn verification_log_includes_source_diagnostics() {
+        let log_path = std::env::temp_dir().join(format!(
+            "aegisai-runtime-daemon-source-diagnostics-{}-verification.md",
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&log_path);
+
+        let summary = RuntimeRunSummary {
+            source_name: "linux-probe".to_string(),
+            metadata_provider_name: "procfs".to_string(),
+            actuator_backend_name: "linux-skeleton".to_string(),
+            source_diagnostics: vec![
+                "helper compatibility: status=compatible; kernel=6.8.0-test".to_string()
+            ],
+            ..RuntimeRunSummary::default()
+        };
+
+        append_summary_to_log(&log_path, &summary).expect("summary should append");
+        let contents = fs::read_to_string(&log_path).expect("log should be readable");
+        let _ = fs::remove_file(&log_path);
+
+        assert!(contents.contains("- Source diagnostics:"));
+        assert!(contents.contains("helper compatibility: status=compatible"));
+        assert!(contents.contains("kernel=6.8.0-test"));
     }
 
     #[test]

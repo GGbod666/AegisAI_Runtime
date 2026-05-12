@@ -93,6 +93,13 @@ BpfTracePipe startup failure taxonomy coverage on 2026-05-12 also passed:
 - `cargo test -p aegisai-runtime-daemon source::tests` (`32` source tests)
 - `cargo fmt --all -- --check`
 
+Helper compatibility preflight classification on 2026-05-12 also passed:
+
+- `cargo test -p aegisai-runtime-daemon` (`80` daemon tests)
+- source diagnostics now record kernel version, bpftrace version, tracefs root,
+  requested helper tracepoints, and required tracepoint fields before helper
+  streams start
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -147,6 +154,8 @@ Helper validation:
 
 Future helper conclusions should use these buckets: `helper unavailable`,
 `tracepoint incompatible`, `no workload events`, or `validated signal`.
+Compatibility diagnostics now separate the first two buckets from zero-event
+workloads before portability matrix runs.
 
 ## Open Gap Index
 
@@ -155,14 +164,15 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 - `AegisAI_Runtime-cqv` / `AegisAI_Runtime-cqv.1` /
   `AegisAI_Runtime-cqv.2` / `AegisAI_Runtime-cqv.3` — add production config
   profile selection, schema validation, and cross-file safety checks.
-- `AegisAI_Runtime-51c` / `AegisAI_Runtime-51c.1` /
-  `AegisAI_Runtime-51c.2` — validate helper portability and classify helper
-  compatibility before the two-kernel helper matrix. `AegisAI_Runtime-51c.3`
-  is complete: controlled Linux ingestion smoke records nonzero procfs-derived
-  daemon events. `AegisAI_Runtime-51c.4` is complete: BpfTracePipe startup
-  failure taxonomy coverage now distinguishes missing binary/helper,
-  permission, stdout/stderr capture, malformed line, unsupported signal, and
-  stop cleanup cases.
+- `AegisAI_Runtime-51c` / `AegisAI_Runtime-51c.2` — validate helper portability
+  with a two-kernel matrix. `AegisAI_Runtime-51c.1` is complete: helper
+  compatibility is classified before helper stream start and records
+  availability, tracefs, requested probes, and required field inventory.
+  `AegisAI_Runtime-51c.3` is complete: controlled Linux ingestion smoke records
+  nonzero procfs-derived daemon events. `AegisAI_Runtime-51c.4` is complete:
+  BpfTracePipe startup failure taxonomy coverage now distinguishes missing
+  binary/helper, permission, stdout/stderr capture, malformed line, unsupported
+  signal, and stop cleanup cases.
 - `AegisAI_Runtime-8le` — configure the intended Beads Dolt remote sync target;
   `bd dolt remote list` currently reports no remotes configured.
 - `AegisAI_Runtime-ufp` / `AegisAI_Runtime-ufp.1` — define and then implement
@@ -172,6 +182,10 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 Recently closed:
 
+- `AegisAI_Runtime-51c.1` — added helper compatibility diagnostics before helper
+  stream start; startup now distinguishes `helper unavailable`,
+  `tracepoint incompatible`, and compatible field inventory from later
+  zero-event workloads.
 - `AegisAI_Runtime-51c.4` — added deterministic BpfTracePipe startup failure
   taxonomy tests for missing binary/helper, permission failure, stdout/stderr
   capture failure, malformed probe lines, unsupported signals, and stop

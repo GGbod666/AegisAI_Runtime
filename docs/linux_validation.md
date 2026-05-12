@@ -170,6 +170,19 @@ AEGISAI_BPFTRACE=/usr/bin/bpftrace \
     --allow-partial-probes
 ```
 
+The daemon now classifies helper compatibility during probe attachment, before
+starting the helper stream. Runtime summaries and verification-log entries include
+`Source diagnostics` with kernel version, bpftrace version, tracefs root,
+requested tracepoint probes, and required field inventory. Treat these diagnostics
+as the pre-workload compatibility bucket; `processed_events=0` remains a separate
+`no workload events` outcome only after compatibility is `compatible`.
+
+Reference behavior: Linux trace events expose per-event `format` files with
+field names, and bpftrace tracepoints expose fields through structured `args`
+that can also be inspected with verbose probe listing. See
+https://docs.kernel.org/6.18/trace/events.html and
+https://bpftrace.org/docs/0.22.
+
 Use controlled off-CPU and block I/O workloads. Record conclusions with these
 buckets:
 
@@ -178,7 +191,9 @@ buckets:
 - `no workload events`
 - `validated signal`
 
-For portability work, capture the exact tracepoint or field that failed.
+For portability work, capture the exact tracepoint or field that failed. Missing
+block I/O fields should name the missing field, for example
+`tracepoint:block:block_rq_complete:sector`.
 
 ## Actuator State Capture Check
 
