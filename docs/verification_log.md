@@ -19135,3 +19135,29 @@ No output.
 - Verification:
   - `bd lint`: `PASS`; no template warnings found for `14` open issues.
   - `git diff --check`: `PASS`
+
+### 2026-05-12T13:04:38Z - BpfTracePipe startup failure taxonomy tests
+
+- Scope: added deterministic source tests for `AegisAI_Runtime-51c.4` covering
+  BpfTracePipe attach/start/parser/stop failure taxonomy without launching
+  bpftrace or changing runtime behavior.
+- Command: `cargo test -p aegisai-runtime-daemon source::tests`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/runtime_daemon/src/lib.rs: source::tests: 32 passed; 0 failed; 10 filtered out
+agent/runtime_daemon/src/main.rs: 0 passed; 0 failed; 31 filtered out
+```
+
+- Command: `cargo fmt --all -- --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Acceptance coverage: missing helper/bpftrace binary, permission failure,
+  stdout capture failure, stderr capture failure, malformed probe line,
+  unsupported probe signal, and child stop cleanup each have focused assertions.
+  Startup failures remain separate from malformed event parsing, and the
+  structured reason text used by partial-probe reporting is preserved.

@@ -771,9 +771,9 @@ bash bench/scripts/verify_workspace.sh
   readiness gate 是 `bash bench/scripts/project_preflight.sh`。
 - code-review-graph 显示 `1286` nodes、`10276` edges、风险低，但也标出
   `20` 个 untested hotspot 和 `28` 个 300 行以上的大文件/大类。
-- 图分析未找到 `build_linux_rollback_report`、`CliConfig::parse`、
-  `BpfTracePipe::start` 的直接测试映射；现有测试覆盖了一些行为，但这些热点仍需要
-  更直接的回归测试。
+- 图分析曾未找到 `build_linux_rollback_report`、`CliConfig::parse`、
+  `BpfTracePipe::start` 的直接测试映射；这些 P1/P2 热点现在已有直接回归测试，
+  但 source/report 路径仍应保持窄改动和测试先行。
 
 Inference Tail Guard Phase 4 严格收益报告：
 
@@ -839,11 +839,14 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
   `AegisAI_Runtime-ufp`、`AegisAI_Runtime-0ry`。
 - 审计新增执行项：`AegisAI_Runtime-cqv.1`、`AegisAI_Runtime-cqv.2`、
   `AegisAI_Runtime-cqv.3`、`AegisAI_Runtime-51c.1`、
-  `AegisAI_Runtime-51c.2`、`AegisAI_Runtime-51c.4`、
+  `AegisAI_Runtime-51c.2`、
   `AegisAI_Runtime-ufp.1`、`AegisAI_Runtime-0ry.1`、
   `AegisAI_Runtime-fp6`、`AegisAI_Runtime-8le`。`AegisAI_Runtime-vv2` /
   `AegisAI_Runtime-vv2.1` and `AegisAI_Runtime-7h5` /
   `AegisAI_Runtime-7h5.1` are closed after P1 acceptance.
+  `AegisAI_Runtime-51c.4` is also closed: BpfTracePipe startup failure
+  taxonomy tests now cover missing binary/helper, permission, stdout/stderr
+  capture, malformed line, unsupported signal, and stop cleanup cases.
 
 源码和设计层面的限制：
 

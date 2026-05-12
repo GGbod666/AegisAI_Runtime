@@ -46,6 +46,8 @@ current planning order.
   `PASS`
 - `bash bench/scripts/linux_source_ingestion_smoke.sh`: `PASS`;
   `processed_events=4`, `run_queue_delay` signal observation present
+- `cargo test -p aegisai-runtime-daemon source::tests`: `PASS`, `32`
+  source tests
 - `bd lint`: `PASS`
 
 Open evidence gaps:
@@ -226,22 +228,25 @@ cross-host validation, and unattended operation.
 
 - Issue: `AegisAI_Runtime-51c.4`
 - Parent: `AegisAI_Runtime-51c`
+- Status: `DONE` on 2026-05-12.
 - Why P2: helper portability depends on stable failure categories before testing
   multiple hosts.
 - Scope:
-  - add focused runtime daemon source tests
-  - distinguish startup failures from malformed event parsing
-  - keep partial-probe reporting text stable
+  - added focused runtime daemon source tests
+  - distinguished startup failures from malformed event parsing
+  - kept partial-probe reporting text stable
 - Acceptance:
-  - tests distinguish missing helper or bpftrace binary
-  - tests distinguish permission failure
-  - tests cover stdout capture failure
-  - tests cover stderr capture failure
-  - tests cover malformed probe lines
-  - tests cover unsupported signal
-  - tests cover child stop cleanup
+  - tests distinguish missing helper or bpftrace binary: `PASS`
+  - tests distinguish permission failure: `PASS`
+  - tests cover stdout capture failure: `PASS`
+  - tests cover stderr capture failure: `PASS`
+  - tests cover malformed probe lines: `PASS`
+  - tests cover unsupported signal: `PASS`
+  - tests cover child stop cleanup: `PASS`
 - Verification:
-  - `cargo test -p aegisai-runtime-daemon source::tests`
+  - `cargo test -p aegisai-runtime-daemon source::tests`: `PASS`;
+    `32` source tests
+  - `cargo fmt --all -- --check`: `PASS`
 
 ### 8. Classify Helper Compatibility Before Daemon Start
 

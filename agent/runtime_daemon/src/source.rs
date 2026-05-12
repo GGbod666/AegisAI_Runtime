@@ -1092,6 +1092,7 @@ struct FakeBpfTracePipe {
     lines: VecDeque<Vec<String>>,
     started_program: Option<String>,
     available: Result<(), String>,
+    start_error: Option<SourceError>,
     stopped: bool,
 }
 
@@ -1105,6 +1106,7 @@ impl FakeBpfTracePipe {
                 .collect(),
             started_program: None,
             available: Ok(()),
+            start_error: None,
             stopped: false,
         }
     }
@@ -1114,6 +1116,17 @@ impl FakeBpfTracePipe {
             lines: VecDeque::new(),
             started_program: None,
             available: Err(reason.into()),
+            start_error: None,
+            stopped: false,
+        }
+    }
+
+    fn start_unsupported(reason: impl Into<String>) -> Self {
+        Self {
+            lines: VecDeque::new(),
+            started_program: None,
+            available: Ok(()),
+            start_error: Some(SourceError::Unsupported(reason.into())),
             stopped: false,
         }
     }
@@ -1135,6 +1148,9 @@ impl BpfTracePipe for FakeBpfTracePipe {
         include_offcpu: bool,
         include_io: bool,
     ) -> Result<(), SourceError> {
+        if let Some(error) = self.start_error.clone() {
+            return Err(error);
+        }
         self.started_program = Some(bpftrace_program(selectors, include_offcpu, include_io));
         Ok(())
     }
@@ -2439,9 +2455,9 @@ mod tests {
     use ebpf_probe::{AttachPoint, EventMetric, EventTarget, ProbeKind};
 
     use super::{
-        BpfTraceProbeDriver, DriverBackedProbeEventReader, EventSource, FakeBpfTracePipe,
-        LinuxProbeDriver, LinuxProbeHost, LinuxProbePlan, LinuxProbeSource, MockEventSource,
-        PreflightLinuxProbeDriver, ProbeAttachmentStatus, ProbeReaderConfig,
+        BpfTracePipe, BpfTraceProbeDriver, DriverBackedProbeEventReader, EventSource,
+        FakeBpfTracePipe, LinuxProbeDriver, LinuxProbeHost, LinuxProbePlan, LinuxProbeSource,
+        MockEventSource, PreflightLinuxProbeDriver, ProbeAttachmentStatus, ProbeReaderConfig,
         ProcfsSchedstatProbeDriver, ProcfsSchedstatSampler, ProcfsSchedstatSnapshot,
         ProcfsTargetSelectors, RealLinuxProbeDriver, SignalKind, SourceError, SourceEvent,
         StaticProbeEventReader,
@@ -3310,6 +3326,202 @@ mod tests {
 
         assert!(matches!(error, SourceError::Unsupported(_)));
         assert!(error.to_string().contains("bpftrace requires root"));
+    }
+
+    #[test]
+    fn system_pipes_report_missing_bpftrace_or_helper_binary() {
+        let missing_bpftrace =
+            super::SystemBpfTracePipe::new("aegisai-test-missing-bpftrace-binary")
+                .check_available()
+                .expect_err("missing bpftrace command should be reported");
+        assert!(missing_bpftrace
+            .contains("`aegisai-test-missing-bpftrace-binary` is not available in PATH"));
+        assert!(missing_bpftrace.contains("install bpftrace"));
+
+        let missing_helper = super::SystemEbpfHelperPipe::new("aegisai-test-missing-ebpf-helper")
+            .check_available()
+            .expect_err("missing privileged helper command should be reported");
+        assert!(
+            missing_helper.contains("`aegisai-test-missing-ebpf-helper` is not available in PATH")
+        );
+        assert!(missing_helper.contains("install the privileged aegisai eBPF helper"));
+    }
+
+    #[test]
+    fn bpftrace_driver_distinguishes_missing_binary_and_permission_attach_reasons() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+
+        for reason in [
+            "`bpftrace` is not available in PATH; install bpftrace to stream real offcpu/io eBPF events",
+            "bpftrace eBPF probes require root on this host; rerun as root or use --allow-partial-probes for procfs-only fallback",
+        ] {
+            let driver = BpfTraceProbeDriver::new(
+                ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+                FakeBpfTracePipe::unavailable(reason),
+            );
+            let reader = DriverBackedProbeEventReader::new(driver);
+            let mut source = LinuxProbeSource::with_reader(plan.clone(), reader);
+
+            let error = source
+                .next_event()
+                .expect_err("attach taxonomy should fail startup");
+
+            assert!(matches!(error, SourceError::Unsupported(_)));
+            assert!(
+                error.to_string().contains(reason),
+                "expected `{}` to contain `{reason}`",
+                error
+            );
+        }
+    }
+
+    #[test]
+    fn bpftrace_driver_reports_stdout_and_stderr_capture_start_failures() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+
+        for reason in [
+            "failed to capture bpftrace stdout",
+            "failed to capture bpftrace stderr",
+        ] {
+            let driver = BpfTraceProbeDriver::new(
+                ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+                FakeBpfTracePipe::start_unsupported(reason),
+            );
+            let reader = DriverBackedProbeEventReader::new(driver);
+            let mut source = LinuxProbeSource::with_reader(plan.clone(), reader);
+
+            let error = source
+                .next_event()
+                .expect_err("start taxonomy should fail event polling");
+
+            assert!(matches!(error, SourceError::Unsupported(_)));
+            assert_eq!(error.to_string(), reason);
+            let startup = source
+                .startup()
+                .expect("attach startup should be recorded before start failure");
+            assert!(startup
+                .attachments
+                .iter()
+                .all(|attachment| attachment.status == ProbeAttachmentStatus::Attached));
+        }
+    }
+
+    #[test]
+    fn bpftrace_driver_reports_malformed_probe_line_without_attach_failure() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let pipe = FakeBpfTracePipe::new(vec![vec![
+            "aegisai_probe signal=offcpu_time ts_ns=2000000 pid=700 tid=701 comm=ollama",
+        ]]);
+        let driver = BpfTraceProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            pipe,
+        );
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        let error = source
+            .next_event()
+            .expect_err("malformed bpftrace event should fail parsing");
+
+        assert!(matches!(error, SourceError::InvalidConfig(_)));
+        assert_eq!(
+            error.to_string(),
+            "bpftrace probe event is missing `value_ns`"
+        );
+        let startup = source
+            .startup()
+            .expect("startup should be recorded before parsing failure");
+        assert!(startup
+            .attachments
+            .iter()
+            .all(|attachment| attachment.status == ProbeAttachmentStatus::Attached));
+    }
+
+    #[test]
+    fn bpftrace_driver_reports_unsupported_probe_signal() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let pipe = FakeBpfTracePipe::new(vec![vec![
+            "aegisai_probe signal=cpu_migration ts_ns=2000000 pid=700 tid=701 comm=ollama value_ns=1",
+        ]]);
+        let driver = BpfTraceProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            pipe,
+        );
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        let error = source
+            .next_event()
+            .expect_err("unsupported bpftrace signal should fail parsing");
+
+        assert!(matches!(error, SourceError::InvalidConfig(_)));
+        assert_eq!(
+            error.to_string(),
+            "unsupported bpftrace probe signal `cpu_migration`"
+        );
+    }
+
+    #[test]
+    fn bpftrace_driver_stop_cleans_up_child_state_after_start() {
+        let plan = LinuxProbePlan::from_signals(
+            [SignalKind::OffCpuTime],
+            &ebpf_probe::ProbeRegistry::with_defaults(),
+        )
+        .expect("plan should build");
+        let pipe = FakeBpfTracePipe::new(vec![vec![]]);
+        let driver = BpfTraceProbeDriver::new(
+            ProcfsTargetSelectors::new(["ollama"], BTreeSet::new()),
+            pipe,
+        );
+        let reader = DriverBackedProbeEventReader::new(driver);
+        let mut source = LinuxProbeSource::with_reader_and_config(
+            plan,
+            reader,
+            ProbeReaderConfig {
+                poll_timeout_ms: 1,
+                ..ProbeReaderConfig::default()
+            },
+        );
+
+        assert!(source
+            .next_event()
+            .expect("empty bpftrace poll should not fail")
+            .is_none());
+        let shutdown = source.stop().expect("bpftrace stop should succeed");
+
+        assert_eq!(shutdown.reader_name, "fake-bpftrace");
+        assert_eq!(shutdown.emitted_events, 0);
+        assert_eq!(shutdown.stop_reason, "fake bpftrace stopped");
     }
 
     #[test]
