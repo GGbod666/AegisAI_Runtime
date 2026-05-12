@@ -19046,3 +19046,34 @@ Doc-tests aegisai_actuator: 0 passed; 0 failed
   unsupported live write mode all produce exact rejection reasons with target
   context. Valid dry-run planning records target, capture, and rollback context.
   Live cpuset/background writes remain disabled.
+
+### 2026-05-12T03:20:30Z - Direct Linux rollback report builder tests
+
+- Scope: added direct tests for `build_linux_rollback_report` under
+  `AegisAI_Runtime-yxb`; no backend runtime refactor was made.
+- Command: `cargo fmt --all -- --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo test -p aegisai-actuator`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/actuator/src/lib.rs: 51 passed; 0 failed
+Doc-tests aegisai_actuator: 0 passed; 0 failed
+```
+
+- Command: `git diff --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Acceptance coverage: successful nice rollback, failed nice rollback,
+  successful affinity rollback, failed affinity rollback, mixed nice/affinity
+  report output, missing captured state, and disabled cpuset rollback noise
+  suppression all have direct deterministic assertions.

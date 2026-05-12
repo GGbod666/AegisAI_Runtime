@@ -168,22 +168,26 @@ trusted or whether live-control boundaries are safe.
 ### 5. Directly Test Linux Rollback Report Builder
 
 - Issue: `AegisAI_Runtime-yxb`
+- Status: `DONE` on 2026-05-12.
 - Why P1: `build_linux_rollback_report` is the top graph hub
   (`degree=102`) and is directly tied to live-action audit credibility.
 - Scope:
-  - add focused tests around rollback audit composition
-  - avoid broad backend refactors
-  - preserve existing backend field names and report text
+  - added focused direct tests around rollback audit composition in
+    `agent/actuator/src/backend.rs`
+  - avoided backend runtime refactors
+  - preserved existing backend field names and report text
 - Acceptance:
-  - tests cover successful nice rollback
-  - tests cover failed nice rollback
-  - tests cover successful affinity rollback
-  - tests cover failed affinity rollback
-  - tests cover mixed nice/affinity action reports
-  - tests cover missing captured state
-  - tests prove disabled cpuset actions do not emit rollback noise
+  - tests cover successful nice rollback: `PASS`
+  - tests cover failed nice rollback: `PASS`
+  - tests cover successful affinity rollback: `PASS`
+  - tests cover failed affinity rollback: `PASS`
+  - tests cover mixed nice/affinity action reports: `PASS`
+  - tests cover missing captured state: `PASS`
+  - tests prove disabled cpuset actions do not emit rollback noise: `PASS`
 - Verification:
-  - `cargo test -p aegisai-actuator`
+  - `cargo fmt --all -- --check`: `PASS`
+  - `cargo test -p aegisai-actuator`: `PASS`; `51` tests
+  - `git diff --check`: `PASS`
 
 ### 6. Expand CLI Parser Edge-Case Tests
 

@@ -145,8 +145,6 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-yxb` — directly test the Linux rollback report builder
-  hotspot.
 - `AegisAI_Runtime-d42` — expand CLI parser edge-case tests for live and
   warmup flags.
 - `AegisAI_Runtime-fp6` — add deterministic tests for inference smoke run-env
@@ -171,6 +169,10 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 Recently closed:
 
+- `AegisAI_Runtime-yxb` — added direct rollback report builder tests for
+  successful and failed nice restore, successful and failed affinity restore,
+  mixed report output, missing captured state, and disabled cpuset rollback
+  noise suppression; `cargo test -p aegisai-actuator` passed with `51` tests.
 - `AegisAI_Runtime-awq` — added `bench/scripts/project_preflight.sh` as the
   project readiness path for Cargo, Python unittest, shell syntax, workspace,
   toolchain, and inference preflight gates; marked upstream `bd preflight`

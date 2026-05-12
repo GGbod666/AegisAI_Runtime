@@ -1958,3 +1958,318 @@ fn parse_proc_stat_nice(raw: &str) -> Option<i32> {
         .nth(16)
         .and_then(|value| value.parse::<i32>().ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct TestRollbackApplier {
+        calls: Vec<String>,
+        fail_nice: Option<String>,
+        fail_affinity: Option<String>,
+    }
+
+    impl LinuxSyscallApplier for TestRollbackApplier {
+        fn applier_name(&self) -> &str {
+            "test-rollback"
+        }
+
+        fn apply_operation(
+            &mut self,
+            _target_pid: u32,
+            _operation: &LinuxSyscallOperation,
+            _captured_state: &LinuxCapturedState,
+            _now_ms: u64,
+        ) -> Result<String, String> {
+            Ok("apply unused".to_string())
+        }
+
+        fn rollback_operation(
+            &mut self,
+            target_pid: u32,
+            operation: &LinuxSyscallOperation,
+            _captured_state: &LinuxCapturedState,
+            now_ms: u64,
+        ) -> Result<String, String> {
+            self.calls.push(format!(
+                "{target_pid}:{now_ms}:{}",
+                linux_syscall_descriptor(operation)
+            ));
+
+            match operation {
+                LinuxSyscallOperation::RestoreNice => self
+                    .fail_nice
+                    .clone()
+                    .map_or_else(|| Ok("restored nice".to_string()), Err),
+                LinuxSyscallOperation::RestoreAffinity => self
+                    .fail_affinity
+                    .clone()
+                    .map_or_else(|| Ok("restored affinity".to_string()), Err),
+                LinuxSyscallOperation::RestoreCpuset => Ok("restored cpuset".to_string()),
+                LinuxSyscallOperation::NoopWarmupRollback => Ok("warmup rollback noop".to_string()),
+                LinuxSyscallOperation::SetNice { .. }
+                | LinuxSyscallOperation::SetAffinity { .. }
+                | LinuxSyscallOperation::UseCpuset { .. }
+                | LinuxSyscallOperation::WarmupExecutor => Ok("ignored".to_string()),
+            }
+        }
+    }
+
+    fn rollback_plan(operations: Vec<LinuxSyscallOperation>) -> LinuxSyscallPlan {
+        LinuxSyscallPlan {
+            phase: LinuxSyscallPhase::Rollback,
+            target_pid: 42,
+            operations,
+        }
+    }
+
+    fn captured_state() -> LinuxCapturedState {
+        LinuxCapturedState {
+            nice: Some(LinuxNiceState {
+                captured: true,
+                original_nice: Some(7),
+            }),
+            affinity: Some(LinuxAffinityState {
+                captured: true,
+                original_cpus: vec![0, 2, 4],
+            }),
+            cpuset: Some(LinuxCpusetState {
+                captured: true,
+                original_cpuset: Some("/sys/fs/cgroup/aegisai/latency".to_string()),
+                was_enabled: Some(true),
+            }),
+        }
+    }
+
+    fn run_report(
+        applier: &mut TestRollbackApplier,
+        plan: &LinuxSyscallPlan,
+        captured_state: &LinuxCapturedState,
+    ) -> (LinuxRollbackReport, BackendExecution) {
+        let mut execution = BackendExecution::default()
+            .with_field("backend", "linux-command")
+            .with_field("target_pid", plan.target_pid.to_string());
+        let report =
+            build_linux_rollback_report(applier, plan, captured_state, 1_250, &mut execution, None);
+        let execution = report.clone().into_execution(execution);
+        (report, execution)
+    }
+
+    #[test]
+    fn rollback_report_records_successful_nice_restore() {
+        let plan = rollback_plan(vec![LinuxSyscallOperation::RestoreNice]);
+        let mut applier = TestRollbackApplier::default();
+        let (report, execution) = run_report(&mut applier, &plan, &captured_state());
+
+        assert_eq!(report.restored, vec!["nice"]);
+        assert!(report.failed.is_empty());
+        assert_eq!(applier.calls, vec!["42:1250:restore_nice"]);
+        assert_eq!(
+            execution.audit_fields.get("backend"),
+            Some(&"linux-command".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("target_pid"),
+            Some(&"42".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.restored"),
+            Some(&"nice".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.status"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.detail"),
+            Some(&"restored nice".to_string())
+        );
+    }
+
+    #[test]
+    fn rollback_report_records_failed_nice_restore() {
+        let plan = rollback_plan(vec![LinuxSyscallOperation::RestoreNice]);
+        let mut applier = TestRollbackApplier {
+            fail_nice: Some("rollback nice denied".to_string()),
+            ..TestRollbackApplier::default()
+        };
+        let (report, execution) = run_report(&mut applier, &plan, &captured_state());
+
+        assert!(report.restored.is_empty());
+        assert_eq!(report.failed, vec!["nice:rollback nice denied"]);
+        assert_eq!(applier.calls, vec!["42:1250:restore_nice"]);
+        assert_eq!(
+            execution.audit_fields.get("rollback.failed"),
+            Some(&"nice:rollback nice denied".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.status"),
+            Some(&"error".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.error"),
+            Some(&"rollback nice denied".to_string())
+        );
+    }
+
+    #[test]
+    fn rollback_report_records_successful_affinity_restore() {
+        let plan = rollback_plan(vec![LinuxSyscallOperation::RestoreAffinity]);
+        let mut applier = TestRollbackApplier::default();
+        let (report, execution) = run_report(&mut applier, &plan, &captured_state());
+
+        assert_eq!(report.restored, vec!["affinity"]);
+        assert!(report.failed.is_empty());
+        assert_eq!(applier.calls, vec!["42:1250:restore_affinity"]);
+        assert_eq!(
+            execution.audit_fields.get("rollback.restored"),
+            Some(&"affinity".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.status"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.detail"),
+            Some(&"restored affinity".to_string())
+        );
+    }
+
+    #[test]
+    fn rollback_report_records_failed_affinity_restore() {
+        let plan = rollback_plan(vec![LinuxSyscallOperation::RestoreAffinity]);
+        let mut applier = TestRollbackApplier {
+            fail_affinity: Some("rollback affinity denied".to_string()),
+            ..TestRollbackApplier::default()
+        };
+        let (report, execution) = run_report(&mut applier, &plan, &captured_state());
+
+        assert!(report.restored.is_empty());
+        assert_eq!(report.failed, vec!["affinity:rollback affinity denied"]);
+        assert_eq!(applier.calls, vec!["42:1250:restore_affinity"]);
+        assert_eq!(
+            execution.audit_fields.get("rollback.failed"),
+            Some(&"affinity:rollback affinity denied".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.status"),
+            Some(&"error".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.error"),
+            Some(&"rollback affinity denied".to_string())
+        );
+    }
+
+    #[test]
+    fn rollback_report_records_mixed_action_results_in_order() {
+        let plan = rollback_plan(vec![
+            LinuxSyscallOperation::RestoreNice,
+            LinuxSyscallOperation::RestoreAffinity,
+        ]);
+        let mut applier = TestRollbackApplier {
+            fail_affinity: Some("rollback affinity denied".to_string()),
+            ..TestRollbackApplier::default()
+        };
+        let (report, execution) = run_report(&mut applier, &plan, &captured_state());
+
+        assert_eq!(report.restored, vec!["nice"]);
+        assert_eq!(report.failed, vec!["affinity:rollback affinity denied"]);
+        assert_eq!(
+            applier.calls,
+            vec!["42:1250:restore_nice", "42:1250:restore_affinity"]
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.restored"),
+            Some(&"nice".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.failed"),
+            Some(&"affinity:rollback affinity denied".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.status"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.1.status"),
+            Some(&"error".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.1.error"),
+            Some(&"rollback affinity denied".to_string())
+        );
+    }
+
+    #[test]
+    fn rollback_report_records_missing_captured_state_without_applier_call() {
+        let plan = rollback_plan(vec![
+            LinuxSyscallOperation::RestoreNice,
+            LinuxSyscallOperation::RestoreAffinity,
+        ]);
+        let mut applier = TestRollbackApplier::default();
+        let captured_state = LinuxCapturedState {
+            nice: Some(LinuxNiceState {
+                captured: false,
+                original_nice: None,
+            }),
+            affinity: None,
+            cpuset: None,
+        };
+        let (report, execution) = run_report(&mut applier, &plan, &captured_state);
+
+        assert_eq!(report.missing_state, vec!["nice", "affinity"]);
+        assert!(report.restored.is_empty());
+        assert!(report.failed.is_empty());
+        assert!(applier.calls.is_empty());
+        assert_eq!(
+            execution.audit_fields.get("rollback.missing_state"),
+            Some(&"nice,affinity".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.status"),
+            Some(&"missing_state".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.detail"),
+            Some(&"missing original nice state; rollback skipped".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.1.status"),
+            Some(&"missing_state".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.1.detail"),
+            Some(&"missing original affinity state; rollback skipped".to_string())
+        );
+    }
+
+    #[test]
+    fn disabled_cpuset_action_does_not_emit_rollback_report_noise() {
+        let plan = rollback_plan(vec![
+            LinuxSyscallOperation::RestoreNice,
+            LinuxSyscallOperation::RestoreAffinity,
+        ]);
+        let mut applier = TestRollbackApplier::default();
+        let mut state = captured_state();
+        state.cpuset = None;
+        let (report, execution) = run_report(&mut applier, &plan, &state);
+
+        assert_eq!(report.restored, vec!["nice", "affinity"]);
+        assert!(report.skipped.is_empty());
+        assert!(report.missing_state.is_empty());
+        assert!(report.failed.is_empty());
+        assert_eq!(
+            execution.audit_fields.get("rollback.restored"),
+            Some(&"nice,affinity".to_string())
+        );
+        assert_eq!(execution.audit_fields.get("rollback.missing_state"), None);
+        assert_eq!(execution.audit_fields.get("rollback.skipped"), None);
+        assert_eq!(execution.audit_fields.get("rollback.failed"), None);
+        assert!(!execution
+            .audit_fields
+            .values()
+            .any(|value| value.contains("cpuset")));
+    }
+}
