@@ -113,11 +113,47 @@ label.
 ```bash
 cargo run -p aegisai-runtime-daemon -- --repo-root . --source mock --metadata demo --actuator-backend noop
 cargo run -p aegisai-runtime-daemon -- --repo-root . --source linux --metadata procfs --actuator-backend linux-skeleton --allow-partial-probes
+bash bench/scripts/linux_source_ingestion_smoke.sh
 ```
 
 Confirm daemon startup, procfs metadata enrichment, mock scenario triggers, and
-Linux source preflight. Zero events in Linux source smoke are acceptable because
-this checks startup/configuration safety, not benefit.
+Linux source preflight. Zero events in the direct Linux source preflight are
+acceptable because that command checks startup/configuration safety, not
+ingestion.
+
+The controlled ingestion smoke is the Linux source validation gate for procfs
+event ingestion. It starts short-lived CPU worker processes, writes a temporary
+runtime config scoped to those worker PIDs, runs the daemon with
+`linux-skeleton` by default, and requires the summary to show
+`processed_events > 0` plus `signal_observations` for at least one of
+`run_queue_delay`, `cpu_migration`, or `major_page_fault`. It never uses the
+live `linux-command` backend. To exercise the command-backed audit path without
+host scheduler writes, use:
+
+```bash
+AEGISAI_LINUX_SOURCE_SMOKE_BACKEND=linux-command-dry-run \
+  bash bench/scripts/linux_source_ingestion_smoke.sh
+```
+
+Exit states are intentionally distinct:
+
+- `0`: PASS. The daemon processed at least one procfs-derived signal from the
+  controlled PID allowlist.
+- `1`: FAIL. The host looked capable of producing procfs deltas, but the daemon
+  command failed or the summary did not contain the required ingestion evidence.
+- `77`: SKIPPED. The host is not Linux, procfs is not mounted/readable, worker
+  counters under `/proc/<pid>/schedstat`, `/proc/<pid>/sched`, or
+  `/proc/<pid>/stat` are unavailable, or the controlled workers do not produce a
+  positive scheduler/fault counter delta during the precheck window.
+
+Useful bounded overrides:
+
+```bash
+AEGISAI_LINUX_SOURCE_SMOKE_WORKERS=8 \
+AEGISAI_LINUX_SOURCE_SMOKE_MAX_EVENTS=8 \
+AEGISAI_LINUX_SOURCE_SMOKE_POLL_TIMEOUT_MS=500 \
+  bash bench/scripts/linux_source_ingestion_smoke.sh
+```
 
 ## Helper Validation
 

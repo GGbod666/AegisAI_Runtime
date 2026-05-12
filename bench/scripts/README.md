@@ -5,6 +5,7 @@
 ## 当前脚本
 
 - `verify_workspace.sh`：运行当前工作区验证，并把命令、退出码和关键输出追加到 `docs/verification_log.md`。
+- `linux_source_ingestion_smoke.sh`：启动短生命周期 CPU worker，临时把 runtime config 限定到这些 PID，用 `linux-skeleton`（或显式 `linux-command-dry-run`）运行 Linux/procfs daemon，并要求 `processed_events > 0` 以及至少一个 `run_queue_delay`、`cpu_migration` 或 `major_page_fault` 观测；退出码 `77` 表示 host/procfs 无法产生可验证 delta，区别于失败。
 - `toolchain_preflight.sh`：盘点 pre-Ollama 阶段需要的开发、eBPF 和 demo 工具；不执行安装，只记录缺失项和建议安装命令。必需工具缺失会使脚本失败；可选工具缺失只作为 inventory 记录。
 - `inference_tail_guard_preflight.sh`：检查 Linux VM/demo 是否具备 `Inference Tail Guard` 下一步需要的基础面。必需项是 procfs/cgroup 可见性和 mock/noop runtime daemon smoke test；`ollama`、`llama.cpp`、`stress-ng`、`taskset` 只做可选工具盘点。该阶段不安装 Ollama、不拉取模型、不启动压力负载。
 - `inference_tail_guard_ollama_smoke.sh`：运行正式 `ollama` A/B harness。默认安全三档是 `baseline`、`noop_observation`、`dry_run`；每档固定同一模型、prompt、并发和 CPU 干扰强度，输出 TTFT、P95/P99、jitter、trigger count、rollback count、`cpu_migration` 与 `major_page_fault` 观测统计，并把原始样本和汇总追加到 `docs/verification_log.md`。
@@ -59,6 +60,10 @@ scheduler action。
 
 ```bash
 bash bench/scripts/verify_workspace.sh
+```
+
+```bash
+bash bench/scripts/linux_source_ingestion_smoke.sh
 ```
 
 ```bash

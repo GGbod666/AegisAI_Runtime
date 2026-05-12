@@ -18904,3 +18904,68 @@ triggered_scenarios: none
 ```
 
 - Overall result: `PASS`
+
+### 2026-05-12T01:45:47+00:00 - Controlled Linux source ingestion smoke
+
+- Scope: Linux procfs-derived event ingestion using short-lived PID-allowlisted CPU workers.
+- Command: `bash bench/scripts/linux_source_ingestion_smoke.sh`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Actuator backend: `linux-skeleton`
+- Live scheduler state changes: `none`
+- Exit codes: `0=PASS`, `1=FAIL`, `77=SKIPPED`
+- CPU count used for sizing: `4`
+- Controlled worker count: `5`
+- PID allowlist: `3008,3009,3010,3011,3012`
+- Procfs precheck before: `readable=1 run_queue_delay=375657707 cpu_migration=3 major_page_fault=0`
+- Procfs precheck after: `readable=1 run_queue_delay=991889219 cpu_migration=8 major_page_fault=0`
+- Daemon command: `cargo run -q -p aegisai-runtime-daemon -- --repo-root /tmp/aegisai-linux-source-smoke.jGc1Yj --source linux --metadata procfs --actuator-backend linux-skeleton --probe-poll-timeout-ms 200 --batch-size 16 --max-events 4 --tick-ms 200 --drain-ms 50 `
+- Daemon exit status: `0`
+
+#### Daemon summary excerpt
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-skeleton
+processed_events: 4
+applied_actions: 3
+inline_rollbacks: 0
+tick_rollbacks: 0
+metric_records: 4
+trace_records: 11
+signal_observations:
+  run_queue_delay: events=4 total=21013 max=9636
+feature_window_maxima:
+  cpu_migrations_per_sec: 0
+  major_page_faults_per_sec: 0
+  run_queue_delay_us_max: 9636
+triggered_scenarios:
+  inference_tail_guard: 3
+```
+
+- Status: `PASS`
+- Processed events: `4`
+- Accepted signal observation: `  run_queue_delay: events=4 total=21013 max=9636`
+- Overall result: `PASS`
+
+### 2026-05-12T01:46:33+00:00 - Linux source ingestion smoke syntax checks
+
+- Scope: shell syntax validation for the new controlled Linux source ingestion smoke and existing bench scripts.
+- Command: `bash -n bench/scripts/linux_source_ingestion_smoke.sh && for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+### 2026-05-12T01:46:33+00:00 - Runtime daemon focused tests
+
+- Scope: focused daemon tests after adding controlled Linux source ingestion smoke.
+- Command: `cargo test -p aegisai-runtime-daemon`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/runtime_daemon/src/lib.rs: 36 passed; 0 failed
+agent/runtime_daemon/src/main.rs: 23 passed; 0 failed
+Doc-tests aegisai_runtime_daemon: 0 passed; 0 failed
+```

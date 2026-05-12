@@ -1,13 +1,13 @@
 # Latest Task List
 
-_Regenerated: 2026-05-11_
+_Regenerated: 2026-05-12_
 
 This is the current priority plan, not a historical gap inventory. It is based
 on the latest repository state: all local Rust/Python/shell checks pass, the
-Linux source preflight still passes with `processed_events=0`, `bd preflight`
-still shows a non-project Go/Nix checklist, and code-review-graph still marks
-live-action and source/report paths as high-degree hotspots. `bd` remains the
-source of truth for status.
+controlled Linux source ingestion smoke records nonzero procfs-derived daemon
+events, `bd preflight` still shows a non-project Go/Nix checklist, and
+code-review-graph still marks live-action and source/report paths as
+high-degree hotspots. `bd` remains the source of truth for status.
 
 ## Priority Rule
 
@@ -43,12 +43,14 @@ current planning order.
   `PASS`
 - `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_inference_preflight_20260511.md bash bench/scripts/inference_tail_guard_preflight.sh`:
   `PASS`
+- `bash bench/scripts/linux_source_ingestion_smoke.sh`: `PASS`;
+  `processed_events=4`, `run_queue_delay` signal observation present
 - `bd lint`: `PASS`
 
 Open evidence gaps:
 
-- Linux source preflight is still a startup/partial-probe check, not ingestion
-  proof.
+- Direct Linux source preflight is still a startup/partial-probe check; use
+  `bench/scripts/linux_source_ingestion_smoke.sh` for ingestion proof.
 - Inference preflight does not run a model or start stress load.
 - `bd preflight` does not reflect this Rust workspace.
 - Graph analysis reports `20` untested hotspots and `16` files/classes with at
@@ -62,6 +64,7 @@ trusted or whether live-control boundaries are safe.
 ### 1. Add Controlled Linux Source Ingestion Smoke
 
 - Issue: `AegisAI_Runtime-51c.3`
+- Status: `DONE` on 2026-05-12.
 - Why first: current `verify_workspace.sh` can pass with Linux
   `processed_events=0`; until this is fixed, Linux source validation proves
   startup only, not event ingestion.
@@ -78,8 +81,10 @@ trusted or whether live-control boundaries are safe.
   - failure and skip states are distinguishable
   - command is documented in `docs/linux_validation.md`
 - Verification:
-  - new Linux ingestion smoke command
-  - `cargo test -p aegisai-runtime-daemon` if source code changes
+  - `bash bench/scripts/linux_source_ingestion_smoke.sh`: `PASS`;
+    `processed_events=4`, `run_queue_delay` observation present
+  - no Rust source code changed, so `cargo test -p aegisai-runtime-daemon` was
+    not required for this task
 
 ### 2. Replace Project Preflight Template
 

@@ -1,6 +1,6 @@
 # Current Status
 
-_Last reviewed: 2026-05-11_
+_Last reviewed: 2026-05-12_
 
 This is the compact factual snapshot. Active task state lives in `bd`; accepted
 task history lives in `docs/acceptance_ledger.md`; stage rules live in
@@ -17,6 +17,10 @@ Implemented and accepted capabilities:
 
 - `runtime_daemon` can run the mock control-loop path and the Linux procfs
   preflight path.
+- Controlled Linux source ingestion smoke now validates procfs-derived event
+  ingestion with a short-lived PID allowlist and `linux-skeleton`, recording
+  `processed_events > 0` plus signal observations without live scheduler
+  writes.
 - Linux source fallback observes `run_queue_delay`, `cpu_migration`, and
   `major_page_fault` through procfs-derived signals.
 - Helper-backed `offcpu_time` and `io_latency` observations have controlled
@@ -73,11 +77,16 @@ Latest audit refresh on 2026-05-11 also passed:
 - `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_toolchain_preflight_20260511.md bash bench/scripts/toolchain_preflight.sh`
 - `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_inference_preflight_20260511.md bash bench/scripts/inference_tail_guard_preflight.sh`
 - `bd lint`
+- `bash bench/scripts/linux_source_ingestion_smoke.sh`
 
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
   startup/partial-probe check, not an ingestion or benefit proof.
+- Controlled Linux source ingestion smoke passed on 2026-05-12 with
+  `processed_events=4` and `run_queue_delay` observations. Hosts that cannot
+  expose readable procfs counters or positive controlled-worker deltas return
+  `SKIPPED` with exit code `77`.
 - Inference preflight intentionally does not run `ollama run`, pull a model, or
   start `stress-ng` load.
 - `bd doctor` is unsupported in embedded mode, and `bd preflight` currently
@@ -138,10 +147,10 @@ Future helper conclusions should use these buckets: `helper unavailable`,
   `AegisAI_Runtime-cqv.2` / `AegisAI_Runtime-cqv.3` — add production config
   profile selection, schema validation, and cross-file safety checks.
 - `AegisAI_Runtime-51c` / `AegisAI_Runtime-51c.1` /
-  `AegisAI_Runtime-51c.2` / `AegisAI_Runtime-51c.3` /
-  `AegisAI_Runtime-51c.4` — validate helper portability, classify helper
-  compatibility, add controlled Linux ingestion smoke, and harden helper
-  startup failure tests.
+  `AegisAI_Runtime-51c.2` / `AegisAI_Runtime-51c.4` — validate helper
+  portability, classify helper compatibility, and harden helper startup failure
+  tests. `AegisAI_Runtime-51c.3` is complete: controlled Linux ingestion smoke
+  records nonzero procfs-derived daemon events.
 - `AegisAI_Runtime-7h5` / `AegisAI_Runtime-7h5.1` — add a deterministic
   cpuset/background dry-run rejection matrix while live cgroup writes remain
   disabled.
