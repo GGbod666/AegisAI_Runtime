@@ -731,7 +731,7 @@ pub struct BpfTraceCompatibilityReport {
 }
 
 impl BpfTraceCompatibilityReport {
-    fn compatible(
+    pub fn compatible(
         kernel_version: impl Into<String>,
         bpftrace_version: impl Into<String>,
         tracefs_root: impl Into<String>,
@@ -747,7 +747,7 @@ impl BpfTraceCompatibilityReport {
         }
     }
 
-    fn incompatible(
+    pub fn incompatible(
         kernel_version: impl Into<String>,
         bpftrace_version: impl Into<String>,
         tracefs_root: impl Into<String>,
@@ -766,7 +766,10 @@ impl BpfTraceCompatibilityReport {
         }
     }
 
-    fn unavailable(required_fields: Vec<BpfTraceRequiredField>, reason: impl Into<String>) -> Self {
+    pub fn unavailable(
+        required_fields: Vec<BpfTraceRequiredField>,
+        reason: impl Into<String>,
+    ) -> Self {
         Self {
             status: BpfTraceCompatibilityStatus::HelperUnavailable {
                 reason: reason.into(),
@@ -799,7 +802,7 @@ impl BpfTraceCompatibilityReport {
         }
     }
 
-    fn describe(&self) -> String {
+    pub fn describe(&self) -> String {
         let probes = if self.requested_probes.is_empty() {
             "none".to_string()
         } else {
@@ -830,7 +833,7 @@ impl BpfTraceCompatibilityReport {
         detail
     }
 
-    fn failure_message(&self) -> String {
+    pub fn failure_message(&self) -> String {
         match self.failure_reason() {
             Some(reason) => format!("{}: {reason}; {}", self.status_label(), self.describe()),
             None => self.describe(),
@@ -852,7 +855,7 @@ pub struct BpfTraceRequiredField {
 }
 
 impl BpfTraceRequiredField {
-    fn new(probe: impl Into<String>, field: impl Into<String>) -> Self {
+    pub fn new(probe: impl Into<String>, field: impl Into<String>) -> Self {
         Self {
             probe: probe.into(),
             field: field.into(),
@@ -1096,7 +1099,56 @@ impl BpfTracePipe for SystemEbpfHelperPipe {
         include_offcpu: bool,
         include_io: bool,
     ) -> BpfTraceCompatibilityReport {
-        system_bpftrace_compatibility_report(include_offcpu, include_io)
+        let output = match Command::new(&self.command)
+            .args(ebpf_helper_compatibility_args(include_offcpu, include_io))
+            .output()
+        {
+            Ok(output) => output,
+            Err(error) => {
+                return BpfTraceCompatibilityReport::unavailable(
+                    bpftrace_required_fields(include_offcpu, include_io),
+                    format!(
+                        "failed to run `{}` compatibility for privileged eBPF helper readiness: {error}",
+                        self.command
+                    ),
+                );
+            }
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let report_line = stdout
+            .lines()
+            .find(|line| line.starts_with("helper compatibility: "));
+        let Some(line) = report_line else {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let reason = if output.status.success() {
+                format!(
+                    "privileged eBPF helper `{}` did not print compatibility diagnostics",
+                    self.command
+                )
+            } else if stderr.is_empty() {
+                format!(
+                    "privileged eBPF helper `{}` compatibility exited with {}",
+                    self.command, output.status
+                )
+            } else {
+                format!(
+                    "privileged eBPF helper `{}` compatibility exited with {}: {stderr}",
+                    self.command, output.status
+                )
+            };
+            return BpfTraceCompatibilityReport::unavailable(
+                bpftrace_required_fields(include_offcpu, include_io),
+                reason,
+            );
+        };
+
+        parse_bpftrace_compatibility_report(line).unwrap_or_else(|reason| {
+            BpfTraceCompatibilityReport::unavailable(
+                bpftrace_required_fields(include_offcpu, include_io),
+                format!("invalid privileged eBPF helper compatibility diagnostics: {reason}"),
+            )
+        })
     }
 
     fn start(
@@ -1571,6 +1623,19 @@ pub fn ebpf_helper_args(
     args
 }
 
+pub fn ebpf_helper_compatibility_args(include_offcpu: bool, include_io: bool) -> Vec<String> {
+    let mut args = vec!["compatibility".to_string()];
+
+    if include_offcpu {
+        args.push("--offcpu".to_string());
+    }
+    if include_io {
+        args.push("--io".to_string());
+    }
+
+    args
+}
+
 fn bpftrace_program(
     selectors: &ProcfsTargetSelectors,
     include_offcpu: bool,
@@ -1633,7 +1698,10 @@ tracepoint:block:block_rq_complete
     sections.join("\n\n")
 }
 
-fn bpftrace_required_fields(include_offcpu: bool, include_io: bool) -> Vec<BpfTraceRequiredField> {
+pub fn bpftrace_required_fields(
+    include_offcpu: bool,
+    include_io: bool,
+) -> Vec<BpfTraceRequiredField> {
     let mut fields = Vec::new();
     if include_offcpu {
         for field in ["prev_state", "prev_pid", "next_pid", "next_comm"] {
@@ -1666,6 +1734,86 @@ fn requested_bpftrace_probes(required_fields: &[BpfTraceRequiredField]) -> Vec<S
         .map(|field| field.probe.clone())
         .collect::<BTreeSet<_>>()
         .into_iter()
+        .collect()
+}
+
+pub fn parse_bpftrace_compatibility_report(
+    raw: &str,
+) -> Result<BpfTraceCompatibilityReport, String> {
+    let rest = raw
+        .trim()
+        .strip_prefix("helper compatibility: ")
+        .ok_or_else(|| "missing `helper compatibility:` prefix".to_string())?;
+    let fields = rest
+        .split("; ")
+        .filter_map(|part| part.split_once('='))
+        .collect::<BTreeMap<_, _>>();
+
+    let status = fields
+        .get("status")
+        .copied()
+        .ok_or_else(|| "missing `status`".to_string())?;
+    let kernel_version = fields
+        .get("kernel")
+        .copied()
+        .ok_or_else(|| "missing `kernel`".to_string())?;
+    let bpftrace_version = fields
+        .get("bpftrace")
+        .copied()
+        .ok_or_else(|| "missing `bpftrace`".to_string())?;
+    let tracefs_root = fields
+        .get("tracefs")
+        .copied()
+        .ok_or_else(|| "missing `tracefs`".to_string())?;
+    let required_fields = fields
+        .get("required_fields")
+        .copied()
+        .ok_or_else(|| "missing `required_fields`".to_string())
+        .and_then(parse_required_field_list)?;
+
+    match status {
+        "compatible" => Ok(BpfTraceCompatibilityReport::compatible(
+            kernel_version,
+            bpftrace_version,
+            tracefs_root,
+            required_fields,
+        )),
+        "helper unavailable" => Ok(BpfTraceCompatibilityReport::unavailable(
+            required_fields,
+            fields
+                .get("reason")
+                .copied()
+                .unwrap_or("helper unavailable"),
+        )),
+        "tracepoint incompatible" => Ok(BpfTraceCompatibilityReport::incompatible(
+            kernel_version,
+            bpftrace_version,
+            tracefs_root,
+            required_fields,
+            fields
+                .get("reason")
+                .copied()
+                .unwrap_or("tracepoint incompatible"),
+        )),
+        other => Err(format!("unsupported compatibility status `{other}`")),
+    }
+}
+
+fn parse_required_field_list(raw: &str) -> Result<Vec<BpfTraceRequiredField>, String> {
+    if raw == "none" {
+        return Ok(Vec::new());
+    }
+
+    raw.split(',')
+        .map(|item| {
+            let (probe, field) = item
+                .rsplit_once(':')
+                .ok_or_else(|| format!("invalid required field `{item}`"))?;
+            if probe.is_empty() || field.is_empty() {
+                return Err(format!("invalid required field `{item}`"));
+            }
+            Ok(BpfTraceRequiredField::new(probe, field))
+        })
         .collect()
 }
 
@@ -2925,12 +3073,12 @@ mod tests {
     use ebpf_probe::{AttachPoint, EventMetric, EventTarget, ProbeKind};
 
     use super::{
-        bpftrace_required_fields, parse_tracepoint_format_fields,
-        system_bpftrace_compatibility_report_from, BpfTraceCompatibilityReport,
-        BpfTraceCompatibilityStatus, BpfTracePipe, BpfTraceProbeDriver, BpfTraceRequiredField,
-        DriverBackedProbeEventReader, EventSource, FakeBpfTracePipe, LinuxProbeDriver,
-        LinuxProbeHost, LinuxProbePlan, LinuxProbeSource, MockEventSource,
-        PreflightLinuxProbeDriver, ProbeAttachmentStatus, ProbeReaderConfig,
+        bpftrace_required_fields, parse_bpftrace_compatibility_report,
+        parse_tracepoint_format_fields, system_bpftrace_compatibility_report_from,
+        BpfTraceCompatibilityReport, BpfTraceCompatibilityStatus, BpfTracePipe,
+        BpfTraceProbeDriver, BpfTraceRequiredField, DriverBackedProbeEventReader, EventSource,
+        FakeBpfTracePipe, LinuxProbeDriver, LinuxProbeHost, LinuxProbePlan, LinuxProbeSource,
+        MockEventSource, PreflightLinuxProbeDriver, ProbeAttachmentStatus, ProbeReaderConfig,
         ProcfsSchedstatProbeDriver, ProcfsSchedstatSampler, ProcfsSchedstatSnapshot,
         ProcfsTargetSelectors, RealLinuxProbeDriver, SignalKind, SourceError, SourceEvent,
         StaticProbeEventReader,
@@ -4249,6 +4397,42 @@ mod tests {
     }
 
     #[test]
+    fn parses_helper_compatibility_report() {
+        let report = parse_bpftrace_compatibility_report(
+            "helper compatibility: status=compatible; kernel=6.8.0-test; bpftrace=bpftrace v0.test; tracefs=/sys/kernel/tracing; requested_probes=tracepoint:block:block_rq_complete,tracepoint:block:block_rq_issue; required_fields=tracepoint:block:block_rq_issue:dev,tracepoint:block:block_rq_issue:sector,tracepoint:block:block_rq_complete:dev,tracepoint:block:block_rq_complete:sector",
+        )
+        .expect("report should parse");
+
+        assert!(matches!(
+            report.status,
+            BpfTraceCompatibilityStatus::Compatible
+        ));
+        assert_eq!(report.kernel_version, "6.8.0-test");
+        assert_eq!(report.bpftrace_version, "bpftrace v0.test");
+        assert_eq!(report.tracefs_root, "/sys/kernel/tracing");
+        assert!(report.required_fields.contains(&BpfTraceRequiredField::new(
+            "tracepoint:block:block_rq_complete",
+            "sector"
+        )));
+    }
+
+    #[test]
+    fn parses_helper_tracepoint_incompatible_report() {
+        let report = parse_bpftrace_compatibility_report(
+            "helper compatibility: status=tracepoint incompatible; kernel=6.8.0-test; bpftrace=bpftrace v0.test; tracefs=/sys/kernel/tracing; requested_probes=tracepoint:block:block_rq_complete; required_fields=tracepoint:block:block_rq_complete:sector; reason=missing required field `sector` on tracepoint:block:block_rq_complete",
+        )
+        .expect("report should parse");
+
+        assert!(matches!(
+            report.status,
+            BpfTraceCompatibilityStatus::TracepointIncompatible { .. }
+        ));
+        assert!(report
+            .failure_message()
+            .contains("missing required field `sector`"));
+    }
+
+    #[test]
     fn ebpf_helper_args_are_limited_to_selectors_and_signal_flags() {
         let selectors = ProcfsTargetSelectors::new(["ollama"], [42].into_iter().collect());
         let args = super::ebpf_helper_args(&selectors, true, true);
@@ -4263,6 +4447,21 @@ mod tests {
                 "42".to_string(),
                 "--process-name".to_string(),
                 "ollama".to_string(),
+            ]
+        );
+        assert!(!args.iter().any(|arg| arg.contains("tracepoint:")));
+    }
+
+    #[test]
+    fn ebpf_helper_compatibility_args_are_limited_to_signal_flags() {
+        let args = super::ebpf_helper_compatibility_args(true, true);
+
+        assert_eq!(
+            args,
+            vec![
+                "compatibility".to_string(),
+                "--offcpu".to_string(),
+                "--io".to_string(),
             ]
         );
         assert!(!args.iter().any(|arg| arg.contains("tracepoint:")));

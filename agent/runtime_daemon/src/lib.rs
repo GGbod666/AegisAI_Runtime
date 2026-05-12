@@ -13,13 +13,13 @@ pub use runtime_loop::{
     ToolCallLifecycleSummary,
 };
 pub use source::{
-    BpfTraceCompatibilityReport, BpfTraceCompatibilityStatus, BpfTracePipe, BpfTraceProbeDriver,
-    BpfTraceRequiredField, DriverBackedProbeEventReader, EventSource, LinuxProbeDriver,
-    LinuxProbeHost, LinuxProbePlan, LinuxProbeSource, MockEventSource, PlannedProbe,
-    PreflightLinuxProbeDriver, ProbeAttachment, ProbeAttachmentStatus, ProbeEventReader,
-    ProbeReaderConfig, ProbeReaderShutdown, ProbeReaderStartup, ProcfsSchedstatProbeDriver,
-    ProcfsSchedstatSampler, ProcfsSchedstatSnapshot, ProcfsTargetSelectors, RealLinuxProbeDriver,
-    SourceError, SourceEvent, StaticProbeEventReader, SystemBpfTracePipe, SystemEbpfHelperPipe,
-    SystemLinuxProbeHost, SystemProcfsSchedstatSampler, UnavailableLinuxProbeDriver,
-    UnsupportedProbeEventReader,
+    bpftrace_required_fields, BpfTraceCompatibilityReport, BpfTraceCompatibilityStatus,
+    BpfTracePipe, BpfTraceProbeDriver, BpfTraceRequiredField, DriverBackedProbeEventReader,
+    EventSource, LinuxProbeDriver, LinuxProbeHost, LinuxProbePlan, LinuxProbeSource,
+    MockEventSource, PlannedProbe, PreflightLinuxProbeDriver, ProbeAttachment,
+    ProbeAttachmentStatus, ProbeEventReader, ProbeReaderConfig, ProbeReaderShutdown,
+    ProbeReaderStartup, ProcfsSchedstatProbeDriver, ProcfsSchedstatSampler,
+    ProcfsSchedstatSnapshot, ProcfsTargetSelectors, RealLinuxProbeDriver, SourceError, SourceEvent,
+    StaticProbeEventReader, SystemBpfTracePipe, SystemEbpfHelperPipe, SystemLinuxProbeHost,
+    SystemProcfsSchedstatSampler, UnavailableLinuxProbeDriver, UnsupportedProbeEventReader,
 };

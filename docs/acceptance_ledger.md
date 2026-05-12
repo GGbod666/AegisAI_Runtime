@@ -6,10 +6,12 @@ This file records the accepted 19-task evidence-hardening pass. It is a ledger,
 not an active tracker. Use `bd` for active work and `docs/status.md` for the
 current gap index.
 
-Post-ledger note, 2026-05-12: `AegisAI_Runtime-51c.1` is now complete. Helper
-compatibility diagnostics classify `helper unavailable`, `tracepoint
-incompatible`, and compatible tracepoint field inventory before helper streams
-start; the remaining helper portability work is the two-kernel matrix.
+Post-ledger note, 2026-05-12: `AegisAI_Runtime-51c.1` and
+`AegisAI_Runtime-51c.2` are now complete. Helper compatibility diagnostics
+classify `helper unavailable`, `tracepoint incompatible`, and compatible
+tracepoint field inventory before helper streams start, and the two-kernel
+`gg-vm` matrix covers kernels `6.8.0-110-generic` and `6.8.0-111-generic` with
+`validated signal` outcomes.
 
 ## Acceptance Conclusion
 
@@ -69,8 +71,7 @@ cpuset/background dry-run planner has been completed. The remaining blockers
 are:
 
 - productionization and portability: `AegisAI_Runtime-cqv`,
-  `AegisAI_Runtime-51c` / `AegisAI_Runtime-51c.2`,
-  `AegisAI_Runtime-ufp`
+  `AegisAI_Runtime-51c`, `AegisAI_Runtime-ufp`
 - Beads Dolt remote sync: `AegisAI_Runtime-8le`
 - deferred runtime extensions: `AegisAI_Runtime-0ry`
 

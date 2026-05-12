@@ -276,26 +276,35 @@ cross-host validation, and unattended operation.
 
 - Issue: `AegisAI_Runtime-51c.2`
 - Parent: `AegisAI_Runtime-51c`
+- Status: `DONE` on 2026-05-12.
 - Why after compatibility classification: matrix results are useful only if
   each host lands in a precise bucket.
 - Scope:
-  - run helper readiness on at least two supported Linux kernel profiles
-  - run raw helper stream attach
-  - run controlled off-CPU workload
-  - run controlled block I/O workload
-  - record daemon normalized event counts
+  - recorded existing `gg-vm` kernel `6.8.0-110-generic` helper evidence from
+    `2026-05-10T03:37:57Z` and `2026-05-10T03:48:11Z`
+  - added `bench/scripts/helper_portability_smoke.sh` for bounded current-host
+    helper matrix evidence
+  - ran helper readiness on current `gg-vm` kernel `6.8.0-111-generic`
+  - ran raw helper stream attach for controlled off-CPU and block I/O workloads
+  - recorded daemon normalized `offcpu_time` and `io_latency` event counts
+  - moved tracefs field compatibility inventory through the privileged helper
+    boundary so the runtime daemon can stay rootless
 - Acceptance:
-  - each profile records kernel and distro
-  - each profile records bpftrace version
-  - each profile records tracefs root
-  - each profile records tracepoint field inventory
-  - each profile records raw and normalized event counts
-  - each profile ends in exactly one bucket:
-    `helper unavailable`, `tracepoint incompatible`, `no workload events`, or
+  - each profile records kernel and distro: `PASS`
+  - each profile records bpftrace version: `PASS`
+  - each profile records tracefs root: `PASS`
+  - each profile records tracepoint field inventory: `PASS`
+  - each profile records raw and normalized event counts: `PASS`
+  - each profile ends in exactly one bucket: `PASS`, both profiles are
     `validated signal`
 - Verification:
-  - `AEGISAI_VERIFY_LOG=/tmp/aegisai_toolchain_preflight.md bash bench/scripts/toolchain_preflight.sh`
-  - helper validation flow from `docs/linux_validation.md`
+  - `cargo test -p aegisai-runtime-daemon source::tests`: `PASS`; `40` source
+    tests
+  - `cargo test -p aegisai-ebpf-helper`: `PASS`; `5` tests
+  - `bash -n bench/scripts/helper_portability_smoke.sh`: `PASS`
+  - `AEGISAI_EBPF_HELPER=.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z/bin/aegisai-ebpf-helper AEGISAI_BPFTRACE=/usr/bin/bpftrace AEGISAI_HELPER_PORTABILITY_RUN_ID=helper_portability_gg_vm_6_8_0_111_20260512T141448Z AEGISAI_HELPER_PORTABILITY_ARTIFACT_DIR=.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z AEGISAI_VERIFY_LOG=.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z/helper_portability.md bash bench/scripts/helper_portability_smoke.sh`:
+    `PASS`; raw `offcpu_time=624`, raw `io_latency=12209`, normalized
+    `offcpu_time=8`, normalized `io_latency=8`, bucket `validated signal`
   - intentional durable entry in `docs/verification_log.md`
 
 ### 10. Add Inference Smoke Artifact Tests

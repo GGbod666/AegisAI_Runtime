@@ -19161,3 +19161,94 @@ No output.
   unsupported probe signal, and child stop cleanup each have focused assertions.
   Startup failures remain separate from malformed event parsing, and the
   structured reason text used by partial-probe reporting is preserved.
+
+### 2026-05-12T14:42:07Z - Two-kernel helper portability matrix
+
+- Scope: completed `AegisAI_Runtime-51c.2` helper portability matrix by
+  combining the existing `gg-vm` kernel `6.8.0-110-generic` helper validation
+  entries with fresh `gg-vm` kernel `6.8.0-111-generic` evidence. The current
+  run also moved tracefs field inventory classification through the privileged
+  helper boundary so the main runtime daemon remains rootless.
+- Reference: Linux trace event field inventory is exposed through per-event
+  tracefs `format` files; see `docs/linux_validation.md` for the project
+  helper validation flow and upstream Linux trace event documentation.
+
+#### Matrix profile: `gg-vm` kernel `6.8.0-110-generic`
+
+- Source entries:
+  - `2026-05-10T03:37:57Z - Helper-backed offcpu_time validation`
+  - `2026-05-10T03:48:11Z - Helper-backed io_latency validation`
+- Distro: Ubuntu host evidence from `gg-vm`.
+- bpftrace: `bpftrace v0.20.2`
+- tracefs root: `/sys/kernel/tracing`
+- Tracepoint field inventory:
+  - `tracepoint:sched:sched_switch`: `prev_state`, `prev_pid`, `next_pid`,
+    `next_comm`
+  - `tracepoint:block:block_rq_issue`: `dev`, `sector`
+  - `tracepoint:block:block_rq_complete`: `dev`, `sector`
+- Raw helper event counts:
+  - `offcpu_time`: `348`
+  - `io_latency`: `4005`
+- Daemon normalized event counts:
+  - `offcpu_time`: `8`
+  - `io_latency`: `8`
+- Final bucket: `validated signal`
+
+#### Matrix profile: `gg-vm` kernel `6.8.0-111-generic`
+
+- Artifact root:
+  `.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z`
+- Host:
+  `Linux gg-vm 6.8.0-111-generic #111-Ubuntu SMP PREEMPT_DYNAMIC Sat Apr 11 23:16:02 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux`
+- Distro: `Ubuntu 24.04.4 LTS`
+- bpftrace: `bpftrace v0.20.2`
+- tracefs root: `/sys/kernel/tracing`
+- Helper compatibility command:
+  `.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z/bin/aegisai-ebpf-helper compatibility --offcpu --io`
+- Helper compatibility output:
+```text
+helper compatibility: status=compatible; kernel=6.8.0-111-generic; bpftrace=bpftrace v0.20.2; tracefs=/sys/kernel/tracing; requested_probes=tracepoint:block:block_rq_complete,tracepoint:block:block_rq_issue,tracepoint:sched:sched_switch; required_fields=tracepoint:sched:sched_switch:prev_state,tracepoint:sched:sched_switch:prev_pid,tracepoint:sched:sched_switch:next_pid,tracepoint:sched:sched_switch:next_comm,tracepoint:block:block_rq_issue:dev,tracepoint:block:block_rq_issue:sector,tracepoint:block:block_rq_complete:dev,tracepoint:block:block_rq_complete:sector
+```
+- Raw helper event counts:
+  - `offcpu_time`: `624`
+  - `io_latency`: `12209`
+- Daemon normalized event counts:
+  - `offcpu_time`: `8`
+  - `io_latency`: `8`
+- Final bucket: `validated signal`
+
+#### Verification commands
+
+- Command: `cargo test -p aegisai-runtime-daemon source::tests`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/runtime_daemon/src/lib.rs: source::tests: 40 passed; 0 failed; 11 filtered out
+agent/runtime_daemon/src/main.rs: 0 passed; 0 failed; 32 filtered out
+```
+
+- Command: `cargo test -p aegisai-ebpf-helper`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/ebpf_helper/src/main.rs: 5 passed; 0 failed
+```
+
+- Command: `bash -n bench/scripts/helper_portability_smoke.sh`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `AEGISAI_EBPF_HELPER=.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z/bin/aegisai-ebpf-helper AEGISAI_BPFTRACE=/usr/bin/bpftrace AEGISAI_HELPER_PORTABILITY_RUN_ID=helper_portability_gg_vm_6_8_0_111_20260512T141448Z AEGISAI_HELPER_PORTABILITY_ARTIFACT_DIR=.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z AEGISAI_VERIFY_LOG=.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z/helper_portability.md bash bench/scripts/helper_portability_smoke.sh`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+helper_portability_smoke=validated signal offcpu_raw=624 io_raw=12209 offcpu_normalized=8 io_normalized=8 artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z
+```
+
+- Acceptance coverage: both kernel profiles record kernel, distro, bpftrace
+  version, tracefs root, tracepoint field inventory, raw helper event counts,
+  daemon normalized event counts, artifact roots or durable source entries, and
+  final bucket. Both profiles are classified as `validated signal`.

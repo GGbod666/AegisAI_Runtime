@@ -100,6 +100,17 @@ Helper compatibility preflight classification on 2026-05-12 also passed:
   requested helper tracepoints, and required tracepoint fields before helper
   streams start
 
+Two-kernel helper portability matrix work on 2026-05-12 also passed:
+
+- `cargo test -p aegisai-runtime-daemon source::tests` (`40` source tests)
+- `cargo test -p aegisai-ebpf-helper` (`5` helper CLI tests)
+- `bash bench/scripts/helper_portability_smoke.sh`: `PASS` on `gg-vm`
+  kernel `6.8.0-111-generic`; raw helper streams emitted `624` `offcpu_time`
+  events and `12209` `io_latency` events; rootless daemon runs normalized `8`
+  events for each signal
+- Matrix profile `6.8.0-110-generic` remains backed by the historical
+  `2026-05-10T03:37:57Z` and `2026-05-10T03:48:11Z` helper validation entries
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -149,6 +160,7 @@ Helper validation:
 
 | signal | verification entry | artifact root | result |
 | --- | --- | --- | --- |
+| `offcpu_time` + `io_latency` portability matrix, `6.8.0-111-generic` | `2026-05-12T14:42:07Z - Two-kernel helper portability matrix` | `.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z` | `validated signal`; helper compatibility `compatible`; raw streams emitted `624` off-CPU and `12209` I/O events; daemon recorded `8` normalized events for each signal |
 | `offcpu_time` | `2026-05-10T03:37:57Z - Helper-backed offcpu_time validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; raw stream attached and emitted `348` events; daemon recorded `8` normalized events |
 | `io_latency` | `2026-05-10T03:48:11Z - Helper-backed io_latency validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; block tracepoints exposed required fields; raw stream emitted `4005` events; daemon recorded `8` normalized events |
 
@@ -164,15 +176,17 @@ workloads before portability matrix runs.
 - `AegisAI_Runtime-cqv` / `AegisAI_Runtime-cqv.1` /
   `AegisAI_Runtime-cqv.2` / `AegisAI_Runtime-cqv.3` — add production config
   profile selection, schema validation, and cross-file safety checks.
-- `AegisAI_Runtime-51c` / `AegisAI_Runtime-51c.2` — validate helper portability
-  with a two-kernel matrix. `AegisAI_Runtime-51c.1` is complete: helper
-  compatibility is classified before helper stream start and records
-  availability, tracefs, requested probes, and required field inventory.
-  `AegisAI_Runtime-51c.3` is complete: controlled Linux ingestion smoke records
-  nonzero procfs-derived daemon events. `AegisAI_Runtime-51c.4` is complete:
-  BpfTracePipe startup failure taxonomy coverage now distinguishes missing
-  binary/helper, permission, stdout/stderr capture, malformed line, unsupported
-  signal, and stop cleanup cases.
+- `AegisAI_Runtime-51c` — parent helper portability epic remains open for
+  broader cross-host validation. `AegisAI_Runtime-51c.2` is complete: the
+  two-kernel `gg-vm` matrix covers `6.8.0-110-generic` historical helper
+  evidence and `6.8.0-111-generic` fresh helper smoke evidence. `AegisAI_Runtime-51c.1`
+  is complete: helper compatibility is classified before helper stream start
+  and records availability, tracefs, requested probes, and required field
+  inventory. `AegisAI_Runtime-51c.3` is complete: controlled Linux ingestion
+  smoke records nonzero procfs-derived daemon events. `AegisAI_Runtime-51c.4`
+  is complete: BpfTracePipe startup failure taxonomy coverage now distinguishes
+  missing binary/helper, permission, stdout/stderr capture, malformed line,
+  unsupported signal, and stop cleanup cases.
 - `AegisAI_Runtime-8le` — configure the intended Beads Dolt remote sync target;
   `bd dolt remote list` currently reports no remotes configured.
 - `AegisAI_Runtime-ufp` / `AegisAI_Runtime-ufp.1` — define and then implement
@@ -182,6 +196,10 @@ workloads before portability matrix runs.
 
 Recently closed:
 
+- `AegisAI_Runtime-51c.2` — recorded the helper portability matrix across
+  `gg-vm` kernels `6.8.0-110-generic` and `6.8.0-111-generic`; the current
+  kernel profile passed `validated signal` with compatible helper diagnostics,
+  nonzero raw helper events, and rootless daemon normalized events.
 - `AegisAI_Runtime-51c.1` — added helper compatibility diagnostics before helper
   stream start; startup now distinguishes `helper unavailable`,
   `tracepoint incompatible`, and compatible field inventory from later

@@ -195,6 +195,19 @@ For portability work, capture the exact tracepoint or field that failed. Missing
 block I/O fields should name the missing field, for example
 `tracepoint:block:block_rq_complete:sector`.
 
+For bounded matrix evidence on a prepared Linux host, use:
+
+```bash
+bash bench/scripts/helper_portability_smoke.sh
+```
+
+The smoke writes a temporary `ollama`-named Python workload, runs raw helper
+streams for `offcpu_time` and `io_latency`, then runs rootless daemon slices for
+each signal with `timeout` guards. It records kernel, distro, bpftrace version,
+tracefs root, helper compatibility inventory, raw helper event counts, daemon
+normalized event counts, artifact paths, and the final bucket. If the helper is
+not installed on `PATH`, set `AEGISAI_EBPF_HELPER=/path/to/aegisai-ebpf-helper`.
+
 ## Actuator State Capture Check
 
 Before live host actions:
