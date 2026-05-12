@@ -18969,3 +18969,53 @@ agent/runtime_daemon/src/lib.rs: 36 passed; 0 failed
 agent/runtime_daemon/src/main.rs: 23 passed; 0 failed
 Doc-tests aegisai_runtime_daemon: 0 passed; 0 failed
 ```
+
+### 2026-05-12T02:06:52+00:00 - Project preflight template replacement
+
+- Scope: replaced the misleading project preflight path with the Rust/Python/shell/bench gates for this repository.
+- Command: `bash bench/scripts/project_preflight.sh`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+Project Preflight Checklist:
+
+[ ] Rust format: cargo fmt --all -- --check
+[ ] Rust tests: cargo test --workspace
+[ ] Rust lint: cargo clippy --all-targets --all-features -- -D warnings
+[ ] Tool Call Booster Python tests: python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py'
+[ ] Bench script Python tests: python3 -m unittest discover -s bench/scripts -p 'test_*.py'
+[ ] Shell syntax: for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done
+[ ] Workspace preflight: AEGISAI_VERIFY_LOG=/tmp/aegisai_project_preflight_verify_workspace.md bash bench/scripts/verify_workspace.sh
+[ ] Toolchain preflight: AEGISAI_VERIFY_LOG=/tmp/aegisai_project_preflight_toolchain.md bash bench/scripts/toolchain_preflight.sh
+[ ] Inference preflight: AEGISAI_VERIFY_LOG=/tmp/aegisai_project_preflight_inference.md bash bench/scripts/inference_tail_guard_preflight.sh
+```
+
+- Command: `bash bench/scripts/project_preflight.sh --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+cargo fmt --all -- --check: PASS
+cargo test --workspace: PASS
+cargo clippy --all-targets --all-features -- -D warnings: PASS
+python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py': PASS, 14 tests
+python3 -m unittest discover -s bench/scripts -p 'test_*.py': PASS, 15 tests
+for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done: PASS
+AEGISAI_VERIFY_LOG=/tmp/aegisai_project_preflight_verify_workspace.md bash bench/scripts/verify_workspace.sh: PASS
+AEGISAI_VERIFY_LOG=/tmp/aegisai_project_preflight_toolchain.md bash bench/scripts/toolchain_preflight.sh: PASS
+AEGISAI_VERIFY_LOG=/tmp/aegisai_project_preflight_inference.md bash bench/scripts/inference_tail_guard_preflight.sh: PASS
+```
+
+- Command: `bd preflight`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+Boundary confirmed: upstream bd 1.0.3 still prints Beads' own Go/Nix checklist.
+This output is documented as irrelevant to AegisAI_Runtime readiness.
+```
+
+- Command: `bd lint`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No template warnings found.
+```

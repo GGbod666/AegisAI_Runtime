@@ -709,6 +709,18 @@ block:block_rq_complete
 
 ## 验证和 Benchmarks
 
+项目 preflight 清单：
+
+```bash
+bash bench/scripts/project_preflight.sh
+```
+
+完整执行项目 preflight：
+
+```bash
+bash bench/scripts/project_preflight.sh --check
+```
+
 workspace 总验证：
 
 ```bash
@@ -742,13 +754,21 @@ bash bench/scripts/verify_workspace.sh
 | `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_inference_preflight_20260511.md bash bench/scripts/inference_tail_guard_preflight.sh` | `PASS` | Ollama `0.21.3-rc0` 可用；llama.cpp binary 未找到并按设计跳过 |
 | `bd lint` | `PASS` | 已补齐现有 open issue 的 acceptance criteria |
 
+2026-05-12 项目 preflight 模板替换验证：
+
+| check | result | evidence |
+| --- | --- | --- |
+| `bash bench/scripts/project_preflight.sh --check` | `PASS` | 执行 Rust/Python/shell/bench preflight；重型 bench 日志写入 `/tmp/aegisai_project_preflight_*.md` |
+| `bd lint` | `PASS` | `19` 个 open issue 无 template warning |
+
 本轮测试没有发现当前 suite 的失败用例。审计发现的是边界和盲点：
 
 - Linux source preflight 仍可能是 `processed_events=0`；它证明启动、权限降级和
   partial-probe 安全，不证明真实 Linux ingestion，也不证明性能收益。
 - Inference preflight 不拉取或运行模型；`stress-ng` 只记录可用性，不启动压力负载。
-- `bd doctor` 在 embedded mode 下不支持；`bd preflight` 仍输出 Go/Nix 项目模板，
-  与本 Rust workspace 的真实质量门不一致。
+- `bd doctor` 在 embedded mode 下不支持；上游 `bd preflight` 在 bd `1.0.3`
+  仍输出 Beads 自身 Go/Nix 模板。该输出与本 Rust workspace 无关；本仓库
+  readiness gate 是 `bash bench/scripts/project_preflight.sh`。
 - code-review-graph 显示 `1286` nodes、`10276` edges、风险低，但也标出
   `20` 个 untested hotspot 和 `28` 个 300 行以上的大文件/大类。
 - 图分析未找到 `build_linux_rollback_report`、`CliConfig::parse`、
@@ -821,8 +841,7 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
   `AegisAI_Runtime-cqv.2`、`AegisAI_Runtime-cqv.3`、`AegisAI_Runtime-51c.1`、
   `AegisAI_Runtime-51c.2`、`AegisAI_Runtime-51c.3`、`AegisAI_Runtime-51c.4`、
   `AegisAI_Runtime-7h5.1`、`AegisAI_Runtime-ufp.1`、`AegisAI_Runtime-0ry.1`、
-  `AegisAI_Runtime-yxb`、`AegisAI_Runtime-d42`、`AegisAI_Runtime-fp6`、
-  `AegisAI_Runtime-awq`。
+  `AegisAI_Runtime-yxb`、`AegisAI_Runtime-d42`、`AegisAI_Runtime-fp6`。
 
 源码和设计层面的限制：
 
@@ -836,10 +855,11 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 - warmup executor 默认仍是 deferred audit；只有显式 CLI warmup command 才会产生受超时约束的真实 side effect，且 rollback 是 no-op audit。
 - 配置加载固定读取 `configs/*/*.example.toml`，没有生产配置 profile、动态 reload 或完整 TOML
   schema 校验。
-- Linux source preflight smoke 当前可在 `processed_events=0` 时通过；需要新增受控
-  procfs ingestion smoke 来证明真实事件流。
-- `bd preflight` 当前不代表本项目质量门；应以 Cargo、Python unittest、shell 语法和
-  bench preflight 组合为准，直到 `AegisAI_Runtime-awq` 修复。
+- Linux source direct preflight 仍可能在 `processed_events=0` 时通过；受控 procfs
+  ingestion proof 使用 `bash bench/scripts/linux_source_ingestion_smoke.sh`。
+- 项目 readiness gate 已由 `bash bench/scripts/project_preflight.sh` 统一列出
+  Cargo、Python unittest、shell 语法和 bench preflight 组合。上游
+  `bd preflight` 的 Go/Nix 输出只适用于 Beads 自身模板，不代表本仓库质量门。
 - 当前热点大文件仍包括 `agent/runtime_daemon/src/source.rs`、
   `agent/actuator/src/backend.rs`、`bench/scripts/inference_tail_guard_ollama_smoke.sh`、
   `agent/actuator/src/lib.rs`、`agent/runtime_daemon/src/main.rs`、

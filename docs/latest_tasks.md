@@ -5,8 +5,8 @@ _Regenerated: 2026-05-12_
 This is the current priority plan, not a historical gap inventory. It is based
 on the latest repository state: all local Rust/Python/shell checks pass, the
 controlled Linux source ingestion smoke records nonzero procfs-derived daemon
-events, `bd preflight` still shows a non-project Go/Nix checklist, and
-code-review-graph still marks live-action and source/report paths as
+events, the project preflight path lists the Rust/Python/shell readiness gates,
+and code-review-graph still marks live-action and source/report paths as
 high-degree hotspots. `bd` remains the source of truth for status.
 
 ## Priority Rule
@@ -52,7 +52,9 @@ Open evidence gaps:
 - Direct Linux source preflight is still a startup/partial-probe check; use
   `bench/scripts/linux_source_ingestion_smoke.sh` for ingestion proof.
 - Inference preflight does not run a model or start stress load.
-- `bd preflight` does not reflect this Rust workspace.
+- Upstream `bd preflight` in bd `1.0.3` still prints Beads' own Go/Nix template;
+  this repository's active readiness path is
+  `bash bench/scripts/project_preflight.sh`.
 - Graph analysis reports `20` untested hotspots and `16` files/classes with at
   least `500` lines.
 
@@ -89,12 +91,14 @@ trusted or whether live-control boundaries are safe.
 ### 2. Replace Project Preflight Template
 
 - Issue: `AegisAI_Runtime-awq`
+- Status: `DONE` on 2026-05-12.
 - Why now: `bd preflight` currently prints Go/Nix checks, so a future handoff can
   report the wrong readiness gates even when Cargo/Python/shell checks pass.
 - Scope:
-  - replace or override the generic preflight checklist for this repository
-  - list the actual Rust/Python/shell/bench gates in the visible project path
-  - keep `bd lint` clean
+  - added `bench/scripts/project_preflight.sh` as the visible project preflight
+    path
+  - listed actual Rust/Python/shell/bench gates in the project path
+  - kept `bd lint` clean
 - Acceptance:
   - active readiness instructions include `cargo fmt --all -- --check`
   - active readiness instructions include `cargo test --workspace`
@@ -102,10 +106,15 @@ trusted or whether live-control boundaries are safe.
     `cargo clippy --all-targets --all-features -- -D warnings`
   - active readiness instructions include both Python unittest discovery commands
   - active readiness instructions include shell syntax and bench preflight gates
-  - Go/Nix commands are removed or explicitly marked irrelevant upstream output
+  - upstream `bd preflight` Go/Nix commands are explicitly marked irrelevant to
+    this repository
 - Verification:
-  - `bd preflight`
-  - `bd lint`
+  - `bash bench/scripts/project_preflight.sh`: `PASS`
+  - `bash bench/scripts/project_preflight.sh --check`: `PASS`
+  - `bash -n bench/scripts/project_preflight.sh`: `PASS`
+  - `bd preflight`: boundary confirmed; output still shows upstream Beads Go/Nix
+    template and is explicitly marked irrelevant
+  - `bd lint`: `PASS`
 
 ### 3. Normalize Generic Safety Caps
 

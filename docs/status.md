@@ -79,6 +79,15 @@ Latest audit refresh on 2026-05-11 also passed:
 - `bd lint`
 - `bash bench/scripts/linux_source_ingestion_smoke.sh`
 
+Project preflight template replacement on 2026-05-12 also passed:
+
+- `bash bench/scripts/project_preflight.sh`
+- `bash bench/scripts/project_preflight.sh --check`
+- `bash -n bench/scripts/project_preflight.sh`
+- `bd preflight` boundary check: upstream Go/Nix output remains visible and is
+  documented as irrelevant to this Rust workspace
+- `bd lint`
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -89,8 +98,11 @@ Audit caveats:
   `SKIPPED` with exit code `77`.
 - Inference preflight intentionally does not run `ollama run`, pull a model, or
   start `stress-ng` load.
-- `bd doctor` is unsupported in embedded mode, and `bd preflight` currently
-  prints an irrelevant Go/Nix checklist until `AegisAI_Runtime-awq` is fixed.
+- `bd doctor` is unsupported in embedded mode. Upstream `bd preflight` in
+  bd `1.0.3` still prints Beads' own Go/Nix template; that output is explicitly
+  irrelevant to this Rust workspace. Use
+  `bash bench/scripts/project_preflight.sh` for the active project readiness
+  checklist and `bash bench/scripts/project_preflight.sh --check` to execute it.
 
 ## Artifact Index
 
@@ -133,8 +145,6 @@ Future helper conclusions should use these buckets: `helper unavailable`,
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-awq` — replace the generic Go/Nix `bd preflight` checklist
-  with this Rust workspace's real quality gates.
 - `AegisAI_Runtime-yxb` — directly test the Linux rollback report builder
   hotspot.
 - `AegisAI_Runtime-d42` — expand CLI parser edge-case tests for live and
@@ -158,6 +168,13 @@ Future helper conclusions should use these buckets: `helper unavailable`,
   daemon/helper packaging boundaries.
 - `AegisAI_Runtime-0ry` / `AegisAI_Runtime-0ry.1` — split deferred dashboard,
   GPU, and adaptive policy extensions into evidence-gated future work.
+
+Recently closed:
+
+- `AegisAI_Runtime-awq` — added `bench/scripts/project_preflight.sh` as the
+  project readiness path for Cargo, Python unittest, shell syntax, workspace,
+  toolchain, and inference preflight gates; marked upstream `bd preflight`
+  Go/Nix output irrelevant to this repository.
 
 Use:
 
