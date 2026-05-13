@@ -54,3 +54,5 @@
 # - github.repo
 
 export.auto: false
+
+sync.remote: "file:///home/gg/AegisAI_Runtime/.beads/backup/dolt-remote/AegisAI_Runtime"
