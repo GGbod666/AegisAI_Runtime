@@ -43,36 +43,36 @@ queue. Historical evidence belongs in `docs/status.md`,
   - `bd lint`
   - `git diff --check`
 
-### 3. Split Deferred Extensions Into Evidence-Gated Work
-
-- Issue: `AegisAI_Runtime-0ry.1`
-- Priority: `P4`
-- Why now: dashboard, GPU coordination, and online adaptive policy should not
-  remain one vague future bucket.
-- Scope:
-  - create separate future work items for dashboard, GPU coordination, and
-    online adaptive policy
-  - state prerequisites, non-goals, safety evidence, benchmark evidence, and
-    verification gate for each item
-  - avoid runtime code changes
-- Verify:
-  - `bd lint`
-  - docs-only review
-  - `git diff --check`
-
-### 4. Close Deferred Extension Parent
+### 3. Close Deferred Extension Parent
 
 - Issue: `AegisAI_Runtime-0ry`
 - Priority: `P4`
-- Blocked by: `AegisAI_Runtime-0ry.1`
 - Why now: close only after the extension planning bucket is split.
 - Scope:
   - confirm dashboard, GPU coordination, and online adaptive policy are separate
-    deferred work items
+    deferred work items:
+    `AegisAI_Runtime-0ry.2`, `AegisAI_Runtime-0ry.3`, and
+    `AegisAI_Runtime-0ry.4`
+  - confirm `AegisAI_Runtime-0ry.1` is closed
   - keep them behind production packaging, helper portability, and safety gates
 - Verify:
   - `bd show AegisAI_Runtime-0ry`
   - `bd ready`
+
+## Blocked Deferred Extensions
+
+These are intentionally blocked behind `AegisAI_Runtime-ufp` and should not
+enter active implementation until production packaging is complete.
+
+- `AegisAI_Runtime-0ry.2` — observability dashboard. Prerequisites,
+  non-goals, safety evidence, benchmark evidence, and verification gate are
+  recorded in the issue.
+- `AegisAI_Runtime-0ry.3` — GPU coordination. Prerequisites, non-goals, safety
+  evidence, benchmark evidence, and verification gate are recorded in the
+  issue.
+- `AegisAI_Runtime-0ry.4` — online adaptive policy. Prerequisites, non-goals,
+  safety evidence, benchmark evidence, and verification gate are recorded in
+  the issue.
 
 ## Ordering Rules
 

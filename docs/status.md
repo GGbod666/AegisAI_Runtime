@@ -371,8 +371,8 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after high-degree runtime hotspot coverage audit: `75` total
-issues, `4` open, `0` in progress, `1` blocked, `71` closed.
+Current `bd` state after deferred extension split planning: `78` total issues,
+`6` open, `0` in progress, `3` blocked, `72` closed.
 `docs/latest_tasks.md` now contains only the active prioritized todo queue;
 historical evidence remains in this file, `docs/acceptance_ledger.md`, and
 `docs/verification_log.md`.
@@ -386,12 +386,18 @@ historical evidence remains in this file, `docs/acceptance_ledger.md`, and
   prerequisite behavior, rollback, and uninstall rules defined. The remaining
   open work is installer/service implementation plus dry-run or VM smoke
   verification.
-- `AegisAI_Runtime-0ry.1` — split deferred dashboard, GPU, and adaptive policy
-  extensions into evidence-gated future work. This is planning-only work; no
-  runtime behavior changes should be made.
 - `AegisAI_Runtime-0ry` — close the deferred extension parent after
-  `AegisAI_Runtime-0ry.1` completes. The Beads dependency now blocks the parent
-  until the child planning task is done.
+  `AegisAI_Runtime-0ry.1` completed the split. `bd ready` now lists this
+  parent for closure validation.
+- `AegisAI_Runtime-0ry.2` — deferred observability dashboard, blocked behind
+  production packaging. The issue records prerequisites, non-goals, read-only
+  safety evidence, benchmark evidence, and a verification gate.
+- `AegisAI_Runtime-0ry.3` — deferred GPU coordination, blocked behind
+  production packaging. The issue records prerequisites, non-goals, device and
+  privilege safety evidence, benchmark evidence, and a verification gate.
+- `AegisAI_Runtime-0ry.4` — deferred online adaptive policy, blocked behind
+  production packaging. The issue records prerequisites, non-goals, shadow-mode
+  safety evidence, benchmark evidence, and a verification gate.
 
 Recently closed:
 

@@ -86,8 +86,9 @@ production config profile parents have been closed, and Beads Dolt sync has
 been configured. The remaining blockers are:
 
 - production packaging/service implementation: `AegisAI_Runtime-ufp`
-- deferred runtime extensions: `AegisAI_Runtime-0ry` /
-  `AegisAI_Runtime-0ry.1`
+- production-packaging-blocked deferred runtime extensions:
+  `AegisAI_Runtime-0ry.2` (dashboard), `AegisAI_Runtime-0ry.3` (GPU
+  coordination), and `AegisAI_Runtime-0ry.4` (online adaptive policy)
 
 See `docs/status.md` for the current issue index and `bd ready` for executable
 work.
