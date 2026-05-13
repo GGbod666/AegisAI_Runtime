@@ -320,8 +320,10 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after this audit sync: `74` total issues, `6` open, `0`
-in progress, `68` closed.
+Current `bd` state after the latest task-list cleanup: `75` total issues, `6`
+open, `0` in progress, `1` blocked, `69` closed. `docs/latest_tasks.md` now
+contains only the active prioritized todo queue; historical evidence remains in
+this file, `docs/acceptance_ledger.md`, and `docs/verification_log.md`.
 
 - `AegisAI_Runtime-3gz` — revalidate helper-backed signals on the current Linux
   host. This is the only fresh audit blocker for helper-backed
@@ -338,12 +340,18 @@ in progress, `68` closed.
   prerequisite behavior, rollback, and uninstall rules defined. The remaining
   open work is installer/service implementation plus dry-run or VM smoke
   verification.
-- `AegisAI_Runtime-0ry` / `AegisAI_Runtime-0ry.1` — split deferred dashboard,
-  GPU, and adaptive policy extensions into evidence-gated future work. This is
-  planning-only work; no runtime behavior changes should be made.
+- `AegisAI_Runtime-0ry.1` — split deferred dashboard, GPU, and adaptive policy
+  extensions into evidence-gated future work. This is planning-only work; no
+  runtime behavior changes should be made.
+- `AegisAI_Runtime-0ry` — close the deferred extension parent after
+  `AegisAI_Runtime-0ry.1` completes. The Beads dependency now blocks the parent
+  until the child planning task is done.
 
 Recently closed:
 
+- `AegisAI_Runtime-mqr` — simplified `docs/latest_tasks.md` to the active todo
+  queue and added the missing Beads dependency from `AegisAI_Runtime-0ry` to
+  `AegisAI_Runtime-0ry.1`.
 - `AegisAI_Runtime-cqv` — closed the production config profile parent after
   `AegisAI_Runtime-cqv.1`, `AegisAI_Runtime-cqv.2`, and
   `AegisAI_Runtime-cqv.3` completed selector, strict schema validation, and
