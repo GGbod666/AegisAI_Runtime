@@ -19774,3 +19774,64 @@ No output.
 
 - Overall result: `PASS`; `docs/latest_tasks.md` now omits historical evidence
   and closed issue summaries.
+
+### 2026-05-13T12:35:32Z - Current-host helper-backed signal revalidation
+
+- Scope: completed `AegisAI_Runtime-3gz` by revalidating helper-backed
+  `offcpu_time` and `io_latency` on the current `gg-vm` host. The daemon stayed
+  rootless under `linux-skeleton`; only the helper binary used the restored
+  privileged boundary through an ignored artifact-local `sudo -n` wrapper.
+- Working directory: `/home/gg/AegisAI_Runtime`
+
+- Command: `bash bench/scripts/helper_portability_smoke.sh`
+- Exit status: `1`
+```text
+FAIL: helper compatibility preflight reported helper unavailable.
+helper_portability_smoke=helper unavailable failure_reason=helper\ compatibility\ preflight\ reported\ helper\ unavailable. artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123334Z
+```
+- Artifact:
+  `/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123334Z/helper_portability.md`
+- Interpretation: the default target/debug helper path still cannot attach the
+  bpftrace backend without the approved helper privilege path. The artifact
+  records final bucket `helper unavailable`.
+
+- Command: `sudo target/debug/aegisai-ebpf-helper compatibility --offcpu --io`
+- Exit status: `0`
+```text
+helper compatibility: status=compatible; kernel=6.8.0-111-generic; bpftrace=bpftrace v0.20.2; tracefs=/sys/kernel/tracing; requested_probes=tracepoint:block:block_rq_complete,tracepoint:block:block_rq_issue,tracepoint:sched:sched_switch; required_fields=tracepoint:sched:sched_switch:prev_state,tracepoint:sched:sched_switch:prev_pid,tracepoint:sched:sched_switch:next_pid,tracepoint:sched:sched_switch:next_comm,tracepoint:block:block_rq_issue:dev,tracepoint:block:block_rq_issue:sector,tracepoint:block:block_rq_complete:dev,tracepoint:block:block_rq_complete:sector
+```
+
+- Command: `AEGISAI_EBPF_HELPER=/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/current_host_privileged_wrapper/aegisai-ebpf-helper bash bench/scripts/helper_portability_smoke.sh`
+- Exit status: `0`
+```text
+helper_portability_smoke=validated signal offcpu_raw=615 io_raw=9782 offcpu_normalized=8 io_normalized=8 artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123531Z
+```
+- Artifact:
+  `/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123531Z/helper_portability.md`
+- Result: `PASS`; final bucket `validated signal`. Helper compatibility was
+  `compatible`, raw helper streams emitted `615` `offcpu_time` events and
+  `9782` `io_latency` events, and rootless daemon runs normalized `8` events
+  for each signal.
+
+- Command: `git check-ignore -v .cache/aegisai/helper_portability/current_host_privileged_wrapper/aegisai-ebpf-helper .cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123531Z/helper_portability.md`
+- Exit status: `0`
+```text
+.gitignore:29:.cache/	.cache/aegisai/helper_portability/current_host_privileged_wrapper/aegisai-ebpf-helper
+.gitignore:29:.cache/	.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123531Z/helper_portability.md
+```
+
+- Command: `bd lint`
+- Exit status: `0`
+```text
+No template warnings found.
+```
+
+- Command: `git diff --check`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Overall result: `PASS`. The current host can provide helper-backed signals
+  when the helper runs through the restored privileged boundary. The remaining
+  durable packaging work is tracked separately as `AegisAI_Runtime-ufp`.

@@ -252,6 +252,24 @@ System audit refresh on 2026-05-13 also passed its non-live gates:
   `BpfTracePipe::start`, `LinuxProbeDriver::poll_events`, and
   `RuntimeOrchestrator::process_event`; tracked as `AegisAI_Runtime-76k`.
 
+Current-host helper-backed signal revalidation on 2026-05-13 passed:
+
+- First default-helper reproduction still failed:
+  `bash bench/scripts/helper_portability_smoke.sh` exited `1` with final
+  bucket `helper unavailable` at
+  `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123334Z/helper_portability.md`.
+- The approved helper privilege path was restored for validation by setting
+  `AEGISAI_EBPF_HELPER` to an ignored artifact-local wrapper that executes only
+  `target/debug/aegisai-ebpf-helper` via `sudo -n`; the daemon remained
+  rootless and used `linux-skeleton`.
+- `AEGISAI_EBPF_HELPER=/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/current_host_privileged_wrapper/aegisai-ebpf-helper bash bench/scripts/helper_portability_smoke.sh`
+  passed on `gg-vm` kernel `6.8.0-111-generic`; helper compatibility reported
+  `compatible`, raw helper streams emitted `615` `offcpu_time` events and
+  `9782` `io_latency` events, and rootless daemon runs normalized `8` events
+  for each signal.
+- Artifact:
+  `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123531Z/helper_portability.md`.
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -263,9 +281,11 @@ Audit caveats:
   `processed_events=4` and `run_queue_delay` observations. Hosts that cannot
   expose readable procfs counters or positive controlled-worker deltas return
   `SKIPPED` with exit code `77`.
-- The 2026-05-13 helper portability rerun on `gg-vm` kernel
-  `6.8.0-111-generic` failed as `helper unavailable`; do not cite this audit
-  run as helper-backed `offcpu_time`/`io_latency` validation.
+- The 2026-05-13 default-helper portability reruns on `gg-vm` kernel
+  `6.8.0-111-generic` failed as `helper unavailable` when the helper ran
+  without the restored privilege path. Cite the current-host validation only
+  when `AEGISAI_EBPF_HELPER` points at the privileged helper boundary; packaging
+  still needs to implement a durable approved helper path.
 - Inference preflight intentionally does not run `ollama run`, pull a model, or
   start `stress-ng` load.
 - `bd doctor` is unsupported in embedded mode. Upstream `bd preflight` in
@@ -307,7 +327,9 @@ Helper validation:
 
 | signal | verification entry | artifact root | result |
 | --- | --- | --- | --- |
-| `offcpu_time` + `io_latency` current-host revalidation attempt, `6.8.0-111-generic` | `2026-05-13T07:09:47Z - Helper portability smoke during system audit` | `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T070947Z` | `FAIL`: final bucket `helper unavailable`; target/debug helper reported bpftrace eBPF backend unavailable |
+| `offcpu_time` + `io_latency` current-host revalidation, `6.8.0-111-generic` | `2026-05-13T12:35:32Z - Helper Portability Smoke` | `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123531Z` | `validated signal`; helper compatibility `compatible`; raw streams emitted `615` off-CPU and `9782` I/O events; daemon recorded `8` normalized events for each signal |
+| `offcpu_time` + `io_latency` default-helper current-host reproduction, `6.8.0-111-generic` | `2026-05-13T12:33:34Z - Helper Portability Smoke` | `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123334Z` | `FAIL`: final bucket `helper unavailable`; target/debug helper reported bpftrace eBPF backend unavailable without the restored helper privilege path |
+| `offcpu_time` + `io_latency` earlier current-host revalidation attempt, `6.8.0-111-generic` | `2026-05-13T07:09:47Z - Helper portability smoke during system audit` | `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T070947Z` | `FAIL`: final bucket `helper unavailable`; target/debug helper reported bpftrace eBPF backend unavailable |
 | `offcpu_time` + `io_latency` portability matrix, `6.8.0-111-generic` | `2026-05-12T14:42:07Z - Two-kernel helper portability matrix` | `.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z` | `validated signal`; helper compatibility `compatible`; raw streams emitted `624` off-CPU and `12209` I/O events; daemon recorded `8` normalized events for each signal |
 | `offcpu_time`, `6.8.0-110-generic` / `Ubuntu 24.04.4 LTS` | `2026-05-10T03:37:57Z - Helper-backed offcpu_time validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; raw stream attached and emitted `348` events; daemon recorded `8` normalized events |
 | `io_latency`, `6.8.0-110-generic` / `Ubuntu 24.04.4 LTS` | `2026-05-10T03:48:11Z - Helper-backed io_latency validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; block tracepoints exposed required fields; raw stream emitted `4005` events; daemon recorded `8` normalized events |
@@ -320,15 +342,12 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after the latest task-list cleanup: `75` total issues, `6`
-open, `0` in progress, `1` blocked, `69` closed. `docs/latest_tasks.md` now
-contains only the active prioritized todo queue; historical evidence remains in
-this file, `docs/acceptance_ledger.md`, and `docs/verification_log.md`.
+Current `bd` state after current-host helper-backed signal revalidation: `75`
+total issues, `5` open, `0` in progress, `1` blocked, `70` closed.
+`docs/latest_tasks.md` now contains only the active prioritized todo queue;
+historical evidence remains in this file, `docs/acceptance_ledger.md`, and
+`docs/verification_log.md`.
 
-- `AegisAI_Runtime-3gz` — revalidate helper-backed signals on the current Linux
-  host. This is the only fresh audit blocker for helper-backed
-  `offcpu_time`/`io_latency`: the current run classified as
-  `helper unavailable`.
 - `AegisAI_Runtime-dxh` — normalize explicit `--help` behavior for
   `aegisai-runtime-daemon`; usage currently prints correctly but exits `1`.
 - `AegisAI_Runtime-76k` — audit direct coverage and decomposition decisions for
@@ -349,6 +368,14 @@ this file, `docs/acceptance_ledger.md`, and `docs/verification_log.md`.
 
 Recently closed:
 
+- `AegisAI_Runtime-3gz` — revalidated helper-backed `offcpu_time` and
+  `io_latency` on current `gg-vm` kernel `6.8.0-111-generic` after restoring
+  the helper privilege path through an ignored artifact-local wrapper. The
+  passing artifact is
+  `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123531Z/helper_portability.md`;
+  final bucket `validated signal`, raw streams `offcpu_raw=615` and
+  `io_raw=9782`, daemon-normalized events `8` for each signal. The default
+  unprivileged helper reproduction remains documented as `helper unavailable`.
 - `AegisAI_Runtime-mqr` — simplified `docs/latest_tasks.md` to the active todo
   queue and added the missing Beads dependency from `AegisAI_Runtime-0ry` to
   `AegisAI_Runtime-0ry.1`.

@@ -8,24 +8,7 @@ queue. Historical evidence belongs in `docs/status.md`,
 
 ## Queue
 
-### 1. Revalidate Helper-Backed Signals On Current Host
-
-- Issue: `AegisAI_Runtime-3gz`
-- Priority: `P2`
-- Why now: the latest audit rerun on `gg-vm` kernel `6.8.0-111-generic`
-  failed with final bucket `helper unavailable`. Current-host helper-backed
-  `offcpu_time` and `io_latency` are not freshly validated.
-- Scope:
-  - restore the approved helper/bpftrace privilege path, or document why this
-    host intentionally cannot provide helper-backed signals
-  - rerun `bash bench/scripts/helper_portability_smoke.sh`
-  - update the status/verification docs with the new artifact path and verdict
-- Verify:
-  - `bash bench/scripts/helper_portability_smoke.sh`
-  - `bd lint`
-  - `git diff --check`
-
-### 2. Normalize Runtime Daemon Help Exit Behavior
+### 1. Normalize Runtime Daemon Help Exit Behavior
 
 - Issue: `AegisAI_Runtime-dxh`
 - Priority: `P3`
@@ -39,7 +22,7 @@ queue. Historical evidence belongs in `docs/status.md`,
   - `cargo test -p aegisai-runtime-daemon`
   - `git diff --check`
 
-### 3. Audit High-Degree Runtime Hotspot Coverage
+### 2. Audit High-Degree Runtime Hotspot Coverage
 
 - Issue: `AegisAI_Runtime-76k`
 - Priority: `P3`
@@ -57,7 +40,7 @@ queue. Historical evidence belongs in `docs/status.md`,
   - `cargo test --workspace` or a narrower justified command
   - `git diff --check`
 
-### 4. Implement Daemon/Helper Packaging
+### 3. Implement Daemon/Helper Packaging
 
 - Issue: `AegisAI_Runtime-ufp`
 - Priority: `P4`
@@ -78,7 +61,7 @@ queue. Historical evidence belongs in `docs/status.md`,
   - `bd lint`
   - `git diff --check`
 
-### 5. Split Deferred Extensions Into Evidence-Gated Work
+### 4. Split Deferred Extensions Into Evidence-Gated Work
 
 - Issue: `AegisAI_Runtime-0ry.1`
 - Priority: `P4`
@@ -95,7 +78,7 @@ queue. Historical evidence belongs in `docs/status.md`,
   - docs-only review
   - `git diff --check`
 
-### 6. Close Deferred Extension Parent
+### 5. Close Deferred Extension Parent
 
 - Issue: `AegisAI_Runtime-0ry`
 - Priority: `P4`
