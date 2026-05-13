@@ -205,8 +205,11 @@ The smoke writes a temporary `ollama`-named Python workload, runs raw helper
 streams for `offcpu_time` and `io_latency`, then runs rootless daemon slices for
 each signal with `timeout` guards. It records kernel, distro, bpftrace version,
 tracefs root, helper compatibility inventory, raw helper event counts, daemon
-normalized event counts, artifact paths, and the final bucket. If the helper is
-not installed on `PATH`, set `AEGISAI_EBPF_HELPER=/path/to/aegisai-ebpf-helper`.
+normalized event counts, artifact paths, and the final bucket. Compatibility
+failures are authoritative: `helper unavailable` and `tracepoint incompatible`
+write the matching final bucket, record `Overall result: FAIL`, and exit
+nonzero before event-count bucketing. If the helper is not installed on `PATH`,
+set `AEGISAI_EBPF_HELPER=/path/to/aegisai-ebpf-helper`.
 
 ## Actuator State Capture Check
 

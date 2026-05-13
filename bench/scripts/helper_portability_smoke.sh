@@ -7,6 +7,7 @@ RUN_ID="${AEGISAI_HELPER_PORTABILITY_RUN_ID:-helper_portability_$(hostname)_$(un
 ARTIFACT_DIR="${AEGISAI_HELPER_PORTABILITY_ARTIFACT_DIR:-${REPO_ROOT}/.cache/aegisai/helper_portability/${RUN_ID}}"
 LOG_PATH="${AEGISAI_VERIFY_LOG:-${ARTIFACT_DIR}/helper_portability.md}"
 HELPER_PATH="${AEGISAI_EBPF_HELPER:-${REPO_ROOT}/target/debug/aegisai-ebpf-helper}"
+DAEMON_PATH="${AEGISAI_RUNTIME_DAEMON:-${REPO_ROOT}/target/debug/aegisai-runtime-daemon}"
 BPFTRACE_PATH="${AEGISAI_BPFTRACE:-/usr/bin/bpftrace}"
 RAW_OFFCPU_SECONDS="${AEGISAI_HELPER_PORTABILITY_RAW_OFFCPU_SECONDS:-8}"
 RAW_IO_SECONDS="${AEGISAI_HELPER_PORTABILITY_RAW_IO_SECONDS:-10}"
@@ -44,6 +45,20 @@ finish_fail() {
   exit 1
 }
 
+finish_bucket_fail() {
+  local bucket="$1"
+  local reason="$2"
+
+  append "- Final bucket: \`${bucket}\`"
+  append "- Status: \`FAIL\`"
+  append "- Failure reason: ${reason}"
+  append "- Overall result: \`FAIL\`"
+  printf 'helper_portability_smoke=%s failure_reason=%q artifact_dir=%s\n' \
+    "${bucket}" "${reason}" "${ARTIFACT_DIR}"
+  printf 'FAIL: %s\n' "${reason}" >&2
+  exit 1
+}
+
 cleanup() {
   local pid
 
@@ -66,6 +81,60 @@ format_command() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || finish_fail "required command \`$1\` is not available."
+}
+
+describe_bpftrace() {
+  local version
+
+  if [[ ! -x "${BPFTRACE_PATH}" ]]; then
+    printf 'unavailable'
+    return
+  fi
+
+  version="$("${BPFTRACE_PATH}" --version 2>/dev/null | head -1 || true)"
+  printf '%s' "${version:-unknown}"
+}
+
+read_compatibility_status() {
+  local file="$1"
+  local line=""
+  local body
+  local status=""
+
+  line="$(grep '^[[:space:]]*helper compatibility: ' "${file}" | tail -1 || true)"
+  if [[ -z "${line}" ]]; then
+    return 1
+  fi
+
+  line="${line#"${line%%[![:space:]]*}"}"
+  body="${line#helper compatibility: }"
+  if [[ "${body}" == status=* ]]; then
+    status="${body#status=}"
+  elif [[ "${body}" == *"; status="* ]]; then
+    status="${body#*; status=}"
+  fi
+  status="${status%%;*}"
+
+  if [[ -z "${status}" ]]; then
+    return 1
+  fi
+  printf '%s\n' "${status}"
+}
+
+require_compatible_status() {
+  local status="$1"
+  local context="$2"
+
+  case "${status}" in
+    compatible)
+      ;;
+    "helper unavailable" | "tracepoint incompatible")
+      finish_bucket_fail "${status}" "${context} reported ${status}."
+      ;;
+    *)
+      finish_fail "${context} reported unsupported helper compatibility status: ${status}"
+      ;;
+  esac
 }
 
 positive_integer() {
@@ -232,6 +301,11 @@ run_daemon_signal() {
     append_block "${work_dir}/daemon.stderr"
   fi
 
+  local daemon_compatibility_status
+  daemon_compatibility_status="$(read_compatibility_status "${work_dir}/daemon.stdout")" ||
+    finish_fail "daemon ${signal} did not produce helper compatibility diagnostics."
+  require_compatible_status "${daemon_compatibility_status}" "daemon ${signal} source diagnostics"
+
   signal_events_result="${signal_events:-0}"
 }
 
@@ -250,11 +324,11 @@ fi
 if [[ ! -x "${HELPER_PATH}" ]]; then
   finish_fail "helper path is not executable: ${HELPER_PATH}"
 fi
-if [[ ! -x "${REPO_ROOT}/target/debug/aegisai-runtime-daemon" ]]; then
+if [[ ! -x "${DAEMON_PATH}" ]]; then
   finish_fail "runtime daemon binary is missing; run cargo build -p aegisai-runtime-daemon."
 fi
 
-install -m 0755 "${REPO_ROOT}/target/debug/aegisai-runtime-daemon" "${ARTIFACT_DIR}/bin/aegisai-runtime-daemon" ||
+install -m 0755 "${DAEMON_PATH}" "${ARTIFACT_DIR}/bin/aegisai-runtime-daemon" ||
   finish_fail "failed to copy runtime daemon."
 ln -sf /usr/bin/python3 "${ARTIFACT_DIR}/bin/ollama" ||
   finish_fail "failed to create ollama workload shim."
@@ -271,14 +345,18 @@ else
   distro="$(. /etc/os-release 2>/dev/null && printf '%s' "${PRETTY_NAME:-unknown}")"
 fi
 append "- Distro: \`${distro}\`"
-append "- bpftrace: \`$("${BPFTRACE_PATH}" --version 2>/dev/null | head -1 || printf 'unknown')\`"
+append "- bpftrace: \`$(describe_bpftrace)\`"
 append "- tracefs root: \`$(findmnt -no TARGET -T /sys/kernel/tracing 2>/dev/null || printf 'unavailable')\`"
 append "- Helper path: \`${HELPER_PATH}\`"
+append "- Runtime daemon path: \`${DAEMON_PATH}\`"
 
 PATH="${ARTIFACT_DIR}/bin:${PATH}" AEGISAI_BPFTRACE="${BPFTRACE_PATH}" "${HELPER_PATH}" compatibility --offcpu --io >"${ARTIFACT_DIR}/logs/helper_compatibility.stdout" 2>"${ARTIFACT_DIR}/logs/helper_compatibility.stderr" ||
   finish_fail "helper compatibility command failed."
 append "- Helper compatibility command: \`$(format_command "${HELPER_PATH}" compatibility --offcpu --io)\`"
 append_block "${ARTIFACT_DIR}/logs/helper_compatibility.stdout"
+helper_compatibility_status="$(read_compatibility_status "${ARTIFACT_DIR}/logs/helper_compatibility.stdout")" ||
+  finish_fail "helper compatibility command did not produce compatibility diagnostics."
+require_compatible_status "${helper_compatibility_status}" "helper compatibility preflight"
 
 run_raw_stream offcpu_time "${RAW_OFFCPU_SECONDS}"
 offcpu_raw="${raw_count_result}"

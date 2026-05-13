@@ -36,7 +36,7 @@ current planning order.
 - `python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py'`:
   `PASS`, `14` tests
 - `python3 -m unittest discover -s bench/scripts -p 'test_*.py'`: `PASS`,
-  `17` tests
+  `21` tests
 - `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`: `PASS`
 - `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_verify_workspace_20260511.md bash bench/scripts/verify_workspace.sh`:
   `PASS`; mock daemon `processed_events=3`, Linux preflight `processed_events=0`
@@ -56,11 +56,6 @@ Open evidence gaps:
 
 - Direct Linux source preflight is still a startup/partial-probe check; use
   `bench/scripts/linux_source_ingestion_smoke.sh` for ingestion proof.
-- Strict P2 audit on 2026-05-13 reopened helper portability smoke bucket
-  evidence: `AegisAI_Runtime-vsl` tracks
-  `bench/scripts/helper_portability_smoke.sh` returning `PASS` and
-  `no workload events` when helper diagnostics already say
-  `helper unavailable`.
 - Inference preflight does not run a model or start stress load.
 - Upstream `bd preflight` in bd `1.0.3` still prints Beads' own Go/Nix template;
   this repository's active readiness path is
@@ -283,12 +278,13 @@ cross-host validation, and unattended operation.
 
 - Issue: `AegisAI_Runtime-51c.2`
 - Parent: `AegisAI_Runtime-51c`
-- Status: `AUDIT BLOCKED` on 2026-05-13 by `AegisAI_Runtime-vsl`.
+- Status: `DONE` on 2026-05-13; audit blocker `AegisAI_Runtime-vsl` fixed.
 - Why after compatibility classification: matrix results are useful only if
   each host lands in a precise bucket.
 - Scope:
-  - recorded existing `gg-vm` kernel `6.8.0-110-generic` helper evidence from
-    `2026-05-10T03:37:57Z` and `2026-05-10T03:48:11Z`
+  - recorded existing `gg-vm` kernel `6.8.0-110-generic` / distro
+    `Ubuntu 24.04.4 LTS` helper evidence from `2026-05-10T03:37:57Z` and
+    `2026-05-10T03:48:11Z`
   - added `bench/scripts/helper_portability_smoke.sh` for bounded current-host
     helper matrix evidence
   - ran helper readiness on current `gg-vm` kernel `6.8.0-111-generic`
@@ -302,9 +298,9 @@ cross-host validation, and unattended operation.
   - each profile records tracefs root: `PASS`
   - each profile records tracepoint field inventory: `PASS`
   - each profile records raw and normalized event counts: `PASS`
-  - each profile ends in exactly one bucket: `FAIL` under strict audit; the
-    positive matrix entries are `validated signal`, but the smoke script can
-    collapse `helper unavailable` into `no workload events`
+  - each profile ends in exactly one bucket: `PASS`
+  - helper unavailable and tracepoint incompatible cannot collapse into
+    `no workload events`: `PASS`
 - Verification:
   - `cargo test -p aegisai-runtime-daemon source::tests`: `PASS`; `40` source
     tests
@@ -314,11 +310,13 @@ cross-host validation, and unattended operation.
     `PASS`; raw `offcpu_time=624`, raw `io_latency=12209`, normalized
     `offcpu_time=8`, normalized `io_latency=8`, bucket `validated signal`
   - intentional durable entry in `docs/verification_log.md`
-  - strict audit negative reproduction:
-    `AEGISAI_BPFTRACE=/tmp/aegisai-missing-bpftrace bash bench/scripts/helper_portability_smoke.sh`
-    returned exit `0` with helper diagnostics `status=helper unavailable`,
-    final bucket `no workload events`, and `Overall result: PASS`; this blocks
-    the task from remaining accepted until `AegisAI_Runtime-vsl` is fixed
+  - `python3 -m unittest bench.scripts.test_helper_portability_smoke`: `PASS`;
+    `4` tests covering helper unavailable, tracepoint incompatible,
+    compatible/no-workload, and daemon compatibility failure buckets
+  - strict audit negative reproduction now exits `1`:
+    `AEGISAI_BPFTRACE=/tmp/aegisai-missing-bpftrace bash bench/scripts/helper_portability_smoke.sh`;
+    artifact `/tmp/aegisai_audit_helper_unavailable_fixed_final2/helper_portability.md`
+    records final bucket `helper unavailable` and `Overall result: FAIL`
 
 ### 10. Add Inference Smoke Artifact Tests
 

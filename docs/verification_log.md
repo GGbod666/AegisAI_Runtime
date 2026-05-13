@@ -19478,7 +19478,75 @@ Overall result: `PASS`
   - `bash -n bench/scripts/helper_portability_smoke.sh`: `PASS`
   - `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`: `PASS`
   - `git diff --check`: `PASS`
-- Verdict: positive helper matrix evidence remains useful, but P2 helper
-  portability is not accepted under strict audit until the smoke script reports
+- Verdict at audit time: positive helper matrix evidence remained useful, but
+  P2 helper portability was not accepted until the smoke script could report
   `helper unavailable`, `tracepoint incompatible`, `no workload events`, and
-  `validated signal` as distinct outcomes.
+  `validated signal` as distinct outcomes. The follow-up entry below records the
+  fix and verification.
+
+### 2026-05-13T06:08:12Z - Helper portability smoke bucket fix
+
+- Scope: completed `AegisAI_Runtime-vsl` by making compatibility diagnostics
+  authoritative before raw/normalized event-count bucketing. This fixes the
+  strict P2 audit case where `status=helper unavailable` was previously reported
+  as `no workload events` with `Overall result: PASS`.
+- Evidence correction: the `gg-vm` `6.8.0-110-generic` matrix profile is recorded
+  with distro `Ubuntu 24.04.4 LTS`, backed by the 2026-05-03 toolchain preflight
+  `/etc/os-release` entry from the same host and the 2026-05-10 helper validation
+  entries.
+
+- Command: `bash -n bench/scripts/helper_portability_smoke.sh`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `python3 -m unittest bench.scripts.test_helper_portability_smoke`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+Ran 4 tests in 4.724s
+OK
+```
+
+- Command: `python3 -m unittest discover -s bench/scripts -p 'test_*.py'`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+Ran 21 tests in 6.491s
+OK
+```
+
+- Command: `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `AEGISAI_EBPF_HELPER=/home/gg/AegisAI_Runtime/target/debug/aegisai-ebpf-helper AEGISAI_BPFTRACE=/tmp/aegisai-missing-bpftrace AEGISAI_HELPER_PORTABILITY_RUN_ID=audit_helper_unavailable_fixed_final2 AEGISAI_HELPER_PORTABILITY_ARTIFACT_DIR=/tmp/aegisai_audit_helper_unavailable_fixed_final2 AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_helper_unavailable_fixed_final2/helper_portability.md AEGISAI_HELPER_PORTABILITY_RAW_OFFCPU_SECONDS=1 AEGISAI_HELPER_PORTABILITY_RAW_IO_SECONDS=1 AEGISAI_HELPER_PORTABILITY_DAEMON_TIMEOUT_SECONDS=2 AEGISAI_HELPER_PORTABILITY_DAEMON_MAX_EVENTS=1 AEGISAI_HELPER_PORTABILITY_DAEMON_POLL_TIMEOUT_MS=100 bash bench/scripts/helper_portability_smoke.sh`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `1`
+```text
+FAIL: helper compatibility preflight reported helper unavailable.
+helper_portability_smoke=helper unavailable failure_reason=helper\ compatibility\ preflight\ reported\ helper\ unavailable. artifact_dir=/tmp/aegisai_audit_helper_unavailable_fixed_final2
+```
+- Artifact: `/tmp/aegisai_audit_helper_unavailable_fixed_final2/helper_portability.md`
+- Artifact excerpt:
+```text
+helper compatibility: status=helper unavailable; kernel=unknown; bpftrace=unavailable; tracefs=unknown
+Final bucket: `helper unavailable`
+Overall result: `FAIL`
+```
+
+- Command: `git diff --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Acceptance coverage: helper unavailable and tracepoint incompatible now stay
+  distinct from `no workload events`; `no workload events` is covered only after
+  compatible helper and daemon diagnostics with zero raw/normalized events.

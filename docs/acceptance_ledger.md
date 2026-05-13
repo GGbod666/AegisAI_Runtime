@@ -13,6 +13,12 @@ tracepoint field inventory before helper streams start, and the two-kernel
 `gg-vm` matrix covers kernels `6.8.0-110-generic` and `6.8.0-111-generic` with
 `validated signal` outcomes.
 
+Post-ledger note, 2026-05-13: `AegisAI_Runtime-vsl` fixed the helper
+portability smoke result layer. The script now parses compatibility diagnostics
+before event counts, exits nonzero for `helper unavailable` or
+`tracepoint incompatible`, and reserves `no workload events` for compatible
+helper diagnostics with zero raw or normalized events.
+
 ## Acceptance Conclusion
 
 The 19 evidence-hardening tasks are accepted against the current repository

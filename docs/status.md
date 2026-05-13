@@ -123,11 +123,16 @@ Two-kernel helper portability matrix work on 2026-05-12 also passed:
   events and `12209` `io_latency` events; rootless daemon runs normalized `8`
   events for each signal
 - Matrix profile `6.8.0-110-generic` remains backed by the historical
-  `2026-05-10T03:37:57Z` and `2026-05-10T03:48:11Z` helper validation entries
-- Strict P2 audit on 2026-05-13 reopened the smoke bucket logic as
-  `AegisAI_Runtime-vsl`: a missing bpftrace path produced helper diagnostics
-  `status=helper unavailable`, but the script still exited `0` with final
-  bucket `no workload events` and `Overall result: PASS`.
+  `2026-05-10T03:37:57Z` and `2026-05-10T03:48:11Z` helper validation entries;
+  the profile records kernel `6.8.0-110-generic` and distro
+  `Ubuntu 24.04.4 LTS`
+- Strict P2 smoke bucket audit fix on 2026-05-13 passed:
+  `python3 -m unittest bench.scripts.test_helper_portability_smoke` (`4`
+  tests), full bench script unittest discovery (`21` tests), shell syntax,
+  `git diff --check`, and the original missing-bpftrace reproduction. The
+  reproduction now exits `1`, records final bucket `helper unavailable`, and
+  writes `Overall result: FAIL` at
+  `/tmp/aegisai_audit_helper_unavailable_fixed_final2/helper_portability.md`.
 
 Inference smoke artifact regression coverage on 2026-05-13 also passed:
 
@@ -223,16 +228,14 @@ Helper validation:
 | signal | verification entry | artifact root | result |
 | --- | --- | --- | --- |
 | `offcpu_time` + `io_latency` portability matrix, `6.8.0-111-generic` | `2026-05-12T14:42:07Z - Two-kernel helper portability matrix` | `.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z` | `validated signal`; helper compatibility `compatible`; raw streams emitted `624` off-CPU and `12209` I/O events; daemon recorded `8` normalized events for each signal |
-| `offcpu_time` | `2026-05-10T03:37:57Z - Helper-backed offcpu_time validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; raw stream attached and emitted `348` events; daemon recorded `8` normalized events |
-| `io_latency` | `2026-05-10T03:48:11Z - Helper-backed io_latency validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; block tracepoints exposed required fields; raw stream emitted `4005` events; daemon recorded `8` normalized events |
+| `offcpu_time`, `6.8.0-110-generic` / `Ubuntu 24.04.4 LTS` | `2026-05-10T03:37:57Z - Helper-backed offcpu_time validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; raw stream attached and emitted `348` events; daemon recorded `8` normalized events |
+| `io_latency`, `6.8.0-110-generic` / `Ubuntu 24.04.4 LTS` | `2026-05-10T03:48:11Z - Helper-backed io_latency validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; block tracepoints exposed required fields; raw stream emitted `4005` events; daemon recorded `8` normalized events |
 
 Future helper conclusions should use these buckets: `helper unavailable`,
 `tracepoint incompatible`, `no workload events`, or `validated signal`.
 Compatibility diagnostics now separate the first two buckets from zero-event
-workloads before portability matrix runs. The smoke script result layer is not
-yet strict enough for those buckets; `AegisAI_Runtime-vsl` must fix negative
-bucket classification before the helper portability matrix is accepted as a
-closed P2 gate.
+workloads before portability matrix runs. The smoke script also enforces those
+buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
@@ -249,17 +252,13 @@ closed P2 gate.
   schema validation rejects unknown keys, missing required fields, invalid
   classifier rule keys, invalid enum-like values, invalid `raise_nice`, and
   invalid durations with contextual errors.
-- `AegisAI_Runtime-vsl` — strict P2 audit blocker for
-  `bench/scripts/helper_portability_smoke.sh`: the script must not report
-  `PASS`/`no workload events` when compatibility diagnostics already classify
-  the helper as unavailable or tracepoint incompatible.
 - `AegisAI_Runtime-51c` — parent helper portability epic remains open for
   broader cross-host validation. `AegisAI_Runtime-51c.2` has positive
   two-kernel `gg-vm` evidence for `6.8.0-110-generic` and `6.8.0-111-generic`,
-  but strict audit reopened the smoke bucket classification through
-  `AegisAI_Runtime-vsl`. `AegisAI_Runtime-51c.1`
-  is complete: helper compatibility is classified before helper stream start
-  and records availability, tracefs, requested probes, and required field
+  and the smoke result layer now keeps helper unavailable and tracepoint
+  incompatible distinct from no-workload outcomes. `AegisAI_Runtime-51c.1` is
+  complete: helper compatibility is classified before helper stream start and
+  records availability, tracefs, requested probes, and required field
   inventory. `AegisAI_Runtime-51c.3` is complete: controlled Linux ingestion
   smoke records nonzero procfs-derived daemon events. `AegisAI_Runtime-51c.4`
   is complete: BpfTracePipe startup failure taxonomy coverage now distinguishes
@@ -274,6 +273,12 @@ closed P2 gate.
 
 Recently closed:
 
+- `AegisAI_Runtime-vsl` — fixed helper portability smoke bucket
+  classification. Compatibility diagnostics are parsed before event counts; a
+  helper unavailable or tracepoint incompatible status writes the matching final
+  bucket, records `Overall result: FAIL`, and exits nonzero. Regression tests
+  cover helper unavailable, tracepoint incompatible, compatible zero events, and
+  daemon compatibility failure.
 - `AegisAI_Runtime-cqv.1` — added named production profile cross-file safety
   validation after schema parsing. Tests cover duration and priority caps,
   enabled trigger/focus-signal consistency, live affinity PID allowlist scope,
