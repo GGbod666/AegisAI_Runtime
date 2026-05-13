@@ -8,9 +8,12 @@ points to the durable evidence that closed the previous parent gaps.
 
 ## Current Repository State
 
-- `bd` after this status sync: `70` total issues, `3` open, `0` in progress,
-  `67` closed.
+- `bd` after this audit sync: `74` total issues, `6` open, `0` in progress,
+  `68` closed.
 - Current open issues:
+  - `AegisAI_Runtime-3gz`
+  - `AegisAI_Runtime-dxh`
+  - `AegisAI_Runtime-76k`
   - `AegisAI_Runtime-ufp`
   - `AegisAI_Runtime-0ry`
   - `AegisAI_Runtime-0ry.1`
@@ -29,8 +32,24 @@ in `docs/status.md`:
 - Rust formatting, workspace tests, workspace clippy, Python unittest
   discovery, shell syntax checks, workspace/toolchain/inference preflights, and
   `bd lint` have accepted `PASS` records.
+- The 2026-05-13 system audit reran non-live gates:
+  `cargo fmt --all -- --check`, `cargo check --workspace`,
+  `cargo test --workspace`, `cargo clippy --all-targets --all-features -- -D warnings`,
+  Tool Call Booster Python tests, bench script Python tests, shell syntax,
+  `bash bench/scripts/project_preflight.sh --check`, `bd lint`, and
+  `git diff --check`.
+- The same audit confirmed design alignment with the documented
+  `collector -> classifier -> policy_engine -> actuator -> metrics` route,
+  rootless daemon/helper split, bounded action boundary, and strict benefit
+  gates.
 - Controlled Linux source ingestion smoke records nonzero procfs-derived daemon
   events without live scheduler writes.
+- Fresh current-host helper portability validation did not pass:
+  `bench/scripts/helper_portability_smoke.sh` reported final bucket
+  `helper unavailable` under
+  `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T070947Z`.
+  Historical helper-backed signal evidence remains documented, but current-host
+  revalidation is now tracked by `AegisAI_Runtime-3gz`.
 - Helper-backed `offcpu_time` and `io_latency` portability has two `gg-vm`
   kernel profiles, compatibility taxonomy, raw event counts, normalized daemon
   counts, and a strict result-layer regression test.
@@ -56,15 +75,64 @@ Audit boundaries that still matter:
 
 1. **P3/P4 production handoff work**: packaging/service implementation comes
    before deferred product extensions.
-2. **P4 deferred extension planning**: dashboard, GPU coordination, and online
+2. **P2/P3 audit follow-ups**: restore or explicitly explain current-host
+   helper validation, normalize CLI help behavior, and decide direct coverage
+   for high-degree hotspots before expanding runtime scope.
+3. **P4 deferred extension planning**: dashboard, GPU coordination, and online
    adaptive policy stay behind production config, helper portability,
    packaging, and cpuset/background safety gates.
-3. **No new runtime behavior** should be added while splitting deferred
+4. **No new runtime behavior** should be added while splitting deferred
    extension planning issues.
 
 ## Ready Work
 
-### 1. Implement Daemon/Helper Packaging
+### 1. Revalidate Helper-Backed Signals On Current Host
+
+- Issue: `AegisAI_Runtime-3gz`
+- Status: `OPEN`
+- Current boundary: the 2026-05-13 audit run on `gg-vm` kernel
+  `6.8.0-111-generic` failed with final bucket `helper unavailable`.
+- Scope:
+  - restore the approved helper/bpftrace privilege path, or document the
+    current host as intentionally unable to provide helper-backed signals
+  - rerun `bash bench/scripts/helper_portability_smoke.sh`
+  - record the final bucket, artifact path, kernel, distro, bpftrace/helper
+    diagnostics, raw helper event counts, and normalized daemon event counts
+- Verification:
+  - `bash bench/scripts/helper_portability_smoke.sh`
+  - `bd lint`
+  - `git diff --check`
+
+### 2. Normalize Runtime Daemon Help Exit Behavior
+
+- Issue: `AegisAI_Runtime-dxh`
+- Status: `OPEN`
+- Scope:
+  - make explicit `--help` print the current usage text and exit `0`
+  - preserve nonzero exits for invalid or incomplete CLI arguments
+  - keep the usage text stable unless tests require a precise correction
+- Verification:
+  - targeted runtime daemon CLI tests
+  - `cargo test -p aegisai-runtime-daemon`
+  - `git diff --check`
+
+### 3. Audit High-Degree Runtime Hotspot Coverage
+
+- Issue: `AegisAI_Runtime-76k`
+- Status: `OPEN`
+- Scope:
+  - review direct coverage for `CliConfig::parse_with_env`,
+    `build_linux_rollback_report`, `BpfTracePipe::start`,
+    `LinuxProbeDriver::poll_events`, `RuntimeOrchestrator::process_event`, and
+    large source/config/backend/bench script files
+  - add targeted tests only where risk is real and coverage is missing
+  - record decomposition decisions without broad cleanup
+- Verification:
+  - targeted crate or script tests for any added coverage
+  - `cargo test --workspace` or a narrower justified command
+  - `git diff --check`
+
+### 4. Implement Daemon/Helper Packaging
 
 - Issue: `AegisAI_Runtime-ufp`
 - Status: `OPEN`
@@ -85,7 +153,7 @@ Audit boundaries that still matter:
   - `bd lint`
   - `git diff --check`
 
-### 2. Split Deferred Extensions Into Evidence-Gated Work
+### 5. Split Deferred Extensions Into Evidence-Gated Work
 
 - Issue: `AegisAI_Runtime-0ry.1`
 - Parent: `AegisAI_Runtime-0ry`
@@ -101,7 +169,7 @@ Audit boundaries that still matter:
   - docs-only review
   - `git diff --check`
 
-### 3. Close Deferred Extension Parent After Split
+### 6. Close Deferred Extension Parent After Split
 
 - Issue: `AegisAI_Runtime-0ry`
 - Status: `OPEN`

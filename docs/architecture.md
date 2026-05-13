@@ -254,11 +254,22 @@ Deferred config work:
 Known hotspots:
 
 - `agent/runtime_daemon/src/source.rs`
+- `agent/runtime_orchestrator/src/config.rs`
 - `agent/actuator/src/backend.rs`
 - `agent/explain_tune/src/engine.rs`
 - `agent/runtime_orchestrator/src/runtime_orchestrator.rs`
 - `agent/policy_engine/src/engine.rs`
 - `bench/scripts/inference_tail_guard_ollama_smoke.sh`
+
+The 2026-05-13 system audit also identified high-degree or bridge nodes that
+deserve targeted coverage decisions before future behavior work:
+
+- `CliConfig::parse_with_env`
+- `build_linux_rollback_report`
+- `BpfTracePipe::start`
+- `LinuxProbeDriver::poll_events`
+- `RuntimeOrchestrator::process_event`
+- `bench/scripts/inference_tail_guard_ollama_smoke.sh::run_mode`
 
 Do not split these as standalone cleanup. A split is acceptable only when it is
 attached to active behavior work and covered by targeted verification.

@@ -199,14 +199,73 @@ Repository status sync on 2026-05-13 also passed:
   `CliConfig::parse` was only used by tests. It is now `#[cfg(test)]`, leaving
   runtime behavior unchanged and restoring the documented clippy gate.
 
+System audit refresh on 2026-05-13 also passed its non-live gates:
+
+- Scope: comprehensive current-state audit for design alignment, function
+  behavior, syntax, compilation, latent risks, limitations, and next planning.
+- Branch state before doc sync: `main...origin/main`, no code diff.
+- `code-review-graph` snapshot: `1457` nodes, `11611` edges, `63` files,
+  languages `rust`, `bash`, and `python`; no changed files detected against
+  `HEAD`; architecture communities showed `0` cross-community edges and `0`
+  warnings.
+- Route/design verdict: current implementation still follows the documented
+  route `collector -> classifier -> policy_engine -> actuator -> metrics`, with
+  a rootless daemon, narrow helper boundary, bounded reversible actions, strict
+  benefit gates, and scenario-specific policy lines. No evidence was found that
+  the repository has drifted into a generic monitoring platform, scheduler
+  replacement, or broad live-cgroup writer.
+- Functional smoke verdict: mock daemon processed `3` events, triggered
+  `inference_tail_guard` and `tool_call_booster`, applied `2` noop actions,
+  recorded `2` tick rollbacks, and wrote audit highlights to
+  `/tmp/aegisai_audit_runtime_mock_20260513.md`.
+- Linux procfs ingestion verdict: `bash bench/scripts/linux_source_ingestion_smoke.sh`
+  passed with `processed_events=4` and `run_queue_delay` observations under
+  `linux-skeleton`; no live scheduler writes were made.
+- Current-host helper-backed signal revalidation did not pass:
+  `bash bench/scripts/helper_portability_smoke.sh` exited `1` with final bucket
+  `helper unavailable` at
+  `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T070947Z/helper_portability.md`.
+  Historical helper validation remains indexed below, but fresh validation on
+  this host is blocked until the approved helper/bpftrace privilege path is
+  restored or the environment issue is documented as intentional.
+- `cargo fmt --all -- --check`
+- `cargo check --workspace`
+- `cargo test --workspace` (`222` tests across workspace test binaries; doc
+  tests ran with no failures)
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py'`
+  (`14` tests)
+- `python3 -m unittest discover -s bench/scripts -p 'test_*.py'` (`21` tests)
+- `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`
+- `bash bench/scripts/project_preflight.sh --check`
+- `bd lint`
+- `git diff --check`
+- CLI caveat: `cargo run -p aegisai-runtime-daemon -- --help` prints complete
+  usage text but exits through the usage-error path with status `1`; tracked as
+  `AegisAI_Runtime-dxh`.
+- Code-structure caveat: graph analysis still flags large/high-degree hotspots,
+  especially `agent/runtime_daemon/src/source.rs`,
+  `agent/runtime_orchestrator/src/config.rs`,
+  `agent/actuator/src/backend.rs`,
+  `bench/scripts/inference_tail_guard_ollama_smoke.sh`,
+  `CliConfig::parse_with_env`, `build_linux_rollback_report`,
+  `BpfTracePipe::start`, `LinuxProbeDriver::poll_events`, and
+  `RuntimeOrchestrator::process_event`; tracked as `AegisAI_Runtime-76k`.
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
   startup/partial-probe check, not an ingestion or benefit proof.
+- The 2026-05-13 audit reran controlled Linux source ingestion and observed
+  `processed_events=4`; that is procfs ingestion proof, not helper-backed eBPF
+  proof and not live benchmark benefit proof.
 - Controlled Linux source ingestion smoke passed on 2026-05-12 with
   `processed_events=4` and `run_queue_delay` observations. Hosts that cannot
   expose readable procfs counters or positive controlled-worker deltas return
   `SKIPPED` with exit code `77`.
+- The 2026-05-13 helper portability rerun on `gg-vm` kernel
+  `6.8.0-111-generic` failed as `helper unavailable`; do not cite this audit
+  run as helper-backed `offcpu_time`/`io_latency` validation.
 - Inference preflight intentionally does not run `ollama run`, pull a model, or
   start `stress-ng` load.
 - `bd doctor` is unsupported in embedded mode. Upstream `bd preflight` in
@@ -248,6 +307,7 @@ Helper validation:
 
 | signal | verification entry | artifact root | result |
 | --- | --- | --- | --- |
+| `offcpu_time` + `io_latency` current-host revalidation attempt, `6.8.0-111-generic` | `2026-05-13T07:09:47Z - Helper portability smoke during system audit` | `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T070947Z` | `FAIL`: final bucket `helper unavailable`; target/debug helper reported bpftrace eBPF backend unavailable |
 | `offcpu_time` + `io_latency` portability matrix, `6.8.0-111-generic` | `2026-05-12T14:42:07Z - Two-kernel helper portability matrix` | `.cache/aegisai/helper_portability/helper_portability_gg_vm_6_8_0_111_20260512T141448Z` | `validated signal`; helper compatibility `compatible`; raw streams emitted `624` off-CPU and `12209` I/O events; daemon recorded `8` normalized events for each signal |
 | `offcpu_time`, `6.8.0-110-generic` / `Ubuntu 24.04.4 LTS` | `2026-05-10T03:37:57Z - Helper-backed offcpu_time validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; raw stream attached and emitted `348` events; daemon recorded `8` normalized events |
 | `io_latency`, `6.8.0-110-generic` / `Ubuntu 24.04.4 LTS` | `2026-05-10T03:48:11Z - Helper-backed io_latency validation` | `/tmp/aegisai-jtt/artifacts` | helper ready; block tracepoints exposed required fields; raw stream emitted `4005` events; daemon recorded `8` normalized events |
@@ -260,9 +320,17 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after this sync: `70` total issues, `3` open, `0`
-in progress, `67` closed.
+Current `bd` state after this audit sync: `74` total issues, `6` open, `0`
+in progress, `68` closed.
 
+- `AegisAI_Runtime-3gz` — revalidate helper-backed signals on the current Linux
+  host. This is the only fresh audit blocker for helper-backed
+  `offcpu_time`/`io_latency`: the current run classified as
+  `helper unavailable`.
+- `AegisAI_Runtime-dxh` — normalize explicit `--help` behavior for
+  `aegisai-runtime-daemon`; usage currently prints correctly but exits `1`.
+- `AegisAI_Runtime-76k` — audit direct coverage and decomposition decisions for
+  high-degree runtime hotspots found by `code-review-graph`.
 - `AegisAI_Runtime-ufp` — implement the daemon/helper packaging path from
   `docs/packaging_contract.md`. `AegisAI_Runtime-ufp.1` is complete: the first
   target is Debian/Ubuntu systemd, with rootless daemon user/group, binary
@@ -379,6 +447,7 @@ action and stable repeated benefit are both required.
 ## Review Risks
 
 - Large files remain in `agent/runtime_daemon/src/source.rs`,
+  `agent/runtime_orchestrator/src/config.rs`,
   `agent/actuator/src/backend.rs`, `agent/explain_tune/src/engine.rs`,
   `agent/runtime_orchestrator/src/runtime_orchestrator.rs`,
   `agent/policy_engine/src/engine.rs`, and

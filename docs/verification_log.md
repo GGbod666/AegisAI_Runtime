@@ -19550,3 +19550,188 @@ No output.
 - Acceptance coverage: helper unavailable and tracepoint incompatible now stay
   distinct from `no workload events`; `no workload events` is covered only after
   compatible helper and daemon diagnostics with zero raw/normalized events.
+
+### 2026-05-13T07:09:47+00:00 - Controlled Linux source ingestion smoke
+
+- Scope: Linux procfs-derived event ingestion using short-lived PID-allowlisted CPU workers.
+- Command: `bash bench/scripts/linux_source_ingestion_smoke.sh`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Log path: `/home/gg/AegisAI_Runtime/docs/verification_log.md`
+- Actuator backend: `linux-skeleton`
+- Live scheduler state changes: `none`
+- Exit codes: `0=PASS`, `1=FAIL`, `77=SKIPPED`
+- CPU count used for sizing: `4`
+- Controlled worker count: `5`
+- PID allowlist: `41921,41922,41923,41924,41925`
+- Procfs precheck before: `readable=1 run_queue_delay=835810263 cpu_migration=1 major_page_fault=1`
+- Procfs precheck after: `readable=1 run_queue_delay=1700423815 cpu_migration=3 major_page_fault=1`
+- Daemon command: `cargo run -q -p aegisai-runtime-daemon -- --repo-root /tmp/aegisai-linux-source-smoke.BvBoiO --source linux --metadata procfs --actuator-backend linux-skeleton --probe-poll-timeout-ms 200 --batch-size 16 --max-events 4 --tick-ms 200 --drain-ms 50 `
+- Daemon exit status: `0`
+
+#### Daemon summary excerpt
+```text
+source: linux-probe
+metadata: procfs
+actuator_backend: linux-skeleton
+processed_events: 4
+applied_actions: 4
+inline_rollbacks: 0
+tick_rollbacks: 0
+metric_records: 4
+trace_records: 12
+signal_observations:
+  run_queue_delay: events=4 total=31370 max=8925
+feature_window_maxima:
+  cpu_migrations_per_sec: 0
+  major_page_faults_per_sec: 0
+  run_queue_delay_us_max: 8925
+triggered_scenarios:
+  inference_tail_guard: 4
+```
+
+- Status: `PASS`
+- Processed events: `4`
+- Accepted signal observation: `  run_queue_delay: events=4 total=31370 max=8925`
+- Overall result: `PASS`
+
+### 2026-05-13T07:12:32Z - System audit refresh
+
+- Scope: comprehensive current-state audit for design-route alignment,
+  functional behavior, syntax, compilation, latent risks, current limitations,
+  and next planning.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Host: `Linux gg-vm 6.8.0-111-generic #111-Ubuntu SMP PREEMPT_DYNAMIC Sat Apr 11 23:16:02 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux`
+- Toolchain: `rustc 1.95.0 (59807616e 2026-04-14)`;
+  `cargo 1.95.0 (f2d3ce0bd 2026-03-21)`
+- Branch state before doc sync: `main...origin/main`, no code diff.
+- Design-route verdict: current code and docs remain aligned with the intended
+  route `collector -> classifier -> policy_engine -> actuator -> metrics`;
+  rootless daemon/helper split, bounded reversible live-action boundary,
+  strict benefit gates, and scenario-specific policies remain intact.
+- External references checked for boundary sanity:
+  Linux trace event `format` files, bpftrace tracepoint/`args` behavior,
+  Debian/systemd service packaging boundaries, and Linux capability separation.
+
+- Command: `cargo fmt --all -- --check`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo check --workspace`
+- Exit status: `0`
+```text
+Finished `dev` profile.
+```
+
+- Command: `cargo test --workspace`
+- Exit status: `0`
+```text
+Workspace unit tests passed: actuator 51, classifier 6, collector 5,
+ebpf_helper 5, explain_tune 5, git_control lib 3, git_control cli 4,
+metrics 6, policy_engine 14, runtime_contracts 0, runtime_daemon lib 51,
+runtime_daemon cli 36, ebpf_probe 8, runtime_orchestrator 28.
+Doc-tests completed with no failures.
+```
+
+- Command: `cargo clippy --all-targets --all-features -- -D warnings`
+- Exit status: `0`
+```text
+Finished `dev` profile.
+```
+
+- Command: `python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py'`
+- Exit status: `0`
+```text
+Ran 14 tests in 0.002s
+OK
+```
+
+- Command: `python3 -m unittest discover -s bench/scripts -p 'test_*.py'`
+- Exit status: `0`
+```text
+Ran 21 tests in 6.559s
+OK
+```
+
+- Command: `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `bash bench/scripts/project_preflight.sh --check`
+- Exit status: `0`
+```text
+Rust format: PASS
+Rust tests: PASS
+Rust lint: PASS
+Tool Call Booster Python tests: PASS
+Bench script Python tests: PASS
+Shell syntax: PASS
+Workspace preflight: PASS
+Toolchain preflight: PASS
+Inference preflight: PASS
+```
+
+- Command: `cargo run -p aegisai-runtime-daemon -- --repo-root . --source mock --metadata demo --actuator-backend noop --max-events 8 --verification-log /tmp/aegisai_audit_runtime_mock_20260513.md`
+- Exit status: `0`
+```text
+processed_events: 3
+applied_actions: 2
+tick_rollbacks: 2
+triggered_scenarios:
+  inference_tail_guard: 1
+  tool_call_booster: 1
+```
+
+- Command: `bash bench/scripts/linux_source_ingestion_smoke.sh`
+- Exit status: `0`
+```text
+PASS: processed_events=4;   run_queue_delay: events=4 total=31370 max=8925
+```
+
+- Command: `bash bench/scripts/helper_portability_smoke.sh`
+- Exit status: `1`
+```text
+helper_portability_smoke=helper unavailable failure_reason=helper\ compatibility\ preflight\ reported\ helper\ unavailable. artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T070947Z
+FAIL: helper compatibility preflight reported helper unavailable.
+```
+- Artifact:
+  `/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T070947Z/helper_portability.md`
+- Interpretation: current-host helper-backed `offcpu_time` and `io_latency`
+  revalidation is blocked by helper/bpftrace environment or privilege setup.
+  Historical validated helper artifacts remain useful but should not be
+  represented as a fresh 2026-05-13 validation.
+
+- Command: `cargo run -p aegisai-runtime-daemon -- --help`
+- Exit status: `1`
+```text
+Usage text printed successfully, but explicit --help exits through the
+usage-error path. Follow-up issue: AegisAI_Runtime-dxh.
+```
+
+- Command: `bd lint`
+- Exit status: `0`
+```text
+No template warnings found.
+```
+
+- Command: `git diff --check`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Follow-up issues created:
+  - `AegisAI_Runtime-3gz`: revalidate helper-backed signals on the current
+    Linux host or document the prerequisite failure.
+  - `AegisAI_Runtime-dxh`: normalize `aegisai-runtime-daemon --help` exit
+    behavior.
+  - `AegisAI_Runtime-76k`: audit direct coverage and decomposition decisions
+    for high-degree runtime hotspots.
+
+- Overall audit result: non-live syntax, compile, unit, lint, script, preflight,
+  mock loop, and procfs ingestion checks passed. Current-host helper-backed
+  signal validation failed as `helper unavailable`, and live guarded benchmark
+  benefit was not rerun in this audit.
