@@ -2272,4 +2272,73 @@ mod tests {
             .values()
             .any(|value| value.contains("cpuset")));
     }
+
+    #[test]
+    fn rollback_report_rejects_live_guard_target_outside_allowlist() {
+        let plan = rollback_plan(vec![LinuxSyscallOperation::RestoreNice]);
+        let mut applier = TestRollbackApplier::default();
+        let mut execution = BackendExecution::default();
+        let guard = LiveLinuxCommandGuard::nice_only([77], true);
+
+        let report = build_linux_rollback_report(
+            &mut applier,
+            &plan,
+            &captured_state(),
+            1_250,
+            &mut execution,
+            Some(&guard),
+        );
+
+        assert!(report.restored.is_empty());
+        assert_eq!(
+            report.failed,
+            vec!["nice:target pid 42 is not in linux-command live actuator PID allowlist"]
+        );
+        assert!(applier.calls.is_empty());
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.status"),
+            Some(&"error".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.error"),
+            Some(&"target pid 42 is not in linux-command live actuator PID allowlist".to_string())
+        );
+    }
+
+    #[test]
+    fn rollback_report_skips_affinity_when_live_guard_is_nice_only() {
+        let plan = rollback_plan(vec![
+            LinuxSyscallOperation::RestoreNice,
+            LinuxSyscallOperation::RestoreAffinity,
+        ]);
+        let mut applier = TestRollbackApplier::default();
+        let mut execution = BackendExecution::default();
+        let guard = LiveLinuxCommandGuard::nice_only([42], true);
+
+        let report = build_linux_rollback_report(
+            &mut applier,
+            &plan,
+            &captured_state(),
+            1_250,
+            &mut execution,
+            Some(&guard),
+        );
+
+        assert_eq!(report.restored, vec!["nice"]);
+        assert_eq!(report.skipped, vec!["affinity"]);
+        assert!(report.failed.is_empty());
+        assert_eq!(applier.calls, vec!["42:1250:restore_nice"]);
+        assert_eq!(
+            execution.audit_fields.get("rollback.0.status"),
+            Some(&"ok".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.1.status"),
+            Some(&"skipped".to_string())
+        );
+        assert_eq!(
+            execution.audit_fields.get("rollback.1.detail"),
+            Some(&"affinity command disabled by live guard".to_string())
+        );
+    }
 }

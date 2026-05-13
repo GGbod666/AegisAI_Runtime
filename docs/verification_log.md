@@ -19835,3 +19835,117 @@ No output.
 - Overall result: `PASS`. The current host can provide helper-backed signals
   when the helper runs through the restored privileged boundary. The remaining
   durable packaging work is tracked separately as `AegisAI_Runtime-ufp`.
+
+### 2026-05-13T13:04:00Z - High-degree runtime hotspot coverage audit
+
+- Scope: completed `AegisAI_Runtime-76k` by reviewing the graph-reported
+  high-degree or bridge hotspots and adding only targeted coverage for a real
+  uncovered branch in `build_linux_rollback_report`.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Code-review-graph evidence: hubs included `CliConfig::parse_with_env`
+  degree `107`, `build_linux_rollback_report` degree `102`,
+  `BpfTracePipe::start` degree `74`, `LinuxProbeDriver::poll_events` degree
+  `68`, and `RuntimeOrchestrator::process_event` degree `63`. Bridge analysis
+  also flagged `BpfTracePipe::start`, `LinuxProbeDriver::poll_events`, and
+  `RuntimeOrchestrator::process_event`.
+- Coverage decisions:
+  - `CliConfig::parse_with_env`: direct daemon CLI tests cover env/default/CLI
+    profile precedence, invalid profile names, source/backend validation, PID
+    allowlist normalization, live-actuator gating, warmup command boundaries,
+    and verification-log paths. The `--help` nonzero exit remains tracked
+    separately as `AegisAI_Runtime-dxh`.
+  - `build_linux_rollback_report`: direct tests already covered restore
+    success/failure, mixed ordering, missing captured state, and disabled
+    cpuset noise. This audit added direct live-guard tests for target rejection
+    and nice-only affinity rollback skips.
+  - `BpfTracePipe::start`: source tests cover compatible off-CPU/I/O event
+    flow, helper unavailable and tracepoint-incompatible taxonomy,
+    stdout/stderr start failures, malformed and unsupported lines, stop
+    cleanup, helper argument limits, and compatibility field inventory.
+  - `LinuxProbeDriver::poll_events`: source tests cover driver-backed batching,
+    procfs deltas, missing procfs counters, target exit tolerance, procfs
+    fallback, and combined procfs plus bpftrace polling.
+  - `RuntimeOrchestrator::process_event`: orchestrator tests cover inference
+    and tool-call triggers, cooldown, expiry-before-apply ordering, action and
+    rollback traces, lifecycle audit fields, safety clamp fields, and PID
+    allowlist classification.
+  - `bench/scripts/inference_tail_guard_ollama_smoke.sh::run_mode`: full
+    `run_mode` execution remains an integration path because it starts Ollama,
+    stress, and daemon workloads. Current deterministic coverage stays at
+    `run.env` / acceptance-baseline provenance plus shell syntax; live benefit
+    proof remains in the benchmark artifact gates.
+
+- Command: `cargo test -p aegisai-actuator rollback_report`
+- Exit status: `0`
+```text
+9 passed; 0 failed; 44 filtered out
+```
+
+- Command: `cargo test -p aegisai-runtime-daemon source::tests`
+- Exit status: `0`
+```text
+agent/runtime_daemon/src/lib.rs: source::tests: 40 passed; 0 failed; 11 filtered out
+agent/runtime_daemon/src/main.rs: 0 passed; 0 failed; 36 filtered out
+```
+
+- Command: `cargo test -p runtime_orchestrator runtime_orchestrator::tests`
+- Exit status: `0`
+```text
+10 passed; 0 failed; 18 filtered out
+```
+
+- Command: `cargo test -p aegisai-runtime-daemon`
+- Exit status: `0`
+```text
+agent/runtime_daemon/src/lib.rs: 51 passed; 0 failed
+agent/runtime_daemon/src/main.rs: 36 passed; 0 failed
+doc tests: 0 passed; 0 failed
+```
+
+- Command: `cargo test -p aegisai-actuator`
+- Exit status: `0`
+```text
+53 passed; 0 failed
+doc tests: 0 passed; 0 failed
+```
+
+- Command: `python3 -m unittest bench.scripts.test_inference_tail_guard_ollama_smoke`
+- Exit status: `0`
+```text
+Ran 2 tests in 0.268s
+OK
+```
+
+- Command: `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo fmt --all -- --check`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo test --workspace`
+- Exit status: `0`
+```text
+222 passed across workspace test binaries; doc tests ran with no failures.
+```
+
+- Command: `bd lint`
+- Exit status: `0`
+```text
+No template warnings found.
+```
+
+- Command: `git diff --check`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Overall result: `PASS`. The only code change is two behavior-preserving
+  tests in `agent/actuator/src/backend.rs`; no hotspot decomposition or
+  production behavior change was made.

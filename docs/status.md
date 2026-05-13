@@ -243,14 +243,10 @@ System audit refresh on 2026-05-13 also passed its non-live gates:
 - CLI caveat: `cargo run -p aegisai-runtime-daemon -- --help` prints complete
   usage text but exits through the usage-error path with status `1`; tracked as
   `AegisAI_Runtime-dxh`.
-- Code-structure caveat: graph analysis still flags large/high-degree hotspots,
-  especially `agent/runtime_daemon/src/source.rs`,
-  `agent/runtime_orchestrator/src/config.rs`,
-  `agent/actuator/src/backend.rs`,
-  `bench/scripts/inference_tail_guard_ollama_smoke.sh`,
-  `CliConfig::parse_with_env`, `build_linux_rollback_report`,
-  `BpfTracePipe::start`, `LinuxProbeDriver::poll_events`, and
-  `RuntimeOrchestrator::process_event`; tracked as `AegisAI_Runtime-76k`.
+- Code-structure caveat: graph analysis still flags large/high-degree files and
+  functions, but `AegisAI_Runtime-76k` recorded explicit coverage decisions for
+  the current hotspot set. Future decomposition should stay attached to active
+  behavior work, not standalone cleanup.
 
 Current-host helper-backed signal revalidation on 2026-05-13 passed:
 
@@ -269,6 +265,39 @@ Current-host helper-backed signal revalidation on 2026-05-13 passed:
   for each signal.
 - Artifact:
   `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260513T123531Z/helper_portability.md`.
+
+High-degree runtime hotspot coverage audit on 2026-05-13 passed:
+
+- `CliConfig::parse_with_env`: covered by daemon CLI/env/default/override,
+  invalid profile, source/backend, PID allowlist, live-actuator, warmup, and
+  verification-log parser tests in `cargo test -p aegisai-runtime-daemon`.
+  The explicit `--help` exit behavior remains separate as
+  `AegisAI_Runtime-dxh`.
+- `build_linux_rollback_report`: existing direct tests covered nice/affinity
+  success, failure, mixed ordering, missing captured state, and disabled cpuset
+  noise. This audit added direct live-guard branch coverage for rejected
+  rollback targets and nice-only affinity rollback skips.
+- `BpfTracePipe::start`: covered by source tests for successful off-CPU/I/O
+  event flow, helper unavailable, tracepoint incompatibility, stdout/stderr
+  start failures, malformed/unsupported probe lines, stop cleanup, helper args,
+  and field inventory.
+- `LinuxProbeDriver::poll_events`: covered by source tests for driver-backed
+  batching, procfs deltas, missing counters, target exit tolerance, procfs
+  fallback, and combined procfs plus bpftrace polling.
+- `RuntimeOrchestrator::process_event`: covered by orchestrator tests for
+  inference and tool-call triggers, cooldown, expiry-before-apply ordering,
+  action and rollback traces, lifecycle audit fields, safety clamp fields, and
+  PID allowlist classification.
+- `bench/scripts/inference_tail_guard_ollama_smoke.sh::run_mode`: full live
+  execution remains an integration path because it starts Ollama, stress, and
+  daemon workloads. Deterministic script coverage stays at the `run.env` /
+  acceptance-baseline provenance boundary with shell syntax validation; broader
+  live benefit proof remains in the existing benchmark artifact gates.
+- Verification: `cargo fmt --all -- --check`,
+  `cargo test -p aegisai-actuator`, `cargo test -p aegisai-runtime-daemon`,
+  `cargo test -p runtime_orchestrator runtime_orchestrator::tests`,
+  `python3 -m unittest bench.scripts.test_inference_tail_guard_ollama_smoke`,
+  and `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`.
 
 Audit caveats:
 
@@ -342,16 +371,14 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after current-host helper-backed signal revalidation: `75`
-total issues, `5` open, `0` in progress, `1` blocked, `70` closed.
+Current `bd` state after high-degree runtime hotspot coverage audit: `75` total
+issues, `4` open, `0` in progress, `1` blocked, `71` closed.
 `docs/latest_tasks.md` now contains only the active prioritized todo queue;
 historical evidence remains in this file, `docs/acceptance_ledger.md`, and
 `docs/verification_log.md`.
 
 - `AegisAI_Runtime-dxh` — normalize explicit `--help` behavior for
   `aegisai-runtime-daemon`; usage currently prints correctly but exits `1`.
-- `AegisAI_Runtime-76k` — audit direct coverage and decomposition decisions for
-  high-degree runtime hotspots found by `code-review-graph`.
 - `AegisAI_Runtime-ufp` — implement the daemon/helper packaging path from
   `docs/packaging_contract.md`. `AegisAI_Runtime-ufp.1` is complete: the first
   target is Debian/Ubuntu systemd, with rootless daemon user/group, binary
@@ -368,6 +395,13 @@ historical evidence remains in this file, `docs/acceptance_ledger.md`, and
 
 Recently closed:
 
+- `AegisAI_Runtime-76k` — recorded coverage/decomposition decisions for
+  `CliConfig::parse_with_env`, `build_linux_rollback_report`,
+  `BpfTracePipe::start`, `LinuxProbeDriver::poll_events`,
+  `RuntimeOrchestrator::process_event`, and the Ollama smoke `run_mode` shell
+  path. Added targeted rollback-report live-guard tests for target rejection
+  and nice-only affinity rollback skips. No broad hotspot decomposition was
+  made; future splits remain tied to active behavior work.
 - `AegisAI_Runtime-3gz` — revalidated helper-backed `offcpu_time` and
   `io_latency` on current `gg-vm` kernel `6.8.0-111-generic` after restoring
   the helper privilege path through an ignored artifact-local wrapper. The

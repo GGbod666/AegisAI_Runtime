@@ -22,25 +22,7 @@ queue. Historical evidence belongs in `docs/status.md`,
   - `cargo test -p aegisai-runtime-daemon`
   - `git diff --check`
 
-### 2. Audit High-Degree Runtime Hotspot Coverage
-
-- Issue: `AegisAI_Runtime-76k`
-- Priority: `P3`
-- Why now: graph review identified high-degree or bridge points where future
-  behavior changes carry outsized risk.
-- Scope:
-  - review direct coverage for `CliConfig::parse_with_env`,
-    `build_linux_rollback_report`, `BpfTracePipe::start`,
-    `LinuxProbeDriver::poll_events`, `RuntimeOrchestrator::process_event`, and
-    the large source/config/backend/bench script files
-  - add targeted tests only where coverage is truly missing
-  - record any remaining decomposition decision without broad cleanup
-- Verify:
-  - targeted crate or script tests for any added coverage
-  - `cargo test --workspace` or a narrower justified command
-  - `git diff --check`
-
-### 3. Implement Daemon/Helper Packaging
+### 2. Implement Daemon/Helper Packaging
 
 - Issue: `AegisAI_Runtime-ufp`
 - Priority: `P4`
@@ -61,7 +43,7 @@ queue. Historical evidence belongs in `docs/status.md`,
   - `bd lint`
   - `git diff --check`
 
-### 4. Split Deferred Extensions Into Evidence-Gated Work
+### 3. Split Deferred Extensions Into Evidence-Gated Work
 
 - Issue: `AegisAI_Runtime-0ry.1`
 - Priority: `P4`
@@ -78,7 +60,7 @@ queue. Historical evidence belongs in `docs/status.md`,
   - docs-only review
   - `git diff --check`
 
-### 5. Close Deferred Extension Parent
+### 4. Close Deferred Extension Parent
 
 - Issue: `AegisAI_Runtime-0ry`
 - Priority: `P4`
