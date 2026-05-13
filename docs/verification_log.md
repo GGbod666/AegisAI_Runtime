@@ -19252,3 +19252,42 @@ helper_portability_smoke=validated signal offcpu_raw=624 io_raw=12209 offcpu_nor
   version, tracefs root, tracepoint field inventory, raw helper event counts,
   daemon normalized event counts, artifact roots or durable source entries, and
   final bucket. Both profiles are classified as `validated signal`.
+
+### 2026-05-13T04:28:02Z - Inference smoke run-env artifact tests
+
+- Scope: completed `AegisAI_Runtime-fp6` by adding deterministic script-level
+  coverage for `bench/scripts/inference_tail_guard_ollama_smoke.sh` provenance
+  output. The new `AEGISAI_AB_RUN_ENV_ONLY=1` path writes `run.env`,
+  acceptance baseline, CPU topology, permission state, and request payload
+  artifacts without launching Ollama, stress, or daemon workloads.
+
+- Command: `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `python3 -m unittest bench.scripts.test_inference_tail_guard_ollama_smoke`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+Ran 2 tests in 0.314s
+
+OK
+```
+
+- Command: `python3 -m unittest discover -s bench/scripts -p 'test_*.py'`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+Ran 17 tests in 1.786s
+
+OK
+```
+
+- Acceptance coverage: `run.env` records run id, modes, model, prompt,
+  workload shape, stress shape, sample count, live flags, artifact paths, and
+  acceptance baseline references. The invalid-config regression exits nonzero,
+  does not write `run.env`, acceptance baseline, or mode contract artifacts,
+  and does not append misleading `PASS` fields.

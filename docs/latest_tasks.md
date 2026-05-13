@@ -1,6 +1,6 @@
 # Latest Task List
 
-_Regenerated: 2026-05-12_
+_Regenerated: 2026-05-13_
 
 This is the current priority plan, not a historical gap inventory. It is based
 on the latest repository state: all local Rust/Python/shell checks pass, the
@@ -36,7 +36,7 @@ current planning order.
 - `python3 -m unittest discover -s bench/tool_call_booster -p 'test_*.py'`:
   `PASS`, `14` tests
 - `python3 -m unittest discover -s bench/scripts -p 'test_*.py'`: `PASS`,
-  `15` tests
+  `17` tests
 - `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`: `PASS`
 - `AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_verify_workspace_20260511.md bash bench/scripts/verify_workspace.sh`:
   `PASS`; mock daemon `processed_events=3`, Linux preflight `processed_events=0`
@@ -310,23 +310,31 @@ cross-host validation, and unattended operation.
 ### 10. Add Inference Smoke Artifact Tests
 
 - Issue: `AegisAI_Runtime-fp6`
+- Status: `DONE` on 2026-05-13.
 - Why P2: benchmark artifacts support benefit claims. The current scripts pass
   syntax/unit tests, but run-env output from the live smoke path is still a
   graph hotspot.
 - Scope:
-  - add a deterministic script-level test or harness for run-env output
-  - do not run live workloads inside the unit test
-  - prevent failure artifacts from looking like accepted proof
+  - added `AEGISAI_AB_RUN_ENV_ONLY=1` to write deterministic provenance
+    artifacts without launching Ollama, stress, or the daemon
+  - added script-level regression tests for emitted `run.env` and acceptance
+    baseline fields
+  - covered invalid config paths so they do not write misleading `PASS` fields
+    or accepted proof artifacts
 - Acceptance:
-  - run-env output records run id
-  - run-env output records mode
-  - run-env output records model and prompt/workload shape
-  - run-env output records stress shape and sample count
-  - run-env output records live flags and artifact paths
-  - failure paths do not write misleading `PASS` fields
+  - run-env output records run id: `PASS`
+  - run-env output records mode: `PASS`
+  - run-env output records model and prompt/workload shape: `PASS`
+  - run-env output records stress shape and sample count: `PASS`
+  - run-env output records live flags and artifact paths: `PASS`
+  - run-env output records acceptance baseline references: `PASS`
+  - failure paths do not write misleading `PASS` fields: `PASS`
 - Verification:
-  - `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`
-  - the new script-level test command
+  - `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`: `PASS`
+  - `python3 -m unittest bench.scripts.test_inference_tail_guard_ollama_smoke`:
+    `PASS`; `2` tests
+  - `python3 -m unittest discover -s bench/scripts -p 'test_*.py'`: `PASS`;
+    `17` tests
 
 ### 11. Add Runtime Production Profile Selector
 

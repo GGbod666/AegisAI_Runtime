@@ -1,6 +1,6 @@
 # Current Status
 
-_Last reviewed: 2026-05-12_
+_Last reviewed: 2026-05-13_
 
 This is the compact factual snapshot. Active task state lives in `bd`; accepted
 task history lives in `docs/acceptance_ledger.md`; stage rules live in
@@ -111,6 +111,16 @@ Two-kernel helper portability matrix work on 2026-05-12 also passed:
 - Matrix profile `6.8.0-110-generic` remains backed by the historical
   `2026-05-10T03:37:57Z` and `2026-05-10T03:48:11Z` helper validation entries
 
+Inference smoke artifact regression coverage on 2026-05-13 also passed:
+
+- `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`
+- `python3 -m unittest bench.scripts.test_inference_tail_guard_ollama_smoke`
+  (`2` tests)
+- `python3 -m unittest discover -s bench/scripts -p 'test_*.py'` (`17` tests)
+- The smoke harness now supports `AEGISAI_AB_RUN_ENV_ONLY=1` for deterministic
+  `run.env` / acceptance-baseline provenance checks without launching Ollama,
+  stress, or daemon workloads.
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -171,8 +181,6 @@ workloads before portability matrix runs.
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-fp6` — add deterministic tests for inference smoke run-env
-  artifact output.
 - `AegisAI_Runtime-cqv` / `AegisAI_Runtime-cqv.1` /
   `AegisAI_Runtime-cqv.2` / `AegisAI_Runtime-cqv.3` — add production config
   profile selection, schema validation, and cross-file safety checks.
@@ -196,6 +204,11 @@ workloads before portability matrix runs.
 
 Recently closed:
 
+- `AegisAI_Runtime-fp6` — added deterministic inference smoke `run.env`
+  artifact coverage with `AEGISAI_AB_RUN_ENV_ONLY=1`; regression tests validate
+  run id, modes, model/prompt/workload shape, stress/sample shape, live flags,
+  artifact paths, acceptance baseline references, and failure paths that avoid
+  misleading `PASS` fields.
 - `AegisAI_Runtime-51c.2` — recorded the helper portability matrix across
   `gg-vm` kernels `6.8.0-110-generic` and `6.8.0-111-generic`; the current
   kernel profile passed `validated signal` with compatible helper diagnostics,

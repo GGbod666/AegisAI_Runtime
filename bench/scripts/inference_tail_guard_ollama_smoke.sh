@@ -40,6 +40,7 @@ MODE_COOLDOWN="${AEGISAI_AB_MODE_COOLDOWN:-1}"
 LIVE_CONFIRM="${AEGISAI_CONFIRM_LIVE_ACTUATOR:-0}"
 LIVE_PID_ALLOWLIST="${AEGISAI_LIVE_PID_ALLOWLIST:-}"
 LIVE_ENABLE_AFFINITY="${AEGISAI_ENABLE_LIVE_AFFINITY:-0}"
+RUN_ENV_ONLY="${AEGISAI_AB_RUN_ENV_ONLY:-0}"
 
 mkdir -p "$(dirname -- "${LOG_PATH}")" "${ARTIFACT_DIR}"
 touch "${LOG_PATH}"
@@ -98,6 +99,7 @@ Common overrides:
   AEGISAI_STRESS_TIMEOUT=0
   AEGISAI_OLLAMA_MODEL=qwen2.5:0.5b
   AEGISAI_AB_ARTIFACT_DIR=/path/to/results
+  AEGISAI_AB_RUN_ENV_ONLY=1
 
 Metrics:
   TTFT is curl time_starttransfer against streaming Ollama responses.
@@ -549,10 +551,12 @@ write_run_env() {
     printf 'log_path=%s\n' "${LOG_PATH}"
     printf 'artifact_dir=%s\n' "${ARTIFACT_DIR}"
     printf 'acceptance_phase=%s\n' "${ACCEPTANCE_PHASE}"
+    printf 'acceptance_goal=%s\n' "${ACCEPTANCE_GOAL}"
     printf 'acceptance_baseline=%s\n' "${ACCEPTANCE_BASELINE}"
     printf 'cpu_topology_artifact=%s\n' "${CPU_TOPOLOGY}"
     printf 'permission_state_artifact=%s\n' "${PERMISSION_STATE}"
     printf 'mode_contract_csv=%s\n' "${MODE_CONTRACT_CSV}"
+    printf 'run_env_only=%s\n' "${RUN_ENV_ONLY}"
     printf 'modes=%s\n' "${SELECTED_MODES[*]}"
     printf 'model=%s\n' "${MODEL}"
     printf 'prompt_sha256=%s\n' "${prompt_hash}"
@@ -1387,6 +1391,16 @@ run_mode() {
   sleep "${MODE_COOLDOWN}"
 }
 
+write_provenance_artifacts() {
+  prompt_hash="$(prompt_sha256)"
+  write_payload true "${PAYLOAD_STREAM}"
+  write_payload false "${PAYLOAD_WARMUP}"
+  write_cpu_topology
+  write_permission_state
+  write_run_env "${prompt_hash}"
+  write_acceptance_baseline "${prompt_hash}"
+}
+
 parse_modes
 
 timestamp="$(date -Iseconds)"
@@ -1400,10 +1414,29 @@ append "- Log path: \`${LOG_PATH}\`"
 append "- Artifact directory: \`${ARTIFACT_DIR}\`"
 append "- Runtime: \`ollama\`"
 append "- Selected modes: \`${SELECTED_MODES[*]}\`"
+append "- Run-env-only mode: \`${RUN_ENV_ONLY}\`"
 append "- Exit contract: every mode must finish all samples; observation/guarded modes must capture daemon events, trigger \`inference_tail_guard\`, roll back, expose cpu_migration/major_page_fault observation totals, and have no action audit errors."
 append "- Off-CPU note: \`offcpu_time\` can be sourced from the real eBPF helper when available and does not block benefit revalidation."
 
+if [[ "${RUN_ENV_ONLY}" != "0" && "${RUN_ENV_ONLY}" != "1" ]]; then
+  append "- Invalid run-env-only flag: \`${RUN_ENV_ONLY}\`"
+  printf 'AEGISAI_AB_RUN_ENV_ONLY must be 0 or 1.\n' >&2
+  exit 1
+fi
+
 validate_config
+
+if [[ "${RUN_ENV_ONLY}" == "1" ]]; then
+  require_command python3
+  write_provenance_artifacts
+  append "- Run environment artifact: \`${RUN_ENV}\`"
+  append "- Acceptance baseline artifact: \`${ACCEPTANCE_BASELINE}\`"
+  append "- Live workload: \`not_run\`"
+  append "- Result: \`RUN_ENV_ONLY\`"
+  printf 'run_env_only_artifact=%s\n' "${RUN_ENV}"
+  exit 0
+fi
+
 require_command python3
 require_command ollama
 require_command cargo
@@ -1426,13 +1459,7 @@ if [[ " ${SELECTED_MODES[*]} " == *" live_guarded "* ]]; then
   fi
 fi
 
-prompt_hash="$(prompt_sha256)"
-write_payload true "${PAYLOAD_STREAM}"
-write_payload false "${PAYLOAD_WARMUP}"
-write_cpu_topology
-write_permission_state
-write_run_env "${prompt_hash}"
-write_acceptance_baseline "${prompt_hash}"
+write_provenance_artifacts
 
 append ""
 append "#### ${ACCEPTANCE_PHASE} fixed acceptance baseline"
