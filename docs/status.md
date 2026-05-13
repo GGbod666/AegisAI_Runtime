@@ -184,6 +184,21 @@ Production config cross-file safety validation on 2026-05-13 also passed:
   plus a non-empty allowlist, and `use_cpuset = true`. Cross-file errors include
   both involved config files.
 
+Repository status sync on 2026-05-13 also passed:
+
+- `git fetch --prune`
+- `bd lint`
+- `git diff --check`
+- `cargo fmt --all -- --check`
+- `cargo test -p aegisai-runtime-daemon` (`87` tests)
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `bash bench/scripts/project_preflight.sh --check`
+- Status search confirmed no stale open-status claims for closed
+  `AegisAI_Runtime-cqv`, `AegisAI_Runtime-51c`, or `AegisAI_Runtime-8le`.
+- The first preflight attempt exposed a real clippy issue:
+  `CliConfig::parse` was only used by tests. It is now `#[cfg(test)]`, leaving
+  runtime behavior unchanged and restoring the documented clippy gate.
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -245,47 +260,30 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-cqv` — parent production config epic remains open for final
-  readiness integration after its selector, schema, and cross-file validation
-  children. `AegisAI_Runtime-cqv.1` is complete: named production profile
-  cross-file validation rejects scenario action limits outside global safety,
-  triggers missing from `focus_signals`, unsupported live affinity scope, and
-  live cpuset writes while naming both involved files. `AegisAI_Runtime-cqv.2`
-  is complete: runtime startup can
-  select identifier-only production profiles from `configs/profiles/<name>/`
-  with CLI/env/default precedence while preserving local demo example
-  compatibility. `AegisAI_Runtime-cqv.3` is complete: named production profile
-  schema validation rejects unknown keys, missing required fields, invalid
-  classifier rule keys, invalid enum-like values, invalid `raise_nice`, and
-  invalid durations with contextual errors.
-- `AegisAI_Runtime-51c` — parent helper portability epic remains open for
-  broader cross-host validation. `AegisAI_Runtime-51c.2` has positive
-  two-kernel `gg-vm` evidence for `6.8.0-110-generic` and `6.8.0-111-generic`,
-  and the smoke result layer now keeps helper unavailable and tracepoint
-  incompatible distinct from no-workload outcomes. `AegisAI_Runtime-51c.1` is
-  complete: helper compatibility is classified before helper stream start and
-  records availability, tracefs, requested probes, and required field
-  inventory. `AegisAI_Runtime-51c.3` is complete: controlled Linux ingestion
-  smoke records nonzero procfs-derived daemon events. `AegisAI_Runtime-51c.4`
-  is complete: BpfTracePipe startup failure taxonomy coverage now distinguishes
-  missing binary/helper, permission, stdout/stderr capture, malformed line,
-  unsupported signal, and stop cleanup cases.
-- `AegisAI_Runtime-8le` — configure the intended Beads Dolt remote sync target.
-  The current project policy is local-only Beads sync: `origin` points to the
-  ignored filesystem remote
-  `file:///home/gg/AegisAI_Runtime/.beads/backup/dolt-remote/AegisAI_Runtime`,
-  and `bd dolt push` succeeds. No Git remote or Beads issue history was
-  rewritten.
+Current `bd` state after this sync: `70` total issues, `3` open, `0`
+in progress, `67` closed.
+
 - `AegisAI_Runtime-ufp` — implement the daemon/helper packaging path from
   `docs/packaging_contract.md`. `AegisAI_Runtime-ufp.1` is complete: the first
   target is Debian/Ubuntu systemd, with rootless daemon user/group, binary
   paths, production profile path, log path, helper privilege boundary,
-  prerequisite behavior, rollback, and uninstall rules defined.
+  prerequisite behavior, rollback, and uninstall rules defined. The remaining
+  open work is installer/service implementation plus dry-run or VM smoke
+  verification.
 - `AegisAI_Runtime-0ry` / `AegisAI_Runtime-0ry.1` — split deferred dashboard,
-  GPU, and adaptive policy extensions into evidence-gated future work.
+  GPU, and adaptive policy extensions into evidence-gated future work. This is
+  planning-only work; no runtime behavior changes should be made.
 
 Recently closed:
 
+- `AegisAI_Runtime-cqv` — closed the production config profile parent after
+  `AegisAI_Runtime-cqv.1`, `AegisAI_Runtime-cqv.2`, and
+  `AegisAI_Runtime-cqv.3` completed selector, strict schema validation, and
+  cross-file safety validation acceptance.
+- `AegisAI_Runtime-51c` — closed the helper portability parent after
+  `AegisAI_Runtime-51c.1` through `AegisAI_Runtime-51c.4` completed
+  compatibility taxonomy, two-kernel helper matrix, controlled Linux ingestion
+  smoke, and BpfTracePipe startup failure coverage.
 - `AegisAI_Runtime-ufp.1` — defined the Debian/Ubuntu systemd packaging
   contract in `docs/packaging_contract.md`. The contract names `_aegisai` as
   the rootless daemon user/group, `/usr/bin/aegisai-runtime-daemon` and

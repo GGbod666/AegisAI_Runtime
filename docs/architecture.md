@@ -221,24 +221,21 @@ Cpuset and background-isolation boundary:
 
 Current state:
 
-- `RuntimeOrchestratorConfig::load_from_repo_root` reads fixed files under
-  `configs/*/*.example.toml` plus `configs/safety/default.toml`.
-- Example files are suitable for tests, demos, and benchmark harnesses; they are
-  not a production profile contract.
-
-Profile selection rules for future production work:
-
-- select one named profile before reading component config files
-- precedence should be CLI flag, then environment variable, then a documented
-  non-production local default
-- profile names are identifiers, not paths; accept lowercase letters, digits,
-  `_`, and `-`; reject path separators, `.` segments, empty names, and absolute
-  paths
-- production mode must not silently load `*.example.toml`
-
-Schema validation should check TOML syntax, keys/types, required fields, enum
-values, numeric ranges, cross-file safety, and host/environment readiness.
-Errors should name profile, file, section, key, and violated constraint.
+- `RuntimeOrchestratorConfig::load_from_repo_root` still selects the local demo
+  profile and reads fixed example files under `configs/*/*.example.toml` plus
+  `configs/safety/default.toml`.
+- `RuntimeOrchestratorConfig::load_from_repo_root_with_profile` can load a
+  selected named profile from `configs/profiles/<name>/`.
+- Daemon startup selects profiles with precedence `--config-profile`,
+  `AEGISAI_CONFIG_PROFILE`, then local demo default.
+- Named profile names are identifiers, not paths; path separators, `.`
+  segments, empty names, and absolute paths are rejected before file reads.
+- Named production profiles do not silently load `*.example.toml`.
+- Strict production schema validation checks known keys, required fields, enum
+  values, numeric ranges, and contextual error reporting.
+- Cross-file safety validation checks scenario limits against global safety,
+  trigger signals against `focus_signals`, live affinity PID allowlist scope,
+  and disabled live cpuset writes.
 
 Deferred config work:
 
@@ -248,6 +245,7 @@ Deferred config work:
 - schema migrations
 - dashboard/UI editing
 - profile inheritance
+- full TOML parser replacement for the current narrow in-repo parser
 - adaptive policy writes back into profile files
 - enabling live cpuset writes by profile alone
 

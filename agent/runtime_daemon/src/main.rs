@@ -126,6 +126,7 @@ impl Default for CliConfig {
 }
 
 impl CliConfig {
+    #[cfg(test)]
     fn parse<I>(args: I) -> Result<Self, String>
     where
         I: IntoIterator<Item = String>,

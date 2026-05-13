@@ -19,6 +19,14 @@ before event counts, exits nonzero for `helper unavailable` or
 `tracepoint incompatible`, and reserves `no workload events` for compatible
 helper diagnostics with zero raw or normalized events.
 
+Post-ledger note, 2026-05-13: the remaining parent status was synced after
+follow-up acceptance. `AegisAI_Runtime-51c` is closed after helper compatibility
+taxonomy, two-kernel helper matrix, controlled Linux ingestion smoke, and
+BpfTracePipe startup failure coverage. `AegisAI_Runtime-cqv` is closed after
+profile selection, strict production schema validation, and cross-file safety
+validation. `AegisAI_Runtime-8le` is closed with a local-only Beads Dolt
+filesystem remote.
+
 ## Acceptance Conclusion
 
 The 19 evidence-hardening tasks are accepted against the current repository
@@ -72,14 +80,14 @@ run shape, Tool Call Booster guarded latency benefit has been proven for the
 latest fixed-work guarded run shape while the older stable executor-control run
 remains a historical non-controlled workload `FAIL`, the `WarmupExecutor`
 boundary has been implemented, the live cpuset/background safety boundary has
-been documented, policy safety cap normalization has been completed, and the
-cpuset/background dry-run planner has been completed. The remaining blockers
-are:
+been documented, policy safety cap normalization has been completed, the
+cpuset/background dry-run planner has been completed, helper portability and
+production config profile parents have been closed, and Beads Dolt sync has
+been configured. The remaining blockers are:
 
-- productionization and portability: `AegisAI_Runtime-cqv`,
-  `AegisAI_Runtime-51c`, `AegisAI_Runtime-ufp`
-- Beads Dolt remote sync: `AegisAI_Runtime-8le`
-- deferred runtime extensions: `AegisAI_Runtime-0ry`
+- production packaging/service implementation: `AegisAI_Runtime-ufp`
+- deferred runtime extensions: `AegisAI_Runtime-0ry` /
+  `AegisAI_Runtime-0ry.1`
 
 See `docs/status.md` for the current issue index and `bd ready` for executable
 work.
