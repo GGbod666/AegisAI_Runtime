@@ -19334,3 +19334,53 @@ Doc-tests aegisai_runtime_daemon: 0 passed; 0 failed
   rejected; missing profile roots fail before file reads; daemon selection
   precedence is CLI `--config-profile`, then `AEGISAI_CONFIG_PROFILE`, then the
   local demo default.
+
+### 2026-05-13T04:58:29Z - Production config schema validation
+
+- Scope: completed `AegisAI_Runtime-cqv.3` by adding strict schema validation
+  for named production config profiles. The local demo path remains permissive
+  for existing `*.example.toml` compatibility.
+- Reference: official TOML v1.0.0 specification (`https://toml.io/en/v1.0.0`);
+  this change validates the repository's existing TOML subset rather than
+  introducing a full TOML parser.
+
+- Command: `cargo fmt --all -- --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo test -p runtime_orchestrator`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+running 23 tests
+test config::tests::production_unknown_key_error_includes_schema_context ... ok
+test config::tests::production_missing_required_field_error_includes_schema_context ... ok
+test config::tests::production_classifier_unknown_key_error_includes_schema_context ... ok
+test config::tests::production_invalid_focus_signal_is_rejected ... ok
+test config::tests::production_invalid_scenario_enum_is_rejected ... ok
+test config::tests::production_invalid_action_enum_is_rejected ... ok
+test config::tests::production_invalid_raise_nice_is_rejected ... ok
+test config::tests::production_invalid_duration_is_rejected ... ok
+test config::tests::local_demo_profile_still_ignores_unknown_example_keys ... ok
+test runtime_orchestrator::tests::* ... ok
+
+test result: ok. 23 passed; 0 failed
+```
+
+- Command: `cargo test -p aegisai-runtime-daemon`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/runtime_daemon/src/lib.rs: 51 passed; 0 failed
+agent/runtime_daemon/src/main.rs: 36 passed; 0 failed
+Doc-tests aegisai_runtime_daemon: 0 passed; 0 failed
+```
+
+- Acceptance coverage: production schema errors include selected profile, file,
+  section, key, and violated constraint. Tests cover unknown production keys,
+  missing required fields, invalid classifier rule keys, invalid focus signals,
+  invalid scenario names, invalid action enum-like `pin_strategy`, invalid
+  `raise_nice`, invalid duration values, and local demo/example compatibility.

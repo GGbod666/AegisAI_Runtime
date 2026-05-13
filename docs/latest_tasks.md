@@ -48,7 +48,7 @@ current planning order.
   `processed_events=4`, `run_queue_delay` signal observation present
 - `cargo test -p aegisai-runtime-daemon source::tests`: `PASS`, `32`
   source tests
-- `cargo test -p runtime_orchestrator`: `PASS`, `14` tests
+- `cargo test -p runtime_orchestrator`: `PASS`, `23` tests
 - `cargo test -p aegisai-runtime-daemon`: `PASS`, `87` tests
 - `bd lint`: `PASS`
 
@@ -369,20 +369,29 @@ cross-host validation, and unattended operation.
 
 - Issue: `AegisAI_Runtime-cqv.3`
 - Parent: `AegisAI_Runtime-cqv`
+- Status: `DONE` on 2026-05-13.
 - Why after selector: schema errors need to name the selected production
   profile and file.
 - Scope:
-  - validate known keys and required fields
-  - validate enum values, numeric ranges, and duration limits
-  - preserve demo/example compatibility
+  - added strict schema validation for named production profiles while keeping
+    the local demo/example parser permissive
+  - production schema errors now include profile, file, section, key, and the
+    violated constraint
+  - validated known runtime/classifier/awareness/safety/scenario keys and
+    required fields
+  - rejected invalid production signal, scenario, pin strategy, `raise_nice`,
+    selection mode, affinity ratio, priority delta, and zero duration values
 - Acceptance:
   - unknown production key errors include profile, file, section, key, and
-    violated constraint
-  - missing required field errors include the same context
-  - invalid signal, scenario, and action enum cases are tested
-  - invalid `raise_nice` and duration cases are tested
+    violated constraint: `PASS`
+  - missing required field errors include the same context: `PASS`
+  - invalid signal, scenario, and action enum cases are tested: `PASS`
+  - invalid `raise_nice` and duration cases are tested: `PASS`
+  - demo/example compatibility remains intact: `PASS`
 - Verification:
-  - `cargo test -p aegisai-runtime-orchestrator`
+  - `cargo fmt --all -- --check`: `PASS`
+  - `cargo test -p runtime_orchestrator`: `PASS`; `23` tests
+  - `cargo test -p aegisai-runtime-daemon`: `PASS`; `87` tests
 
 ### 13. Add Config Cross-File Safety Validation
 

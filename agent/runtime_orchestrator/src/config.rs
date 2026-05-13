@@ -95,22 +95,29 @@ impl RuntimeOrchestratorConfig {
     }
 
     fn load_from_paths(paths: ConfigPaths) -> Result<Self, ConfigError> {
-        let runtime = parse_runtime_config(&read(paths.runtime)?)?;
-        let mut classifier = parse_classifier_config(&read(paths.classifier)?)?;
-        merge_awareness_defaults(&mut classifier.awareness, &read(paths.awareness)?)?;
-        let safety = parse_safety_config(&read(paths.safety)?)?;
+        let strict = paths.strict_schema;
+        let runtime = read_config_file(paths.runtime)?;
+        let classifier = read_config_file(paths.classifier)?;
+        let awareness = read_config_file(paths.awareness)?;
+        let safety = read_config_file(paths.safety)?;
+        let inference_tail_guard = read_config_file(paths.inference_tail_guard)?;
+        let tool_call_booster = read_config_file(paths.tool_call_booster)?;
+
+        let runtime = parse_runtime_config(&runtime, strict)?;
+        let mut classifier = parse_classifier_config(&classifier, strict)?;
+        merge_awareness_defaults(&mut classifier.awareness, &awareness, strict)?;
+        let safety = parse_safety_config(&safety, strict)?;
 
         let mut scenarios = BTreeMap::new();
         let inference_policy = parse_scenario_policy(
-            &read(paths.inference_tail_guard)?,
+            &inference_tail_guard,
             ScenarioKind::InferenceTailGuard,
+            strict,
         )?;
         scenarios.insert(ScenarioKind::InferenceTailGuard, inference_policy);
 
-        let tool_policy = parse_scenario_policy(
-            &read(paths.tool_call_booster)?,
-            ScenarioKind::ToolCallBooster,
-        )?;
+        let tool_policy =
+            parse_scenario_policy(&tool_call_booster, ScenarioKind::ToolCallBooster, strict)?;
         scenarios.insert(ScenarioKind::ToolCallBooster, tool_policy);
 
         Ok(Self {
@@ -124,12 +131,68 @@ impl RuntimeOrchestratorConfig {
 
 #[derive(Debug)]
 struct ConfigPaths {
-    runtime: PathBuf,
-    classifier: PathBuf,
-    awareness: PathBuf,
-    safety: PathBuf,
-    inference_tail_guard: PathBuf,
-    tool_call_booster: PathBuf,
+    strict_schema: bool,
+    runtime: ConfigFile,
+    classifier: ConfigFile,
+    awareness: ConfigFile,
+    safety: ConfigFile,
+    inference_tail_guard: ConfigFile,
+    tool_call_booster: ConfigFile,
+}
+
+#[derive(Debug)]
+struct ConfigFile {
+    profile: String,
+    path: PathBuf,
+}
+
+impl ConfigFile {
+    fn new(profile: &RuntimeConfigProfile, path: PathBuf) -> Self {
+        Self {
+            profile: profile.name().to_string(),
+            path,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ConfigDocument {
+    profile: String,
+    path: PathBuf,
+    contents: String,
+}
+
+impl ConfigDocument {
+    fn context(&self) -> ConfigContext<'_> {
+        ConfigContext {
+            profile: &self.profile,
+            path: &self.path,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ConfigContext<'a> {
+    profile: &'a str,
+    path: &'a Path,
+}
+
+impl ConfigContext<'_> {
+    fn error(
+        self,
+        section: impl AsRef<str>,
+        key: impl AsRef<str>,
+        constraint: impl AsRef<str>,
+    ) -> ConfigError {
+        ConfigError::new(format!(
+            "config schema error: profile `{}` file {} section `{}` key `{}` violates constraint: {}",
+            self.profile,
+            self.path.display(),
+            section.as_ref(),
+            key.as_ref(),
+            constraint.as_ref()
+        ))
+    }
 }
 
 fn config_paths_for_profile(
@@ -138,12 +201,25 @@ fn config_paths_for_profile(
 ) -> Result<ConfigPaths, ConfigError> {
     match profile {
         RuntimeConfigProfile::LocalDemo => Ok(ConfigPaths {
-            runtime: root.join("configs/runtime/runtime.example.toml"),
-            classifier: root.join("configs/classifier/process_rules.example.toml"),
-            awareness: root.join("configs/scenarios/ai_workload_awareness.example.toml"),
-            safety: root.join("configs/safety/default.toml"),
-            inference_tail_guard: root.join("configs/scenarios/inference_tail_guard.example.toml"),
-            tool_call_booster: root.join("configs/scenarios/tool_call_booster.example.toml"),
+            strict_schema: false,
+            runtime: ConfigFile::new(profile, root.join("configs/runtime/runtime.example.toml")),
+            classifier: ConfigFile::new(
+                profile,
+                root.join("configs/classifier/process_rules.example.toml"),
+            ),
+            awareness: ConfigFile::new(
+                profile,
+                root.join("configs/scenarios/ai_workload_awareness.example.toml"),
+            ),
+            safety: ConfigFile::new(profile, root.join("configs/safety/default.toml")),
+            inference_tail_guard: ConfigFile::new(
+                profile,
+                root.join("configs/scenarios/inference_tail_guard.example.toml"),
+            ),
+            tool_call_booster: ConfigFile::new(
+                profile,
+                root.join("configs/scenarios/tool_call_booster.example.toml"),
+            ),
         }),
         RuntimeConfigProfile::Named(name) => {
             let profile_root = root.join("configs/profiles").join(name);
@@ -154,12 +230,25 @@ fn config_paths_for_profile(
                 )));
             }
             Ok(ConfigPaths {
-                runtime: profile_root.join("runtime.toml"),
-                classifier: profile_root.join("classifier/process_rules.toml"),
-                awareness: profile_root.join("scenarios/ai_workload_awareness.toml"),
-                safety: profile_root.join("safety/default.toml"),
-                inference_tail_guard: profile_root.join("scenarios/inference_tail_guard.toml"),
-                tool_call_booster: profile_root.join("scenarios/tool_call_booster.toml"),
+                strict_schema: true,
+                runtime: ConfigFile::new(profile, profile_root.join("runtime.toml")),
+                classifier: ConfigFile::new(
+                    profile,
+                    profile_root.join("classifier/process_rules.toml"),
+                ),
+                awareness: ConfigFile::new(
+                    profile,
+                    profile_root.join("scenarios/ai_workload_awareness.toml"),
+                ),
+                safety: ConfigFile::new(profile, profile_root.join("safety/default.toml")),
+                inference_tail_guard: ConfigFile::new(
+                    profile,
+                    profile_root.join("scenarios/inference_tail_guard.toml"),
+                ),
+                tool_call_booster: ConfigFile::new(
+                    profile,
+                    profile_root.join("scenarios/tool_call_booster.toml"),
+                ),
             })
         }
     }
@@ -203,8 +292,12 @@ impl ConfigError {
         }
     }
 
-    fn missing(path: &Path) -> Self {
-        Self::new(format!("missing config file: {}", path.display()))
+    fn missing(file: &ConfigFile) -> Self {
+        Self::new(format!(
+            "missing config file for profile `{}`: {}",
+            file.profile,
+            file.path.display()
+        ))
     }
 }
 
@@ -216,51 +309,127 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-fn read(path: PathBuf) -> Result<String, ConfigError> {
-    fs::read_to_string(&path).map_err(|_| ConfigError::missing(&path))
+fn read_config_file(file: ConfigFile) -> Result<ConfigDocument, ConfigError> {
+    let contents = fs::read_to_string(&file.path).map_err(|_| ConfigError::missing(&file))?;
+    Ok(ConfigDocument {
+        profile: file.profile,
+        path: file.path,
+        contents,
+    })
 }
 
-fn parse_runtime_config(input: &str) -> Result<RuntimeConfig, ConfigError> {
+fn parse_runtime_config(
+    document: &ConfigDocument,
+    strict: bool,
+) -> Result<RuntimeConfig, ConfigError> {
+    let ctx = document.context();
     let mut section = String::new();
-    let mut deployment_target = String::new();
-    let mut kernel_min = String::new();
-    let mut cgroup_version = String::new();
-    let mut primary_runtime = String::new();
-    let mut fallback_runtime = String::new();
-    let mut selection_mode = String::new();
-    let mut process_names = Vec::new();
-    let mut pid_allowlist = BTreeSet::new();
-    let mut focus_signals = BTreeSet::new();
-    let mut tracked_metrics = Vec::new();
+    let mut deployment_target = None;
+    let mut kernel_min = None;
+    let mut cgroup_version = None;
+    let mut primary_runtime = None;
+    let mut fallback_runtime = None;
+    let mut selection_mode = None;
+    let mut process_names = None;
+    let mut pid_allowlist = None;
+    let mut focus_signals = None;
+    let mut tracked_metrics = None;
 
-    for line in normalize_lines(input) {
+    for line in normalize_lines(&document.contents) {
         if let Some(table) = parse_table_name(&line) {
+            if strict
+                && !matches!(
+                    table.as_str(),
+                    "target" | "runtime" | "selection" | "collection" | "metrics"
+                )
+            {
+                return Err(ctx.error(table, "*", "known runtime config section"));
+            }
             section = table;
             continue;
         }
 
         let (key, value) = parse_assignment(&line)?;
         match (section.as_str(), key) {
-            ("target", "deployment_target") => deployment_target = parse_string(value)?,
-            ("target", "kernel_min") => kernel_min = parse_string(value)?,
-            ("target", "cgroup_version") => cgroup_version = parse_string(value)?,
-            ("runtime", "primary_runtime") => primary_runtime = parse_string(value)?,
-            ("runtime", "fallback_runtime") => fallback_runtime = parse_string(value)?,
-            ("selection", "mode") => selection_mode = parse_string(value)?,
-            ("selection", "process_names") => process_names = parse_string_array(value)?,
+            ("target", "deployment_target") => deployment_target = Some(parse_string(value)?),
+            ("target", "kernel_min") => kernel_min = Some(parse_string(value)?),
+            ("target", "cgroup_version") => cgroup_version = Some(parse_string(value)?),
+            ("runtime", "primary_runtime") => primary_runtime = Some(parse_string(value)?),
+            ("runtime", "fallback_runtime") => fallback_runtime = Some(parse_string(value)?),
+            ("selection", "mode") => {
+                selection_mode = Some(parse_runtime_selection_mode(value, ctx, strict)?)
+            }
+            ("selection", "process_names") => process_names = Some(parse_string_array(value)?),
             ("selection", "pid_allowlist") => {
-                pid_allowlist = parse_u32_array(value)?.into_iter().collect();
+                pid_allowlist = Some(parse_u32_array(value)?.into_iter().collect());
             }
             ("collection", "focus_signals") => {
-                focus_signals = parse_string_array(value)?
-                    .into_iter()
-                    .map(|signal| SignalKind::parse(&signal))
-                    .collect();
+                focus_signals = Some(parse_signal_set(
+                    value,
+                    ctx,
+                    "collection",
+                    "focus_signals",
+                    strict,
+                )?);
             }
-            ("metrics", "track") => tracked_metrics = parse_string_array(value)?,
+            ("metrics", "track") => tracked_metrics = Some(parse_string_array(value)?),
+            _ if strict => return Err(ctx.error(&section, key, "known runtime config key")),
             _ => {}
         }
     }
+
+    let deployment_target = required_string_if_strict(
+        deployment_target,
+        ctx,
+        "target",
+        "deployment_target",
+        strict,
+    )?;
+    let kernel_min = required_string_if_strict(kernel_min, ctx, "target", "kernel_min", strict)?;
+    let cgroup_version =
+        required_string_if_strict(cgroup_version, ctx, "target", "cgroup_version", strict)?;
+    let primary_runtime =
+        required_string_if_strict(primary_runtime, ctx, "runtime", "primary_runtime", strict)?;
+    let fallback_runtime =
+        required_string_if_strict(fallback_runtime, ctx, "runtime", "fallback_runtime", strict)?;
+    let selection_mode =
+        required_string_if_strict(selection_mode, ctx, "selection", "mode", strict)?;
+    let process_names = required_value_if_strict(
+        process_names,
+        ctx,
+        "selection",
+        "process_names",
+        "required field",
+        strict,
+    )?
+    .unwrap_or_default();
+    let pid_allowlist = required_value_if_strict(
+        pid_allowlist,
+        ctx,
+        "selection",
+        "pid_allowlist",
+        "required field",
+        strict,
+    )?
+    .unwrap_or_default();
+    let focus_signals = required_value_if_strict(
+        focus_signals,
+        ctx,
+        "collection",
+        "focus_signals",
+        "required field",
+        strict,
+    )?
+    .unwrap_or_default();
+    let tracked_metrics = required_value_if_strict(
+        tracked_metrics,
+        ctx,
+        "metrics",
+        "track",
+        "required field",
+        strict,
+    )?
+    .unwrap_or_default();
 
     Ok(RuntimeConfig {
         deployment_target,
@@ -276,8 +445,14 @@ fn parse_runtime_config(input: &str) -> Result<RuntimeConfig, ConfigError> {
     })
 }
 
-fn parse_classifier_config(input: &str) -> Result<ClassifierConfig, ConfigError> {
-    let process_rules = ac::ClassifierConfig::from_toml_str(input)
+fn parse_classifier_config(
+    document: &ConfigDocument,
+    strict: bool,
+) -> Result<ClassifierConfig, ConfigError> {
+    if strict {
+        validate_classifier_schema(document)?;
+    }
+    let process_rules = ac::ClassifierConfig::from_toml_str(&document.contents)
         .map_err(|error| ConfigError::new(error.to_string()))?
         .process_rules;
 
@@ -287,14 +462,96 @@ fn parse_classifier_config(input: &str) -> Result<ClassifierConfig, ConfigError>
     })
 }
 
+fn validate_classifier_schema(document: &ConfigDocument) -> Result<(), ConfigError> {
+    let ctx = document.context();
+    let mut saw_rule = false;
+    let mut has_matcher = false;
+    let mut has_tags = false;
+
+    for line in normalize_lines(&document.contents) {
+        if line == "[[process_rules]]" {
+            if saw_rule {
+                validate_classifier_rule(ctx, has_matcher, has_tags)?;
+            }
+            saw_rule = true;
+            has_matcher = false;
+            has_tags = false;
+            continue;
+        }
+
+        if let Some(table) = parse_table_name(&line) {
+            return Err(ctx.error(
+                table,
+                "*",
+                "classifier config supports [[process_rules]] only",
+            ));
+        }
+
+        let (key, _) = parse_assignment(&line)?;
+        if !saw_rule {
+            return Err(ctx.error("process_rules", key, "key must be inside [[process_rules]]"));
+        }
+
+        match key {
+            "id" => {}
+            "name"
+            | "process_name"
+            | "cmdline_contains"
+            | "cgroup_contains"
+            | "pids"
+            | "pid_allowlist"
+            | "tag_markers"
+            | "parent_name"
+            | "parent_process_name"
+            | "parent_cmdline_contains"
+            | "parent_has_any_tags" => has_matcher = true,
+            "tags" => has_tags = true,
+            other => {
+                return Err(ctx.error("process_rules", other, "known classifier process rule key"))
+            }
+        }
+    }
+
+    if !saw_rule {
+        return Err(ctx.error("process_rules", "*", "at least one [[process_rules]] entry"));
+    }
+    validate_classifier_rule(ctx, has_matcher, has_tags)
+}
+
+fn validate_classifier_rule(
+    ctx: ConfigContext<'_>,
+    has_matcher: bool,
+    has_tags: bool,
+) -> Result<(), ConfigError> {
+    if !has_matcher {
+        return Err(ctx.error("process_rules", "*", "at least one matcher"));
+    }
+    if !has_tags {
+        return Err(ctx.error("process_rules", "tags", "required field"));
+    }
+    Ok(())
+}
+
 fn merge_awareness_defaults(
     awareness: &mut AwarenessConfig,
-    input: &str,
+    document: &ConfigDocument,
+    strict: bool,
 ) -> Result<(), ConfigError> {
+    let ctx = document.context();
     let mut section = String::new();
+    let mut enable_cmdline_rules = None;
+    let mut enable_cgroup_rules = None;
+    let mut enable_parent_child_inference = None;
+    let mut enable_pid_allowlist = None;
+    let mut interactive_default = None;
+    let mut tool_executor_default = None;
+    let mut background_default = None;
 
-    for line in normalize_lines(input) {
+    for line in normalize_lines(&document.contents) {
         if let Some(table) = parse_table_name(&line) {
+            if strict && !matches!(table.as_str(), "classifier" | "labels") {
+                return Err(ctx.error(table, "*", "known awareness config section"));
+            }
             section = table;
             continue;
         }
@@ -302,61 +559,210 @@ fn merge_awareness_defaults(
         let (key, value) = parse_assignment(&line)?;
         match (section.as_str(), key) {
             ("classifier", "enable_cmdline_rules") => {
-                awareness.enable_cmdline_rules = parse_bool(value)?
+                enable_cmdline_rules = Some(parse_bool(value)?)
             }
-            ("classifier", "enable_cgroup_rules") => {
-                awareness.enable_cgroup_rules = parse_bool(value)?
-            }
+            ("classifier", "enable_cgroup_rules") => enable_cgroup_rules = Some(parse_bool(value)?),
             ("classifier", "enable_parent_child_inference") => {
-                awareness.enable_parent_child_inference = parse_bool(value)?
+                enable_parent_child_inference = Some(parse_bool(value)?)
             }
             ("classifier", "enable_pid_allowlist") => {
-                awareness.enable_pid_allowlist = parse_bool(value)?
+                enable_pid_allowlist = Some(parse_bool(value)?)
             }
-            ("labels", "interactive_default") => {
-                awareness.interactive_default = parse_tag_set(value)?
-            }
+            ("labels", "interactive_default") => interactive_default = Some(parse_tag_set(value)?),
             ("labels", "tool_executor_default") => {
-                awareness.tool_executor_default = parse_tag_set(value)?
+                tool_executor_default = Some(parse_tag_set(value)?)
             }
-            ("labels", "background_default") => {
-                awareness.background_default = parse_tag_set(value)?
-            }
+            ("labels", "background_default") => background_default = Some(parse_tag_set(value)?),
+            _ if strict => return Err(ctx.error(&section, key, "known awareness config key")),
             _ => {}
+        }
+    }
+
+    if strict {
+        awareness.enable_cmdline_rules = required_value(
+            enable_cmdline_rules,
+            ctx,
+            "classifier",
+            "enable_cmdline_rules",
+            "required field",
+        )?;
+        awareness.enable_cgroup_rules = required_value(
+            enable_cgroup_rules,
+            ctx,
+            "classifier",
+            "enable_cgroup_rules",
+            "required field",
+        )?;
+        awareness.enable_parent_child_inference = required_value(
+            enable_parent_child_inference,
+            ctx,
+            "classifier",
+            "enable_parent_child_inference",
+            "required field",
+        )?;
+        awareness.enable_pid_allowlist = required_value(
+            enable_pid_allowlist,
+            ctx,
+            "classifier",
+            "enable_pid_allowlist",
+            "required field",
+        )?;
+        awareness.interactive_default = required_value(
+            interactive_default,
+            ctx,
+            "labels",
+            "interactive_default",
+            "required field",
+        )?;
+        awareness.tool_executor_default = required_value(
+            tool_executor_default,
+            ctx,
+            "labels",
+            "tool_executor_default",
+            "required field",
+        )?;
+        awareness.background_default = required_value(
+            background_default,
+            ctx,
+            "labels",
+            "background_default",
+            "required field",
+        )?;
+    } else {
+        if let Some(value) = enable_cmdline_rules {
+            awareness.enable_cmdline_rules = value;
+        }
+        if let Some(value) = enable_cgroup_rules {
+            awareness.enable_cgroup_rules = value;
+        }
+        if let Some(value) = enable_parent_child_inference {
+            awareness.enable_parent_child_inference = value;
+        }
+        if let Some(value) = enable_pid_allowlist {
+            awareness.enable_pid_allowlist = value;
+        }
+        if let Some(value) = interactive_default {
+            awareness.interactive_default = value;
+        }
+        if let Some(value) = tool_executor_default {
+            awareness.tool_executor_default = value;
+        }
+        if let Some(value) = background_default {
+            awareness.background_default = value;
         }
     }
 
     Ok(())
 }
 
-fn parse_safety_config(input: &str) -> Result<SafetyConfig, ConfigError> {
+fn parse_safety_config(
+    document: &ConfigDocument,
+    strict: bool,
+) -> Result<SafetyConfig, ConfigError> {
+    let ctx = document.context();
     let mut section = String::new();
-    let mut require_revert = true;
-    let mut allow_background_throttle = false;
-    let mut max_priority_delta = 0;
-    let mut max_boost_duration_ms = 0;
-    let mut max_affinity_change_ratio = 0.0;
+    let mut require_revert = None;
+    let mut allow_background_throttle = None;
+    let mut max_priority_delta = None;
+    let mut max_boost_duration_ms = None;
+    let mut max_affinity_change_ratio = None;
 
-    for line in normalize_lines(input) {
+    for line in normalize_lines(&document.contents) {
         if let Some(table) = parse_table_name(&line) {
+            if strict && table != "global_safety" {
+                return Err(ctx.error(table, "*", "known safety config section"));
+            }
             section = table;
             continue;
         }
 
         let (key, value) = parse_assignment(&line)?;
         match (section.as_str(), key) {
-            ("global_safety", "require_revert") => require_revert = parse_bool(value)?,
+            ("global_safety", "require_revert") => require_revert = Some(parse_bool(value)?),
             ("global_safety", "allow_background_throttle") => {
-                allow_background_throttle = parse_bool(value)?
+                allow_background_throttle = Some(parse_bool(value)?)
             }
-            ("global_safety", "max_priority_delta") => max_priority_delta = parse_i32(value)?,
-            ("global_safety", "max_boost_duration_ms") => max_boost_duration_ms = parse_u64(value)?,
+            ("global_safety", "max_priority_delta") => {
+                let parsed = parse_i32(value)?;
+                if strict && !(0..=20).contains(&parsed) {
+                    return Err(ctx.error(
+                        "global_safety",
+                        "max_priority_delta",
+                        "integer in range 0..=20",
+                    ));
+                }
+                max_priority_delta = Some(parsed);
+            }
+            ("global_safety", "max_boost_duration_ms") => {
+                max_boost_duration_ms = Some(parse_positive_duration_ms(
+                    value,
+                    ctx,
+                    "global_safety",
+                    key,
+                    strict,
+                )?)
+            }
             ("global_safety", "max_affinity_change_ratio") => {
-                max_affinity_change_ratio = parse_f32(value)?
+                let parsed = parse_f32(value)?;
+                if strict && !(0.0..=1.0).contains(&parsed) {
+                    return Err(ctx.error(
+                        "global_safety",
+                        "max_affinity_change_ratio",
+                        "finite float in range 0.0..=1.0",
+                    ));
+                }
+                max_affinity_change_ratio = Some(parsed);
             }
+            _ if strict => return Err(ctx.error(&section, key, "known safety config key")),
             _ => {}
         }
     }
+
+    let require_revert = required_value_if_strict(
+        require_revert,
+        ctx,
+        "global_safety",
+        "require_revert",
+        "required field",
+        strict,
+    )?
+    .unwrap_or(true);
+    let allow_background_throttle = required_value_if_strict(
+        allow_background_throttle,
+        ctx,
+        "global_safety",
+        "allow_background_throttle",
+        "required field",
+        strict,
+    )?
+    .unwrap_or(false);
+    let max_priority_delta = required_value_if_strict(
+        max_priority_delta,
+        ctx,
+        "global_safety",
+        "max_priority_delta",
+        "required field",
+        strict,
+    )?
+    .unwrap_or(0);
+    let max_boost_duration_ms = required_value_if_strict(
+        max_boost_duration_ms,
+        ctx,
+        "global_safety",
+        "max_boost_duration_ms",
+        "required field",
+        strict,
+    )?
+    .unwrap_or(0);
+    let max_affinity_change_ratio = required_value_if_strict(
+        max_affinity_change_ratio,
+        ctx,
+        "global_safety",
+        "max_affinity_change_ratio",
+        "required field",
+        strict,
+    )?
+    .unwrap_or(0.0);
 
     Ok(SafetyConfig {
         require_revert,
@@ -368,19 +774,26 @@ fn parse_safety_config(input: &str) -> Result<SafetyConfig, ConfigError> {
 }
 
 fn parse_scenario_policy(
-    input: &str,
+    document: &ConfigDocument,
     scenario: ScenarioKind,
+    strict: bool,
 ) -> Result<ScenarioPolicy, ConfigError> {
+    let ctx = document.context();
     let mut section = String::new();
-    let mut enabled = false;
-    let mut evaluation_window_ms = 0;
-    let mut cooldown_ms = 0;
-    let mut max_boost_duration_ms = 0;
+    let mut active_scenarios = None;
+    let mut evaluation_window_ms = None;
+    let mut cooldown_ms = None;
+    let mut max_boost_duration_ms = None;
     let mut triggers = TriggerThresholds::default();
     let mut actions = ScenarioActions::default();
+    let trigger_section = format!("triggers.{}", scenario.as_str());
+    let action_section = format!("actions.{}", scenario.as_str());
 
-    for line in normalize_lines(input) {
+    for line in normalize_lines(&document.contents) {
         if let Some(table) = parse_table_name(&line) {
+            if strict && table != "policy" && table != trigger_section && table != action_section {
+                return Err(ctx.error(table, "*", "known scenario policy section"));
+            }
             section = table;
             continue;
         }
@@ -388,45 +801,121 @@ fn parse_scenario_policy(
         let (key, value) = parse_assignment(&line)?;
         match (section.as_str(), key) {
             ("policy", "active_scenarios") => {
-                let active = parse_string_array(value)?
-                    .into_iter()
-                    .map(|item| ScenarioKind::parse(&item))
-                    .collect::<Vec<_>>();
-                enabled = active.iter().any(|item| item == &scenario);
+                active_scenarios = Some(parse_scenario_array(value, ctx, "policy", key, strict)?);
             }
-            ("policy", "evaluation_window_ms") => evaluation_window_ms = parse_u64(value)?,
-            ("policy", "cooldown_ms") => cooldown_ms = parse_u64(value)?,
-            ("policy", "max_boost_duration_ms") => max_boost_duration_ms = parse_u64(value)?,
-            _ if section == format!("triggers.{}", scenario.as_str()) => match key {
-                "run_queue_delay_us" => triggers.run_queue_delay_us = Some(parse_u64(value)?),
-                "offcpu_spike_us" => triggers.offcpu_spike_us = Some(parse_u64(value)?),
+            ("policy", "evaluation_window_ms") => {
+                evaluation_window_ms = Some(parse_positive_duration_ms(
+                    value, ctx, "policy", key, strict,
+                )?)
+            }
+            ("policy", "cooldown_ms") => {
+                cooldown_ms = Some(parse_positive_duration_ms(
+                    value, ctx, "policy", key, strict,
+                )?)
+            }
+            ("policy", "max_boost_duration_ms") => {
+                max_boost_duration_ms = Some(parse_positive_duration_ms(
+                    value, ctx, "policy", key, strict,
+                )?)
+            }
+            _ if section == trigger_section => match key {
+                "run_queue_delay_us" => {
+                    triggers.run_queue_delay_us = Some(parse_positive_duration_ms(
+                        value, ctx, &section, key, strict,
+                    )?)
+                }
+                "offcpu_spike_us" => {
+                    triggers.offcpu_spike_us = Some(parse_positive_duration_ms(
+                        value, ctx, &section, key, strict,
+                    )?)
+                }
                 "cpu_migrations_per_sec" => {
-                    triggers.cpu_migrations_per_sec = Some(parse_u64(value)?)
+                    triggers.cpu_migrations_per_sec = Some(parse_positive_duration_ms(
+                        value, ctx, &section, key, strict,
+                    )?)
                 }
                 "major_page_faults_per_sec" => {
-                    triggers.major_page_faults_per_sec = Some(parse_u64(value)?)
+                    triggers.major_page_faults_per_sec = Some(parse_positive_duration_ms(
+                        value, ctx, &section, key, strict,
+                    )?)
                 }
                 "subprocess_start_delay_us" => {
-                    triggers.subprocess_start_delay_us = Some(parse_u64(value)?)
+                    triggers.subprocess_start_delay_us = Some(parse_positive_duration_ms(
+                        value, ctx, &section, key, strict,
+                    )?)
                 }
-                "queue_wait_us" => triggers.queue_wait_us = Some(parse_u64(value)?),
+                "queue_wait_us" => {
+                    triggers.queue_wait_us = Some(parse_positive_duration_ms(
+                        value, ctx, &section, key, strict,
+                    )?)
+                }
                 "optional_io_latency_us" => {
-                    triggers.optional_io_latency_us = Some(parse_u64(value)?)
+                    triggers.optional_io_latency_us = Some(parse_positive_duration_ms(
+                        value, ctx, &section, key, strict,
+                    )?)
                 }
+                _ if strict => return Err(ctx.error(&section, key, "known trigger key")),
                 _ => {}
             },
-            _ if section == format!("actions.{}", scenario.as_str()) => match key {
-                "raise_nice" => actions.raise_nice = Some(parse_i32(value)?),
+            _ if section == action_section => match key {
+                "raise_nice" => {
+                    let parsed = parse_i32(value)?;
+                    if strict && !(-20..=19).contains(&parsed) {
+                        return Err(ctx.error(&section, key, "integer in range -20..=19"));
+                    }
+                    actions.raise_nice = Some(parsed);
+                }
                 "pin_strategy" => {
-                    actions.pin_strategy = Some(PinStrategy::parse(&parse_string(value)?))
+                    actions.pin_strategy =
+                        Some(parse_pin_strategy(value, ctx, &section, key, strict)?);
                 }
                 "use_cpuset" => actions.use_cpuset = Some(parse_bool(value)?),
                 "warmup_executor" => actions.warmup_executor = Some(parse_bool(value)?),
+                _ if strict => return Err(ctx.error(&section, key, "known action key")),
                 _ => {}
             },
+            _ if strict => return Err(ctx.error(&section, key, "known scenario policy key")),
             _ => {}
         }
     }
+
+    let active_scenarios = required_value_if_strict(
+        active_scenarios,
+        ctx,
+        "policy",
+        "active_scenarios",
+        "required field",
+        strict,
+    )?
+    .unwrap_or_default();
+    let enabled = active_scenarios.iter().any(|item| item == &scenario);
+    let evaluation_window_ms = required_value_if_strict(
+        evaluation_window_ms,
+        ctx,
+        "policy",
+        "evaluation_window_ms",
+        "required field",
+        strict,
+    )?
+    .unwrap_or(0);
+    let cooldown_ms = required_value_if_strict(
+        cooldown_ms,
+        ctx,
+        "policy",
+        "cooldown_ms",
+        "required field",
+        strict,
+    )?
+    .unwrap_or(0);
+    let max_boost_duration_ms = required_value_if_strict(
+        max_boost_duration_ms,
+        ctx,
+        "policy",
+        "max_boost_duration_ms",
+        "required field",
+        strict,
+    )?
+    .unwrap_or(0);
 
     Ok(ScenarioPolicy {
         scenario,
@@ -555,6 +1044,123 @@ fn parse_tag_set(raw: &str) -> Result<BTreeSet<WorkloadTag>, ConfigError> {
         .collect())
 }
 
+fn parse_runtime_selection_mode(
+    raw: &str,
+    ctx: ConfigContext<'_>,
+    strict: bool,
+) -> Result<String, ConfigError> {
+    let mode = parse_string(raw)?;
+    if strict && mode != "process_name" && mode != "pid_allowlist" {
+        return Err(ctx.error("selection", "mode", "one of process_name, pid_allowlist"));
+    }
+    Ok(mode)
+}
+
+fn parse_signal_set(
+    raw: &str,
+    ctx: ConfigContext<'_>,
+    section: &str,
+    key: &str,
+    strict: bool,
+) -> Result<BTreeSet<SignalKind>, ConfigError> {
+    parse_string_array(raw)?
+        .into_iter()
+        .map(|signal| {
+            let parsed = SignalKind::parse(&signal);
+            if strict && matches!(parsed, SignalKind::Unknown(_)) {
+                return Err(ctx.error(section, key, format!("known signal `{signal}`")));
+            }
+            Ok(parsed)
+        })
+        .collect()
+}
+
+fn parse_scenario_array(
+    raw: &str,
+    ctx: ConfigContext<'_>,
+    section: &str,
+    key: &str,
+    strict: bool,
+) -> Result<Vec<ScenarioKind>, ConfigError> {
+    parse_string_array(raw)?
+        .into_iter()
+        .map(|scenario| {
+            let parsed = ScenarioKind::parse(&scenario);
+            if strict && matches!(parsed, ScenarioKind::Unknown(_)) {
+                return Err(ctx.error(section, key, format!("known scenario `{scenario}`")));
+            }
+            Ok(parsed)
+        })
+        .collect()
+}
+
+fn parse_pin_strategy(
+    raw: &str,
+    ctx: ConfigContext<'_>,
+    section: &str,
+    key: &str,
+    strict: bool,
+) -> Result<PinStrategy, ConfigError> {
+    let value = parse_string(raw)?;
+    let strategy = PinStrategy::parse(&value);
+    if strict && matches!(strategy, PinStrategy::Unknown(_)) {
+        return Err(ctx.error(section, key, format!("known pin strategy `{value}`")));
+    }
+    Ok(strategy)
+}
+
+fn parse_positive_duration_ms(
+    raw: &str,
+    ctx: ConfigContext<'_>,
+    section: &str,
+    key: &str,
+    strict: bool,
+) -> Result<u64, ConfigError> {
+    let value = parse_u64(raw)?;
+    if strict && value == 0 {
+        return Err(ctx.error(section, key, "positive duration"));
+    }
+    Ok(value)
+}
+
+fn required_string_if_strict(
+    value: Option<String>,
+    ctx: ConfigContext<'_>,
+    section: &str,
+    key: &str,
+    strict: bool,
+) -> Result<String, ConfigError> {
+    Ok(
+        required_value_if_strict(value, ctx, section, key, "required field", strict)?
+            .unwrap_or_default(),
+    )
+}
+
+fn required_value<T>(
+    value: Option<T>,
+    ctx: ConfigContext<'_>,
+    section: &str,
+    key: &str,
+    constraint: &str,
+) -> Result<T, ConfigError> {
+    value.ok_or_else(|| ctx.error(section, key, constraint))
+}
+
+fn required_value_if_strict<T>(
+    value: Option<T>,
+    ctx: ConfigContext<'_>,
+    section: &str,
+    key: &str,
+    constraint: &str,
+    strict: bool,
+) -> Result<Option<T>, ConfigError> {
+    if strict {
+        required_value(value, ctx, section, key, constraint).map(Some)
+    } else {
+        Ok(value)
+    }
+}
+
 fn parse_u32_array(raw: &str) -> Result<Vec<u32>, ConfigError> {
     let trimmed = raw.trim();
     if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
@@ -665,6 +1271,38 @@ mod tests {
         .expect("tool profile copy");
     }
 
+    fn load_profile_error(root: &Path, profile: &str) -> String {
+        RuntimeOrchestratorConfig::load_profile_from_repo_root(root, profile)
+            .expect_err("invalid profile should fail")
+            .to_string()
+    }
+
+    fn overwrite_profile_file(root: &Path, profile: &str, relative_path: &str, contents: &str) {
+        fs::write(
+            root.join("configs/profiles")
+                .join(profile)
+                .join(relative_path),
+            contents,
+        )
+        .expect("profile file overwrite");
+    }
+
+    fn assert_schema_error_context(
+        error: &str,
+        profile: &str,
+        file: &str,
+        section: &str,
+        key: &str,
+        constraint: &str,
+    ) {
+        assert!(error.contains("config schema error"), "{error}");
+        assert!(error.contains(&format!("profile `{profile}`")), "{error}");
+        assert!(error.contains(file), "{error}");
+        assert!(error.contains(&format!("section `{section}`")), "{error}");
+        assert!(error.contains(&format!("key `{key}`")), "{error}");
+        assert!(error.contains(constraint), "{error}");
+    }
+
     #[test]
     fn selected_profile_loads_non_example_config_files() {
         let root = temp_repo_root("selected");
@@ -694,6 +1332,332 @@ mod tests {
 
         assert_eq!(config.runtime.primary_runtime, "ollama");
         assert_eq!(config.classifier.process_rules.len(), 7);
+    }
+
+    #[test]
+    fn local_demo_profile_still_ignores_unknown_example_keys() {
+        let document = ConfigDocument {
+            profile: RuntimeConfigProfile::local_demo().name().to_string(),
+            path: PathBuf::from("configs/runtime/runtime.example.toml"),
+            contents: r#"
+[target]
+deployment_target = "linux"
+unexpected = "kept compatible"
+"#
+            .to_string(),
+        };
+
+        let config =
+            parse_runtime_config(&document, false).expect("local demo parser stays permissive");
+
+        assert_eq!(config.deployment_target, "linux");
+        assert!(config.primary_runtime.is_empty());
+    }
+
+    #[test]
+    fn production_unknown_key_error_includes_schema_context() {
+        let root = temp_repo_root("unknown-key");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "runtime.toml",
+            r#"
+[target]
+deployment_target = "linux"
+kernel_min = "5.15"
+cgroup_version = "v2"
+unknown_target = "bad"
+
+[runtime]
+primary_runtime = "ollama"
+fallback_runtime = "llama.cpp"
+
+[selection]
+mode = "process_name"
+process_names = ["ollama"]
+pid_allowlist = []
+
+[collection]
+focus_signals = ["run_queue_delay"]
+
+[metrics]
+track = ["ttft"]
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_schema_error_context(
+            &error,
+            "production",
+            "runtime.toml",
+            "target",
+            "unknown_target",
+            "known runtime config key",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_missing_required_field_error_includes_schema_context() {
+        let root = temp_repo_root("missing-field");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "runtime.toml",
+            r#"
+[target]
+deployment_target = "linux"
+kernel_min = "5.15"
+cgroup_version = "v2"
+
+[runtime]
+fallback_runtime = "llama.cpp"
+
+[selection]
+mode = "process_name"
+process_names = ["ollama"]
+pid_allowlist = []
+
+[collection]
+focus_signals = ["run_queue_delay"]
+
+[metrics]
+track = ["ttft"]
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_schema_error_context(
+            &error,
+            "production",
+            "runtime.toml",
+            "runtime",
+            "primary_runtime",
+            "required field",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_classifier_unknown_key_error_includes_schema_context() {
+        let root = temp_repo_root("classifier-unknown-key");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "classifier/process_rules.toml",
+            r#"
+[[process_rules]]
+id = "ollama"
+name = "ollama"
+tags = ["AI_INFERENCE"]
+unexpected = "bad"
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_schema_error_context(
+            &error,
+            "production",
+            "classifier/process_rules.toml",
+            "process_rules",
+            "unexpected",
+            "known classifier process rule key",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_invalid_focus_signal_is_rejected() {
+        let root = temp_repo_root("invalid-focus-signal");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "runtime.toml",
+            r#"
+[target]
+deployment_target = "linux"
+kernel_min = "5.15"
+cgroup_version = "v2"
+
+[runtime]
+primary_runtime = "ollama"
+fallback_runtime = "llama.cpp"
+
+[selection]
+mode = "process_name"
+process_names = ["ollama"]
+pid_allowlist = []
+
+[collection]
+focus_signals = ["not_a_signal"]
+
+[metrics]
+track = ["ttft"]
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_schema_error_context(
+            &error,
+            "production",
+            "runtime.toml",
+            "collection",
+            "focus_signals",
+            "known signal `not_a_signal`",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_invalid_scenario_enum_is_rejected() {
+        let root = temp_repo_root("invalid-scenario");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            r#"
+[policy]
+active_scenarios = ["unknown_scenario"]
+evaluation_window_ms = 500
+cooldown_ms = 1500
+max_boost_duration_ms = 800
+
+[triggers.inference_tail_guard]
+run_queue_delay_us = 2000
+
+[actions.inference_tail_guard]
+raise_nice = -5
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_schema_error_context(
+            &error,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            "policy",
+            "active_scenarios",
+            "known scenario `unknown_scenario`",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_invalid_action_enum_is_rejected() {
+        let root = temp_repo_root("invalid-action");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            r#"
+[policy]
+active_scenarios = ["inference_tail_guard"]
+evaluation_window_ms = 500
+cooldown_ms = 1500
+max_boost_duration_ms = 800
+
+[triggers.inference_tail_guard]
+run_queue_delay_us = 2000
+
+[actions.inference_tail_guard]
+pin_strategy = "spread_everywhere"
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_schema_error_context(
+            &error,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            "actions.inference_tail_guard",
+            "pin_strategy",
+            "known pin strategy `spread_everywhere`",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_invalid_raise_nice_is_rejected() {
+        let root = temp_repo_root("invalid-raise-nice");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "scenarios/tool_call_booster.toml",
+            r#"
+[policy]
+active_scenarios = ["tool_call_booster"]
+evaluation_window_ms = 300
+cooldown_ms = 800
+max_boost_duration_ms = 1200
+
+[triggers.tool_call_booster]
+queue_wait_us = 2000
+
+[actions.tool_call_booster]
+raise_nice = -21
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_schema_error_context(
+            &error,
+            "production",
+            "scenarios/tool_call_booster.toml",
+            "actions.tool_call_booster",
+            "raise_nice",
+            "integer in range -20..=19",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_invalid_duration_is_rejected() {
+        let root = temp_repo_root("invalid-duration");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            r#"
+[policy]
+active_scenarios = ["inference_tail_guard"]
+evaluation_window_ms = 0
+cooldown_ms = 1500
+max_boost_duration_ms = 800
+
+[triggers.inference_tail_guard]
+run_queue_delay_us = 2000
+
+[actions.inference_tail_guard]
+raise_nice = -5
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_schema_error_context(
+            &error,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            "policy",
+            "evaluation_window_ms",
+            "positive duration",
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

@@ -44,6 +44,10 @@ Implemented and accepted capabilities:
   default. Named profiles are identifier-only and load non-example files from
   `configs/profiles/<name>/`, while the local demo path preserves the existing
   `*.example.toml` files.
+- Named production config profiles now run strict schema validation for runtime,
+  awareness, safety, and scenario policy files. Errors identify the selected
+  profile, file, section, key, and violated constraint; the local demo path
+  remains compatible with the existing example config shape.
 
 Latest product-evidence status:
 
@@ -135,6 +139,17 @@ Runtime production profile selector coverage on 2026-05-13 also passed:
   startup; missing profile roots fail before file reads; daemon CLI/env/default
   precedence is covered.
 
+Production config schema validation on 2026-05-13 also passed:
+
+- `cargo fmt --all -- --check`
+- `cargo test -p runtime_orchestrator` (`23` tests)
+- `cargo test -p aegisai-runtime-daemon` (`87` tests)
+- Named production profiles reject unknown keys, missing required fields,
+  invalid classifier rule keys, invalid focus signals, invalid scenario names,
+  invalid pin strategies, out-of-range `raise_nice`, and zero durations with
+  profile/file/section/key constraint context. The local demo example path
+  remains permissive for compatibility.
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -195,12 +210,14 @@ workloads before portability matrix runs.
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-cqv` / `AegisAI_Runtime-cqv.1` /
-  `AegisAI_Runtime-cqv.3` — add production config schema validation and
-  cross-file safety checks. `AegisAI_Runtime-cqv.2` is complete: runtime
-  startup can select identifier-only production profiles from
-  `configs/profiles/<name>/` with CLI/env/default precedence while preserving
-  local demo example compatibility.
+- `AegisAI_Runtime-cqv` / `AegisAI_Runtime-cqv.1` — add config cross-file
+  safety checks. `AegisAI_Runtime-cqv.2` is complete: runtime startup can
+  select identifier-only production profiles from `configs/profiles/<name>/`
+  with CLI/env/default precedence while preserving local demo example
+  compatibility. `AegisAI_Runtime-cqv.3` is complete: named production profile
+  schema validation rejects unknown keys, missing required fields, invalid
+  classifier rule keys, invalid enum-like values, invalid `raise_nice`, and
+  invalid durations with contextual errors.
 - `AegisAI_Runtime-51c` — parent helper portability epic remains open for
   broader cross-host validation. `AegisAI_Runtime-51c.2` is complete: the
   two-kernel `gg-vm` matrix covers `6.8.0-110-generic` historical helper
@@ -221,6 +238,12 @@ workloads before portability matrix runs.
 
 Recently closed:
 
+- `AegisAI_Runtime-cqv.3` — added strict production config schema validation
+  for named profiles. Errors include profile, file, section, key, and
+  constraint context; tests cover unknown keys, missing fields, invalid focus
+  signals, invalid classifier rule keys, invalid scenarios, invalid pin
+  strategies, out-of-range `raise_nice`, zero durations, and local demo
+  compatibility.
 - `AegisAI_Runtime-cqv.2` — added runtime production profile selection:
   `--config-profile` overrides `AEGISAI_CONFIG_PROFILE`, which overrides the
   local demo default; named profiles load non-example files from
