@@ -438,44 +438,54 @@ automated session-close pushes.
 
 - Issue: `AegisAI_Runtime-ufp.1`
 - Parent: `AegisAI_Runtime-ufp`
+- Status: `DONE` on 2026-05-13.
 - Why P3: package design is useful now, but installer code should wait until
   production config and helper boundaries are stable.
 - Scope:
-  - choose Debian/Ubuntu systemd or document a different first target
-  - specify daemon and helper boundaries separately
-  - specify rollback and uninstall behavior
+  - selected Debian/Ubuntu systemd as the first packaging target
+  - documented rootless daemon and privileged helper boundaries separately in
+    `docs/packaging_contract.md`
+  - specified binary paths, config profile path, log path, unsupported
+    prerequisite behavior, rollback, and uninstall rules
 - Acceptance:
-  - contract names daemon user/group
-  - contract names binary paths
-  - contract names config profile path
-  - contract names log path
-  - contract states helper privilege boundary
-  - contract states capabilities/root requirement
-  - contract states unsupported prerequisite behavior
-  - no installer code is required in this task
+  - contract names daemon user/group: `PASS`
+  - contract names binary paths: `PASS`
+  - contract names config profile path: `PASS`
+  - contract names log path: `PASS`
+  - contract states helper privilege boundary: `PASS`
+  - contract states capabilities/root requirement: `PASS`
+  - contract states unsupported prerequisite behavior: `PASS`
+  - no installer code is required in this task: `PASS`
 - Verification:
-  - docs-only review
-  - no code verification unless files/scripts are added
+  - docs-only review: `PASS`
+  - `rg -n "_aegisai|/usr/bin/aegisai-runtime-daemon|/usr/lib/aegisai/aegisai-ebpf-helper|/etc/aegisai/configs/profiles/production|/var/log/aegisai/runtime-daemon.md|CAP_BPF|CAP_PERFMON|Unsupported Prerequisites|Rollback And Uninstall" docs/packaging_contract.md`:
+    `PASS`
+  - `git diff --check`: `PASS`
+  - no code verification required; no runtime code or scripts changed
 
 ### 15. Configure Beads Dolt Remote Sync
 
 - Issue: `AegisAI_Runtime-8le`
+- Status: `DONE` on 2026-05-13.
 - Why P3: session close tries to run `bd dolt push`, but no Beads Dolt remote
   is configured yet. The sync target needs an explicit project decision before
   automation can make that command succeed.
 - Scope:
-  - choose the intended Beads Dolt remote URL and storage backend
-  - configure it with `bd dolt remote add`
-  - verify `bd dolt push` succeeds
-  - document the chosen sync target or the solo-local policy
+  - selected a local-only filesystem Beads sync policy for this repository
+  - configured `origin` with `bd dolt remote add`
+  - verified plain `bd dolt push` succeeds
+  - documented the local-only policy in `docs/status.md`
 - Acceptance:
-  - `bd dolt remote list` shows the intended remote, or the project explicitly
-    records that Beads Dolt remote sync is intentionally local-only
-  - `bd dolt push` succeeds when a remote is configured
-  - no git remote or Beads issue data is rewritten
+  - `bd dolt remote list` shows intended remote: `PASS`;
+    `origin file:///home/gg/AegisAI_Runtime/.beads/backup/dolt-remote/AegisAI_Runtime`
+  - project records local-only sync policy: `PASS`
+  - `bd dolt push` succeeds when a remote is configured: `PASS`
+  - no git remote or Beads issue data is rewritten: `PASS`
 - Verification:
-  - `bd dolt remote list`
-  - `bd dolt push`
+  - `bd dolt remote list`: `PASS`
+  - `bd dolt push`: `PASS`
+  - `git remote -v`: `PASS`; Git `origin` remains
+    `git@github.com:GGbod666/AegisAI_Runtime.git`
 
 ## P4. Deferred Extensions
 

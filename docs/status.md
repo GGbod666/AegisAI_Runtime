@@ -53,6 +53,12 @@ Implemented and accepted capabilities:
   priority caps, triggers must be backed by `focus_signals`, live affinity must
   use a non-empty PID allowlist profile scope, and live cpuset writes remain
   disabled by profile validation. Cross-file errors name both involved files.
+- The Debian/Ubuntu systemd packaging contract is defined in
+  `docs/packaging_contract.md`. The first package target keeps
+  `aegisai-runtime-daemon` rootless under `_aegisai`, installs
+  `aegisai-ebpf-helper` as a separate helper boundary, uses
+  `/etc/aegisai/configs/profiles/production/` for the selected production
+  profile, and leaves installer implementation to `AegisAI_Runtime-ufp`.
 
 Latest product-evidence status:
 
@@ -264,15 +270,34 @@ buckets at the result layer before event-count classification.
   is complete: BpfTracePipe startup failure taxonomy coverage now distinguishes
   missing binary/helper, permission, stdout/stderr capture, malformed line,
   unsupported signal, and stop cleanup cases.
-- `AegisAI_Runtime-8le` — configure the intended Beads Dolt remote sync target;
-  `bd dolt remote list` currently reports no remotes configured.
-- `AegisAI_Runtime-ufp` / `AegisAI_Runtime-ufp.1` — define and then implement
-  daemon/helper packaging boundaries.
+- `AegisAI_Runtime-8le` — configure the intended Beads Dolt remote sync target.
+  The current project policy is local-only Beads sync: `origin` points to the
+  ignored filesystem remote
+  `file:///home/gg/AegisAI_Runtime/.beads/backup/dolt-remote/AegisAI_Runtime`,
+  and `bd dolt push` succeeds. No Git remote or Beads issue history was
+  rewritten.
+- `AegisAI_Runtime-ufp` — implement the daemon/helper packaging path from
+  `docs/packaging_contract.md`. `AegisAI_Runtime-ufp.1` is complete: the first
+  target is Debian/Ubuntu systemd, with rootless daemon user/group, binary
+  paths, production profile path, log path, helper privilege boundary,
+  prerequisite behavior, rollback, and uninstall rules defined.
 - `AegisAI_Runtime-0ry` / `AegisAI_Runtime-0ry.1` — split deferred dashboard,
   GPU, and adaptive policy extensions into evidence-gated future work.
 
 Recently closed:
 
+- `AegisAI_Runtime-ufp.1` — defined the Debian/Ubuntu systemd packaging
+  contract in `docs/packaging_contract.md`. The contract names `_aegisai` as
+  the rootless daemon user/group, `/usr/bin/aegisai-runtime-daemon` and
+  `/usr/lib/aegisai/aegisai-ebpf-helper` as binary paths,
+  `/etc/aegisai/configs/profiles/production/` as the selected profile path, and
+  `/var/log/aegisai/runtime-daemon.md` as the daemon verification log. It keeps
+  helper-backed eBPF mode behind an explicit privilege boundary and leaves
+  installer code to the parent packaging task.
+- `AegisAI_Runtime-8le` — configured Beads Dolt remote sync as local-only for
+  this repository. `bd dolt remote list` shows `origin` at
+  `file:///home/gg/AegisAI_Runtime/.beads/backup/dolt-remote/AegisAI_Runtime`,
+  and plain `bd dolt push` completes successfully.
 - `AegisAI_Runtime-vsl` — fixed helper portability smoke bucket
   classification. Compatibility diagnostics are parsed before event counts; a
   helper unavailable or tracepoint incompatible status writes the matching final

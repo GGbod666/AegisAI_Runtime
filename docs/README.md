@@ -14,6 +14,7 @@ and artifact interpretation.
 | `strategy.md` | MVP definition, strict benefit rules, current product-evidence stage, roadmap, experiment method. | Current artifact tables or command transcripts. |
 | `architecture.md` | Durable system architecture, deployment boundaries, production-config and hotspot-refactor debt boundaries. | Current status or active work queues. |
 | `linux_validation.md` | Linux host setup, preflight, helper validation, live guarded experiment checklist. | Product strategy or acceptance history. |
+| `packaging_contract.md` | Debian/Ubuntu systemd package/service contract for the daemon and eBPF helper boundary. | Installer implementation, generated package files, or active task state. |
 | `mvp_benefit_report.md` | Generated/latest Phase 4 Inference Tail Guard benefit report. | Manual status edits not backed by artifacts. |
 | `resume_pitch.md` | External resume/interview wording only. | Engineering status, tasks, or evidence. |
 | `verification_log.md` | Append-only verification history written by scripts. | Manual edits. |
