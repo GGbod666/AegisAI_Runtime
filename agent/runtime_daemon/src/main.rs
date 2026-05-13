@@ -12,12 +12,16 @@ use aegisai_runtime_daemon::{
     LinuxProbeSource, MockEventSource, NoopMetadataProvider, ProbeReaderConfig,
     ProcfsMetadataProvider, RuntimeLoop, RuntimeLoopConfig, StaticMetadataProvider,
 };
-use runtime_orchestrator::{RuntimeOrchestrator, RuntimeOrchestratorConfig};
+use runtime_orchestrator::{RuntimeConfigProfile, RuntimeOrchestrator, RuntimeOrchestratorConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = CliConfig::parse(env::args().skip(1))?;
+    let cli =
+        CliConfig::parse_with_env(env::args().skip(1), env::var("AEGISAI_CONFIG_PROFILE").ok())?;
 
-    let config = RuntimeOrchestratorConfig::load_from_repo_root(&cli.repo_root)?;
+    let config = RuntimeOrchestratorConfig::load_from_repo_root_with_profile(
+        &cli.repo_root,
+        &cli.config_profile,
+    )?;
     let runtime_config = runtime_config_for_source(&cli, &config);
     let config = config_for_actuator_scope(&cli, config);
     let mut orchestrator =
@@ -73,6 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CliConfig {
     repo_root: PathBuf,
+    config_profile: RuntimeConfigProfile,
     source: String,
     mock_profile: String,
     metadata: String,
@@ -97,6 +102,7 @@ impl Default for CliConfig {
     fn default() -> Self {
         Self {
             repo_root: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            config_profile: RuntimeConfigProfile::local_demo(),
             source: "mock".to_string(),
             mock_profile: "demo".to_string(),
             metadata: "demo".to_string(),
@@ -124,7 +130,17 @@ impl CliConfig {
     where
         I: IntoIterator<Item = String>,
     {
+        Self::parse_with_env(args, None)
+    }
+
+    fn parse_with_env<I>(args: I, env_profile: Option<String>) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = String>,
+    {
         let mut config = Self::default();
+        if let Some(profile) = env_profile {
+            config.config_profile = parse_config_profile(&profile)?;
+        }
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
@@ -134,6 +150,12 @@ impl CliConfig {
                         .next()
                         .ok_or_else(|| "--repo-root expects a path".to_string())?;
                     config.repo_root = PathBuf::from(value);
+                }
+                "--config-profile" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| "--config-profile expects a profile name".to_string())?;
+                    config.config_profile = parse_config_profile(&value)?;
                 }
                 "--source" => {
                     let value = args
@@ -292,6 +314,7 @@ impl CliConfig {
             "",
             "Options:",
             "  --repo-root <path>   Repository root containing configs/ (default: current dir)",
+            "  --config-profile <name>  Production config profile under configs/profiles/<name>/; overrides AEGISAI_CONFIG_PROFILE",
             "  --source <mode>      Source mode: mock | linux (default: mock)",
             "  --mock-profile <name>  Mock source profile: demo | tool-call-lifecycle (default: demo)",
             "  --metadata <mode>    Metadata mode: demo | noop | procfs (default: demo)",
@@ -321,6 +344,10 @@ impl CliConfig {
             poll_timeout_ms: self.probe_poll_timeout_ms,
         }
     }
+}
+
+fn parse_config_profile(raw: &str) -> Result<RuntimeConfigProfile, String> {
+    RuntimeConfigProfile::named(raw).map_err(|error| error.to_string())
 }
 
 fn build_mock_source(profile: &str) -> Result<MockEventSource, String> {
@@ -772,6 +799,57 @@ mod tests {
             .expect("cli should parse");
 
         assert_eq!(cli.max_events, Some(512));
+    }
+
+    #[test]
+    fn cli_defaults_to_local_demo_config_profile() {
+        let cli = CliConfig::parse(std::iter::empty::<String>()).expect("cli should parse");
+
+        assert_eq!(
+            cli.config_profile,
+            runtime_orchestrator::RuntimeConfigProfile::LocalDemo
+        );
+    }
+
+    #[test]
+    fn cli_reads_config_profile_from_env() {
+        let cli =
+            CliConfig::parse_with_env(std::iter::empty::<String>(), Some("prod_1".to_string()))
+                .expect("cli should parse");
+
+        assert_eq!(
+            cli.config_profile,
+            runtime_orchestrator::RuntimeConfigProfile::Named("prod_1".to_string())
+        );
+    }
+
+    #[test]
+    fn cli_config_profile_overrides_env_profile() {
+        let cli = CliConfig::parse_with_env(
+            ["--config-profile", "cli_prod"]
+                .into_iter()
+                .map(str::to_string),
+            Some("env_prod".to_string()),
+        )
+        .expect("cli should parse");
+
+        assert_eq!(
+            cli.config_profile,
+            runtime_orchestrator::RuntimeConfigProfile::Named("cli_prod".to_string())
+        );
+    }
+
+    #[test]
+    fn cli_rejects_invalid_config_profile_names() {
+        let error = CliConfig::parse(
+            ["--config-profile", "../prod"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .expect_err("path-like profile should fail");
+
+        assert!(error.contains("profile"));
+        assert!(error.contains("path separators") || error.contains("dot segments"));
     }
 
     #[test]

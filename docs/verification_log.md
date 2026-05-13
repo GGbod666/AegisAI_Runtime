@@ -19291,3 +19291,46 @@ OK
   acceptance baseline references. The invalid-config regression exits nonzero,
   does not write `run.env`, acceptance baseline, or mode contract artifacts,
   and does not append misleading `PASS` fields.
+
+### 2026-05-13T04:41:51Z - Runtime production profile selector
+
+- Scope: completed `AegisAI_Runtime-cqv.2` by adding selected production config
+  profile loading and daemon selector precedence. Named profiles load
+  non-example files from `configs/profiles/<name>/`; the local demo default
+  preserves existing `*.example.toml` compatibility.
+
+- Command: `cargo fmt --all -- --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo test -p runtime_orchestrator`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+running 14 tests
+test config::tests::selected_profile_loads_non_example_config_files ... ok
+test config::tests::local_demo_profile_preserves_example_config_compatibility ... ok
+test config::tests::profile_names_are_identifier_only ... ok
+test config::tests::missing_selected_profile_root_fails_before_file_reads ... ok
+test runtime_orchestrator::tests::* ... ok
+
+test result: ok. 14 passed; 0 failed
+```
+
+- Command: `cargo test -p aegisai-runtime-daemon`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/runtime_daemon/src/lib.rs: 51 passed; 0 failed
+agent/runtime_daemon/src/main.rs: 36 passed; 0 failed
+Doc-tests aegisai_runtime_daemon: 0 passed; 0 failed
+```
+
+- Acceptance coverage: valid profile names load non-example profile files;
+  empty names, path separators, absolute/path-like names, and dot segments are
+  rejected; missing profile roots fail before file reads; daemon selection
+  precedence is CLI `--config-profile`, then `AEGISAI_CONFIG_PROFILE`, then the
+  local demo default.

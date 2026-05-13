@@ -8,7 +8,8 @@ pub use aegisai_metrics::{
 };
 pub use config::{
     AwarenessConfig, ClassifierConfig, ConfigError, ProcessRule, RuntimeConfig,
-    RuntimeOrchestratorConfig, SafetyConfig, ScenarioActions, ScenarioPolicy, TriggerThresholds,
+    RuntimeConfigProfile, RuntimeOrchestratorConfig, SafetyConfig, ScenarioActions, ScenarioPolicy,
+    TriggerThresholds,
 };
 pub use model::{
     Action, ActionPlan, AppliedAction, AppliedActionState, Event, EventContext, FeatureWindow,

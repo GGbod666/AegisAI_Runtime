@@ -48,6 +48,8 @@ current planning order.
   `processed_events=4`, `run_queue_delay` signal observation present
 - `cargo test -p aegisai-runtime-daemon source::tests`: `PASS`, `32`
   source tests
+- `cargo test -p runtime_orchestrator`: `PASS`, `14` tests
+- `cargo test -p aegisai-runtime-daemon`: `PASS`, `87` tests
 - `bd lint`: `PASS`
 
 Open evidence gaps:
@@ -340,24 +342,28 @@ cross-host validation, and unattended operation.
 
 - Issue: `AegisAI_Runtime-cqv.2`
 - Parent: `AegisAI_Runtime-cqv`
-- Why before schema/cross-file checks: production validation needs a real
+- Status: `DONE` on 2026-05-13.
+- Why before schema/cross-file checks: production validation needed a real
   profile target instead of fixed `*.example.toml` paths.
 - Scope:
-  - add selector precedence: CLI flag, environment variable, documented local
-    demo default
-  - validate profile names as identifiers only
-  - preserve current example compatibility for tests and local demos
+  - added selector precedence: CLI `--config-profile`, environment variable
+    `AEGISAI_CONFIG_PROFILE`, then documented local demo default
+  - added identifier-only profile-name validation
+  - added selected profile loading from `configs/profiles/<name>/` with
+    non-example file names
+  - preserved current `*.example.toml` compatibility for tests and local demos
 - Acceptance:
-  - valid profile names load non-example profile files
-  - empty names are rejected
-  - absolute paths are rejected
-  - path separators are rejected
-  - `.` segments are rejected
-  - missing profile root fails before partial startup
-  - CLI/env/default precedence has tests
+  - valid profile names load non-example profile files: `PASS`
+  - empty names are rejected: `PASS`
+  - absolute paths are rejected: `PASS`
+  - path separators are rejected: `PASS`
+  - `.` segments are rejected: `PASS`
+  - missing profile root fails before partial startup: `PASS`
+  - CLI/env/default precedence has tests: `PASS`
 - Verification:
-  - `cargo test -p aegisai-runtime-orchestrator`
-  - `cargo test -p aegisai-runtime-daemon` if CLI wiring changes
+  - `cargo fmt --all -- --check`: `PASS`
+  - `cargo test -p runtime_orchestrator`: `PASS`; `14` tests
+  - `cargo test -p aegisai-runtime-daemon`: `PASS`; `87` tests
 
 ### 12. Add Production Config Schema Validation
 

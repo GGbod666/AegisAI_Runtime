@@ -39,6 +39,11 @@ Implemented and accepted capabilities:
   `tool_call_stage`, `tool_call_id`, `action_kind`, and `effective` on apply
   detail records so reports can attribute effective scheduler actions to
   executor / retrieval / rerank stages.
+- Runtime startup now supports production config profile selection with
+  precedence `--config-profile`, `AEGISAI_CONFIG_PROFILE`, then the local demo
+  default. Named profiles are identifier-only and load non-example files from
+  `configs/profiles/<name>/`, while the local demo path preserves the existing
+  `*.example.toml` files.
 
 Latest product-evidence status:
 
@@ -121,6 +126,15 @@ Inference smoke artifact regression coverage on 2026-05-13 also passed:
   `run.env` / acceptance-baseline provenance checks without launching Ollama,
   stress, or daemon workloads.
 
+Runtime production profile selector coverage on 2026-05-13 also passed:
+
+- `cargo fmt --all -- --check`
+- `cargo test -p runtime_orchestrator` (`14` tests)
+- `cargo test -p aegisai-runtime-daemon` (`87` tests)
+- The selected-profile loader rejects empty, path-like, and dotted names before
+  startup; missing profile roots fail before file reads; daemon CLI/env/default
+  precedence is covered.
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -182,8 +196,11 @@ workloads before portability matrix runs.
 ## Open Gap Index
 
 - `AegisAI_Runtime-cqv` / `AegisAI_Runtime-cqv.1` /
-  `AegisAI_Runtime-cqv.2` / `AegisAI_Runtime-cqv.3` — add production config
-  profile selection, schema validation, and cross-file safety checks.
+  `AegisAI_Runtime-cqv.3` — add production config schema validation and
+  cross-file safety checks. `AegisAI_Runtime-cqv.2` is complete: runtime
+  startup can select identifier-only production profiles from
+  `configs/profiles/<name>/` with CLI/env/default precedence while preserving
+  local demo example compatibility.
 - `AegisAI_Runtime-51c` — parent helper portability epic remains open for
   broader cross-host validation. `AegisAI_Runtime-51c.2` is complete: the
   two-kernel `gg-vm` matrix covers `6.8.0-110-generic` historical helper
@@ -204,6 +221,12 @@ workloads before portability matrix runs.
 
 Recently closed:
 
+- `AegisAI_Runtime-cqv.2` — added runtime production profile selection:
+  `--config-profile` overrides `AEGISAI_CONFIG_PROFILE`, which overrides the
+  local demo default; named profiles load non-example files from
+  `configs/profiles/<name>/`, invalid profile names are rejected, missing
+  profile roots fail before partial startup, and the existing example config
+  path remains compatible.
 - `AegisAI_Runtime-fp6` — added deterministic inference smoke `run.env`
   artifact coverage with `AEGISAI_AB_RUN_ENV_ONLY=1`; regression tests validate
   run id, modes, model/prompt/workload shape, stress/sample shape, live flags,

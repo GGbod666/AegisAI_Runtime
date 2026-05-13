@@ -50,29 +50,65 @@ pub struct RuntimeOrchestratorConfig {
     pub scenarios: BTreeMap<ScenarioKind, ScenarioPolicy>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RuntimeConfigProfile {
+    LocalDemo,
+    Named(String),
+}
+
+impl RuntimeConfigProfile {
+    pub fn local_demo() -> Self {
+        Self::LocalDemo
+    }
+
+    pub fn named(name: impl AsRef<str>) -> Result<Self, ConfigError> {
+        Ok(Self::Named(validate_profile_name(name.as_ref())?))
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::LocalDemo => "local_demo",
+            Self::Named(name) => name,
+        }
+    }
+}
+
 impl RuntimeOrchestratorConfig {
     pub fn load_from_repo_root(root: impl AsRef<Path>) -> Result<Self, ConfigError> {
-        let root = root.as_ref();
-        let runtime =
-            parse_runtime_config(&read(root.join("configs/runtime/runtime.example.toml"))?)?;
-        let mut classifier = parse_classifier_config(&read(
-            root.join("configs/classifier/process_rules.example.toml"),
-        )?)?;
-        merge_awareness_defaults(
-            &mut classifier.awareness,
-            &read(root.join("configs/scenarios/ai_workload_awareness.example.toml"))?,
-        )?;
-        let safety = parse_safety_config(&read(root.join("configs/safety/default.toml"))?)?;
+        Self::load_from_repo_root_with_profile(root, &RuntimeConfigProfile::LocalDemo)
+    }
+
+    pub fn load_profile_from_repo_root(
+        root: impl AsRef<Path>,
+        profile_name: impl AsRef<str>,
+    ) -> Result<Self, ConfigError> {
+        let profile = RuntimeConfigProfile::named(profile_name)?;
+        Self::load_from_repo_root_with_profile(root, &profile)
+    }
+
+    pub fn load_from_repo_root_with_profile(
+        root: impl AsRef<Path>,
+        profile: &RuntimeConfigProfile,
+    ) -> Result<Self, ConfigError> {
+        let paths = config_paths_for_profile(root.as_ref(), profile)?;
+        Self::load_from_paths(paths)
+    }
+
+    fn load_from_paths(paths: ConfigPaths) -> Result<Self, ConfigError> {
+        let runtime = parse_runtime_config(&read(paths.runtime)?)?;
+        let mut classifier = parse_classifier_config(&read(paths.classifier)?)?;
+        merge_awareness_defaults(&mut classifier.awareness, &read(paths.awareness)?)?;
+        let safety = parse_safety_config(&read(paths.safety)?)?;
 
         let mut scenarios = BTreeMap::new();
         let inference_policy = parse_scenario_policy(
-            &read(root.join("configs/scenarios/inference_tail_guard.example.toml"))?,
+            &read(paths.inference_tail_guard)?,
             ScenarioKind::InferenceTailGuard,
         )?;
         scenarios.insert(ScenarioKind::InferenceTailGuard, inference_policy);
 
         let tool_policy = parse_scenario_policy(
-            &read(root.join("configs/scenarios/tool_call_booster.example.toml"))?,
+            &read(paths.tool_call_booster)?,
             ScenarioKind::ToolCallBooster,
         )?;
         scenarios.insert(ScenarioKind::ToolCallBooster, tool_policy);
@@ -84,6 +120,75 @@ impl RuntimeOrchestratorConfig {
             scenarios,
         })
     }
+}
+
+#[derive(Debug)]
+struct ConfigPaths {
+    runtime: PathBuf,
+    classifier: PathBuf,
+    awareness: PathBuf,
+    safety: PathBuf,
+    inference_tail_guard: PathBuf,
+    tool_call_booster: PathBuf,
+}
+
+fn config_paths_for_profile(
+    root: &Path,
+    profile: &RuntimeConfigProfile,
+) -> Result<ConfigPaths, ConfigError> {
+    match profile {
+        RuntimeConfigProfile::LocalDemo => Ok(ConfigPaths {
+            runtime: root.join("configs/runtime/runtime.example.toml"),
+            classifier: root.join("configs/classifier/process_rules.example.toml"),
+            awareness: root.join("configs/scenarios/ai_workload_awareness.example.toml"),
+            safety: root.join("configs/safety/default.toml"),
+            inference_tail_guard: root.join("configs/scenarios/inference_tail_guard.example.toml"),
+            tool_call_booster: root.join("configs/scenarios/tool_call_booster.example.toml"),
+        }),
+        RuntimeConfigProfile::Named(name) => {
+            let profile_root = root.join("configs/profiles").join(name);
+            if !profile_root.is_dir() {
+                return Err(ConfigError::new(format!(
+                    "missing config profile `{name}` root: {}",
+                    profile_root.display()
+                )));
+            }
+            Ok(ConfigPaths {
+                runtime: profile_root.join("runtime.toml"),
+                classifier: profile_root.join("classifier/process_rules.toml"),
+                awareness: profile_root.join("scenarios/ai_workload_awareness.toml"),
+                safety: profile_root.join("safety/default.toml"),
+                inference_tail_guard: profile_root.join("scenarios/inference_tail_guard.toml"),
+                tool_call_booster: profile_root.join("scenarios/tool_call_booster.toml"),
+            })
+        }
+    }
+}
+
+fn validate_profile_name(raw: &str) -> Result<String, ConfigError> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err(ConfigError::new("config profile name cannot be empty"));
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err(ConfigError::new(format!(
+            "config profile `{name}` must not contain path separators"
+        )));
+    }
+    if name.contains('.') {
+        return Err(ConfigError::new(format!(
+            "config profile `{name}` must not contain dot segments"
+        )));
+    }
+    if !name
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        return Err(ConfigError::new(format!(
+            "config profile `{name}` must be an ASCII identifier"
+        )));
+    }
+    Ok(name.to_string())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -495,4 +600,135 @@ fn parse_f32(raw: &str) -> Result<f32, ConfigError> {
     raw.trim()
         .parse::<f32>()
         .map_err(|_| ConfigError::new(format!("expected f32, got {raw}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    fn repo_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("crate lives under agent/runtime_orchestrator")
+            .to_path_buf()
+    }
+
+    fn temp_repo_root(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "aegisai-runtime-profile-{name}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        root
+    }
+
+    fn copy_profile_fixture(root: &Path, profile: &str) {
+        let source = repo_root().join("configs");
+        let profile_root = root.join("configs/profiles").join(profile);
+        fs::create_dir_all(profile_root.join("classifier")).expect("classifier dir");
+        fs::create_dir_all(profile_root.join("scenarios")).expect("scenarios dir");
+        fs::create_dir_all(profile_root.join("safety")).expect("safety dir");
+
+        fs::copy(
+            source.join("runtime/runtime.example.toml"),
+            profile_root.join("runtime.toml"),
+        )
+        .expect("runtime profile copy");
+        fs::copy(
+            source.join("classifier/process_rules.example.toml"),
+            profile_root.join("classifier/process_rules.toml"),
+        )
+        .expect("classifier profile copy");
+        fs::copy(
+            source.join("scenarios/ai_workload_awareness.example.toml"),
+            profile_root.join("scenarios/ai_workload_awareness.toml"),
+        )
+        .expect("awareness profile copy");
+        fs::copy(
+            source.join("safety/default.toml"),
+            profile_root.join("safety/default.toml"),
+        )
+        .expect("safety profile copy");
+        fs::copy(
+            source.join("scenarios/inference_tail_guard.example.toml"),
+            profile_root.join("scenarios/inference_tail_guard.toml"),
+        )
+        .expect("inference profile copy");
+        fs::copy(
+            source.join("scenarios/tool_call_booster.example.toml"),
+            profile_root.join("scenarios/tool_call_booster.toml"),
+        )
+        .expect("tool profile copy");
+    }
+
+    #[test]
+    fn selected_profile_loads_non_example_config_files() {
+        let root = temp_repo_root("selected");
+        copy_profile_fixture(&root, "production");
+
+        let config = RuntimeOrchestratorConfig::load_profile_from_repo_root(&root, "production")
+            .expect("profile should load");
+
+        assert_eq!(config.runtime.primary_runtime, "ollama");
+        assert_eq!(config.classifier.process_rules.len(), 7);
+        assert!(config
+            .scenarios
+            .contains_key(&ScenarioKind::InferenceTailGuard));
+        assert!(config
+            .scenarios
+            .contains_key(&ScenarioKind::ToolCallBooster));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_demo_profile_preserves_example_config_compatibility() {
+        let config = RuntimeOrchestratorConfig::load_from_repo_root_with_profile(
+            repo_root(),
+            &RuntimeConfigProfile::local_demo(),
+        )
+        .expect("local demo config should load");
+
+        assert_eq!(config.runtime.primary_runtime, "ollama");
+        assert_eq!(config.classifier.process_rules.len(), 7);
+    }
+
+    #[test]
+    fn profile_names_are_identifier_only() {
+        for invalid in [
+            "",
+            "  ",
+            "/prod",
+            "prod/live",
+            "prod\\live",
+            ".",
+            "..",
+            "prod.v1",
+        ] {
+            let error = RuntimeConfigProfile::named(invalid)
+                .expect_err("invalid profile name should fail")
+                .to_string();
+            assert!(error.contains("profile"));
+        }
+
+        let profile = RuntimeConfigProfile::named("prod_1").expect("identifier should parse");
+        assert_eq!(profile.name(), "prod_1");
+    }
+
+    #[test]
+    fn missing_selected_profile_root_fails_before_file_reads() {
+        let root = temp_repo_root("missing");
+        fs::create_dir_all(root.join("configs/profiles")).expect("profiles dir");
+
+        let error = RuntimeOrchestratorConfig::load_profile_from_repo_root(&root, "production")
+            .expect_err("missing profile should fail")
+            .to_string();
+
+        assert!(error.contains("missing config profile `production` root"));
+        assert!(error.contains("configs/profiles/production"));
+        let _ = fs::remove_dir_all(root);
+    }
 }
