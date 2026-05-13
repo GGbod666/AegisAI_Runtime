@@ -56,6 +56,11 @@ Open evidence gaps:
 
 - Direct Linux source preflight is still a startup/partial-probe check; use
   `bench/scripts/linux_source_ingestion_smoke.sh` for ingestion proof.
+- Strict P2 audit on 2026-05-13 reopened helper portability smoke bucket
+  evidence: `AegisAI_Runtime-vsl` tracks
+  `bench/scripts/helper_portability_smoke.sh` returning `PASS` and
+  `no workload events` when helper diagnostics already say
+  `helper unavailable`.
 - Inference preflight does not run a model or start stress load.
 - Upstream `bd preflight` in bd `1.0.3` still prints Beads' own Go/Nix template;
   this repository's active readiness path is
@@ -278,7 +283,7 @@ cross-host validation, and unattended operation.
 
 - Issue: `AegisAI_Runtime-51c.2`
 - Parent: `AegisAI_Runtime-51c`
-- Status: `DONE` on 2026-05-12.
+- Status: `AUDIT BLOCKED` on 2026-05-13 by `AegisAI_Runtime-vsl`.
 - Why after compatibility classification: matrix results are useful only if
   each host lands in a precise bucket.
 - Scope:
@@ -297,8 +302,9 @@ cross-host validation, and unattended operation.
   - each profile records tracefs root: `PASS`
   - each profile records tracepoint field inventory: `PASS`
   - each profile records raw and normalized event counts: `PASS`
-  - each profile ends in exactly one bucket: `PASS`, both profiles are
-    `validated signal`
+  - each profile ends in exactly one bucket: `FAIL` under strict audit; the
+    positive matrix entries are `validated signal`, but the smoke script can
+    collapse `helper unavailable` into `no workload events`
 - Verification:
   - `cargo test -p aegisai-runtime-daemon source::tests`: `PASS`; `40` source
     tests
@@ -308,6 +314,11 @@ cross-host validation, and unattended operation.
     `PASS`; raw `offcpu_time=624`, raw `io_latency=12209`, normalized
     `offcpu_time=8`, normalized `io_latency=8`, bucket `validated signal`
   - intentional durable entry in `docs/verification_log.md`
+  - strict audit negative reproduction:
+    `AEGISAI_BPFTRACE=/tmp/aegisai-missing-bpftrace bash bench/scripts/helper_portability_smoke.sh`
+    returned exit `0` with helper diagnostics `status=helper unavailable`,
+    final bucket `no workload events`, and `Overall result: PASS`; this blocks
+    the task from remaining accepted until `AegisAI_Runtime-vsl` is fixed
 
 ### 10. Add Inference Smoke Artifact Tests
 

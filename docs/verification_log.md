@@ -19444,3 +19444,41 @@ No output.
   enabled triggers whose signals are absent from `focus_signals`, live affinity
   without `pid_allowlist` mode plus a non-empty allowlist, and `use_cpuset =
   true`. Cross-file errors name both config files involved.
+
+### 2026-05-13T05:47:46Z - Strict P2 helper portability audit
+
+- Scope: strict audit of `docs/latest_tasks.md` P2 helper portability evidence.
+  This audit reopened `AegisAI_Runtime-51c.2` through
+  `AegisAI_Runtime-vsl`.
+- Finding: `bench/scripts/helper_portability_smoke.sh` can collapse helper
+  compatibility failure into the `no workload events` bucket and still return
+  `PASS`.
+- Reproduction command:
+  `AEGISAI_EBPF_HELPER=/home/gg/AegisAI_Runtime/target/debug/aegisai-ebpf-helper AEGISAI_BPFTRACE=/tmp/aegisai-missing-bpftrace AEGISAI_HELPER_PORTABILITY_RUN_ID=audit_helper_unavailable AEGISAI_HELPER_PORTABILITY_ARTIFACT_DIR=/tmp/aegisai_audit_helper_unavailable AEGISAI_VERIFY_LOG=/tmp/aegisai_audit_helper_unavailable/helper_portability.md AEGISAI_HELPER_PORTABILITY_RAW_OFFCPU_SECONDS=1 AEGISAI_HELPER_PORTABILITY_RAW_IO_SECONDS=1 AEGISAI_HELPER_PORTABILITY_DAEMON_TIMEOUT_SECONDS=2 AEGISAI_HELPER_PORTABILITY_DAEMON_MAX_EVENTS=1 AEGISAI_HELPER_PORTABILITY_DAEMON_POLL_TIMEOUT_MS=100 bash bench/scripts/helper_portability_smoke.sh`
+- Exit status: `0`
+```text
+helper_portability_smoke=no workload events offcpu_raw=0 io_raw=0 offcpu_normalized=0 io_normalized=0 artifact_dir=/tmp/aegisai_audit_helper_unavailable
+```
+- Key artifact:
+  `/tmp/aegisai_audit_helper_unavailable/helper_portability.md`
+- Artifact excerpt:
+```text
+helper compatibility: status=helper unavailable; kernel=unknown; bpftrace=unavailable; tracefs=unknown
+Final bucket: `no workload events`
+Overall result: `PASS`
+```
+- Targeted verification that still passes:
+  - `cargo test -p aegisai-runtime-daemon source::tests`: `PASS`; `40` source
+    tests
+  - `cargo test -p aegisai-ebpf-helper`: `PASS`; `5` tests
+  - `cargo test -p runtime_orchestrator config::tests`: `PASS`; `18` config
+    tests
+  - `python3 -m unittest bench.scripts.test_inference_tail_guard_ollama_smoke`:
+    `PASS`; `2` tests
+  - `bash -n bench/scripts/helper_portability_smoke.sh`: `PASS`
+  - `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`: `PASS`
+  - `git diff --check`: `PASS`
+- Verdict: positive helper matrix evidence remains useful, but P2 helper
+  portability is not accepted under strict audit until the smoke script reports
+  `helper unavailable`, `tracepoint incompatible`, `no workload events`, and
+  `validated signal` as distinct outcomes.

@@ -124,6 +124,10 @@ Two-kernel helper portability matrix work on 2026-05-12 also passed:
   events for each signal
 - Matrix profile `6.8.0-110-generic` remains backed by the historical
   `2026-05-10T03:37:57Z` and `2026-05-10T03:48:11Z` helper validation entries
+- Strict P2 audit on 2026-05-13 reopened the smoke bucket logic as
+  `AegisAI_Runtime-vsl`: a missing bpftrace path produced helper diagnostics
+  `status=helper unavailable`, but the script still exited `0` with final
+  bucket `no workload events` and `Overall result: PASS`.
 
 Inference smoke artifact regression coverage on 2026-05-13 also passed:
 
@@ -225,7 +229,10 @@ Helper validation:
 Future helper conclusions should use these buckets: `helper unavailable`,
 `tracepoint incompatible`, `no workload events`, or `validated signal`.
 Compatibility diagnostics now separate the first two buckets from zero-event
-workloads before portability matrix runs.
+workloads before portability matrix runs. The smoke script result layer is not
+yet strict enough for those buckets; `AegisAI_Runtime-vsl` must fix negative
+bucket classification before the helper portability matrix is accepted as a
+closed P2 gate.
 
 ## Open Gap Index
 
@@ -242,10 +249,15 @@ workloads before portability matrix runs.
   schema validation rejects unknown keys, missing required fields, invalid
   classifier rule keys, invalid enum-like values, invalid `raise_nice`, and
   invalid durations with contextual errors.
+- `AegisAI_Runtime-vsl` — strict P2 audit blocker for
+  `bench/scripts/helper_portability_smoke.sh`: the script must not report
+  `PASS`/`no workload events` when compatibility diagnostics already classify
+  the helper as unavailable or tracepoint incompatible.
 - `AegisAI_Runtime-51c` — parent helper portability epic remains open for
-  broader cross-host validation. `AegisAI_Runtime-51c.2` is complete: the
-  two-kernel `gg-vm` matrix covers `6.8.0-110-generic` historical helper
-  evidence and `6.8.0-111-generic` fresh helper smoke evidence. `AegisAI_Runtime-51c.1`
+  broader cross-host validation. `AegisAI_Runtime-51c.2` has positive
+  two-kernel `gg-vm` evidence for `6.8.0-110-generic` and `6.8.0-111-generic`,
+  but strict audit reopened the smoke bucket classification through
+  `AegisAI_Runtime-vsl`. `AegisAI_Runtime-51c.1`
   is complete: helper compatibility is classified before helper stream start
   and records availability, tracefs, requested probes, and required field
   inventory. `AegisAI_Runtime-51c.3` is complete: controlled Linux ingestion
