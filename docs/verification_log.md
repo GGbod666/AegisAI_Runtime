@@ -19384,3 +19384,63 @@ Doc-tests aegisai_runtime_daemon: 0 passed; 0 failed
   missing required fields, invalid classifier rule keys, invalid focus signals,
   invalid scenario names, invalid action enum-like `pin_strategy`, invalid
   `raise_nice`, invalid duration values, and local demo/example compatibility.
+
+### 2026-05-13T05:15:57Z - Production config cross-file safety validation
+
+- Scope: completed `AegisAI_Runtime-cqv.1` by adding strict cross-file safety
+  validation after named production profile schema parsing. The local demo path
+  remains permissive for existing `*.example.toml` compatibility.
+- Reference: existing live actuator boundary in `agent/runtime_daemon/README.md`
+  and `docs/architecture.md`; live affinity requires explicit PID allowlist
+  scope, and live cpuset writes remain disabled.
+
+- Command: `cargo fmt --all -- --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo test -p runtime_orchestrator`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+running 28 tests
+test config::tests::production_scenario_duration_above_global_max_is_rejected ... ok
+test config::tests::production_priority_delta_outside_global_max_is_rejected ... ok
+test config::tests::production_trigger_requiring_absent_focus_signal_is_rejected ... ok
+test config::tests::production_live_affinity_requires_pid_allowlist_mode ... ok
+test config::tests::production_live_cpuset_true_is_rejected ... ok
+test runtime_orchestrator::tests::* ... ok
+
+test result: ok. 28 passed; 0 failed
+```
+
+- Command: `cargo test -p aegisai-runtime-daemon`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+agent/runtime_daemon/src/lib.rs: 51 passed; 0 failed
+agent/runtime_daemon/src/main.rs: 36 passed; 0 failed
+Doc-tests aegisai_runtime_daemon: 0 passed; 0 failed
+```
+
+- Command: `cargo clippy -p runtime_orchestrator --all-targets -- -D warnings`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+Finished `dev` profile for runtime_orchestrator.
+```
+
+- Command: `git diff --check`
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Acceptance coverage: named production profiles now reject scenario policy
+  durations above global safety, priority deltas outside the global cap,
+  enabled triggers whose signals are absent from `focus_signals`, live affinity
+  without `pid_allowlist` mode plus a non-empty allowlist, and `use_cpuset =
+  true`. Cross-file errors name both config files involved.

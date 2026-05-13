@@ -397,19 +397,27 @@ cross-host validation, and unattended operation.
 
 - Issue: `AegisAI_Runtime-cqv.1`
 - Parent: `AegisAI_Runtime-cqv`
+- Status: `DONE` on 2026-05-13.
 - Why after schema: cross-file checks should run on validated profile data.
 - Scope:
-  - validate scenario action limits against global safety
-  - validate enabled scenario triggers against `focus_signals`
-  - validate unsupported live affinity/cpuset combinations for the selected mode
+  - added strict-profile cross-file validation after per-file schema parsing
+  - validates scenario action limits against global safety
+  - validates enabled scenario triggers against `focus_signals`
+  - validates unsupported live affinity/cpuset combinations for the selected
+    mode
 - Acceptance:
-  - duration above `max_boost_duration_ms` is rejected
-  - priority delta outside `max_priority_delta` is rejected
-  - trigger requiring absent `focus_signals` is rejected
-  - unsupported live affinity/cpuset mode is rejected
-  - errors name both files involved
+  - duration above `max_boost_duration_ms` is rejected: `PASS`
+  - priority delta outside `max_priority_delta` is rejected: `PASS`
+  - trigger requiring absent `focus_signals` is rejected: `PASS`
+  - unsupported live affinity/cpuset mode is rejected: `PASS`
+  - errors name both files involved: `PASS`
 - Verification:
-  - `cargo test -p aegisai-runtime-orchestrator`
+  - `cargo fmt --all -- --check`: `PASS`
+  - `cargo test -p runtime_orchestrator`: `PASS`; `28` tests
+  - `cargo test -p aegisai-runtime-daemon`: `PASS`; `87` tests
+  - `cargo clippy -p runtime_orchestrator --all-targets -- -D warnings`:
+    `PASS`
+  - `git diff --check`: `PASS`
 
 ## P3. Packaging And Handoff Sync Boundary
 

@@ -48,6 +48,11 @@ Implemented and accepted capabilities:
   awareness, safety, and scenario policy files. Errors identify the selected
   profile, file, section, key, and violated constraint; the local demo path
   remains compatible with the existing example config shape.
+- Named production config profiles now run cross-file safety validation after
+  schema parsing. Enabled scenarios must stay within global duration and
+  priority caps, triggers must be backed by `focus_signals`, live affinity must
+  use a non-empty PID allowlist profile scope, and live cpuset writes remain
+  disabled by profile validation. Cross-file errors name both involved files.
 
 Latest product-evidence status:
 
@@ -150,6 +155,20 @@ Production config schema validation on 2026-05-13 also passed:
   profile/file/section/key constraint context. The local demo example path
   remains permissive for compatibility.
 
+Production config cross-file safety validation on 2026-05-13 also passed:
+
+- `cargo fmt --all -- --check`
+- `cargo test -p runtime_orchestrator` (`28` tests)
+- `cargo test -p aegisai-runtime-daemon` (`87` tests)
+- `cargo clippy -p runtime_orchestrator --all-targets -- -D warnings`
+- `git diff --check`
+- Named production profiles reject scenario durations above
+  `global_safety.max_boost_duration_ms`, `raise_nice` deltas outside
+  `global_safety.max_priority_delta`, triggers whose required signals are absent
+  from `collection.focus_signals`, live affinity without `pid_allowlist` mode
+  plus a non-empty allowlist, and `use_cpuset = true`. Cross-file errors include
+  both involved config files.
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -210,8 +229,13 @@ workloads before portability matrix runs.
 
 ## Open Gap Index
 
-- `AegisAI_Runtime-cqv` / `AegisAI_Runtime-cqv.1` — add config cross-file
-  safety checks. `AegisAI_Runtime-cqv.2` is complete: runtime startup can
+- `AegisAI_Runtime-cqv` — parent production config epic remains open for final
+  readiness integration after its selector, schema, and cross-file validation
+  children. `AegisAI_Runtime-cqv.1` is complete: named production profile
+  cross-file validation rejects scenario action limits outside global safety,
+  triggers missing from `focus_signals`, unsupported live affinity scope, and
+  live cpuset writes while naming both involved files. `AegisAI_Runtime-cqv.2`
+  is complete: runtime startup can
   select identifier-only production profiles from `configs/profiles/<name>/`
   with CLI/env/default precedence while preserving local demo example
   compatibility. `AegisAI_Runtime-cqv.3` is complete: named production profile
@@ -238,6 +262,10 @@ workloads before portability matrix runs.
 
 Recently closed:
 
+- `AegisAI_Runtime-cqv.1` — added named production profile cross-file safety
+  validation after schema parsing. Tests cover duration and priority caps,
+  enabled trigger/focus-signal consistency, live affinity PID allowlist scope,
+  disabled live cpuset writes, and errors naming both files involved.
 - `AegisAI_Runtime-cqv.3` — added strict production config schema validation
   for named profiles. Errors include profile, file, section, key, and
   constraint context; tests cover unknown keys, missing fields, invalid focus

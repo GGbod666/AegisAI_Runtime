@@ -96,28 +96,44 @@ impl RuntimeOrchestratorConfig {
 
     fn load_from_paths(paths: ConfigPaths) -> Result<Self, ConfigError> {
         let strict = paths.strict_schema;
-        let runtime = read_config_file(paths.runtime)?;
-        let classifier = read_config_file(paths.classifier)?;
-        let awareness = read_config_file(paths.awareness)?;
-        let safety = read_config_file(paths.safety)?;
-        let inference_tail_guard = read_config_file(paths.inference_tail_guard)?;
-        let tool_call_booster = read_config_file(paths.tool_call_booster)?;
+        let runtime_document = read_config_file(paths.runtime)?;
+        let classifier_document = read_config_file(paths.classifier)?;
+        let awareness_document = read_config_file(paths.awareness)?;
+        let safety_document = read_config_file(paths.safety)?;
+        let inference_tail_guard_document = read_config_file(paths.inference_tail_guard)?;
+        let tool_call_booster_document = read_config_file(paths.tool_call_booster)?;
 
-        let runtime = parse_runtime_config(&runtime, strict)?;
-        let mut classifier = parse_classifier_config(&classifier, strict)?;
-        merge_awareness_defaults(&mut classifier.awareness, &awareness, strict)?;
-        let safety = parse_safety_config(&safety, strict)?;
+        let runtime = parse_runtime_config(&runtime_document, strict)?;
+        let mut classifier = parse_classifier_config(&classifier_document, strict)?;
+        merge_awareness_defaults(&mut classifier.awareness, &awareness_document, strict)?;
+        let safety = parse_safety_config(&safety_document, strict)?;
 
         let mut scenarios = BTreeMap::new();
         let inference_policy = parse_scenario_policy(
-            &inference_tail_guard,
+            &inference_tail_guard_document,
             ScenarioKind::InferenceTailGuard,
             strict,
         )?;
-        scenarios.insert(ScenarioKind::InferenceTailGuard, inference_policy);
+        let tool_policy = parse_scenario_policy(
+            &tool_call_booster_document,
+            ScenarioKind::ToolCallBooster,
+            strict,
+        )?;
 
-        let tool_policy =
-            parse_scenario_policy(&tool_call_booster, ScenarioKind::ToolCallBooster, strict)?;
+        if strict {
+            validate_cross_file_safety(
+                &runtime_document,
+                &safety_document,
+                &[
+                    (&inference_tail_guard_document, &inference_policy),
+                    (&tool_call_booster_document, &tool_policy),
+                ],
+                &runtime,
+                &safety,
+            )?;
+        }
+
+        scenarios.insert(ScenarioKind::InferenceTailGuard, inference_policy);
         scenarios.insert(ScenarioKind::ToolCallBooster, tool_policy);
 
         Ok(Self {
@@ -126,6 +142,169 @@ impl RuntimeOrchestratorConfig {
             safety,
             scenarios,
         })
+    }
+}
+
+fn validate_cross_file_safety(
+    runtime_document: &ConfigDocument,
+    safety_document: &ConfigDocument,
+    scenario_documents: &[(&ConfigDocument, &ScenarioPolicy)],
+    runtime: &RuntimeConfig,
+    safety: &SafetyConfig,
+) -> Result<(), ConfigError> {
+    for (scenario_document, policy) in scenario_documents {
+        if !policy.enabled {
+            continue;
+        }
+
+        validate_scenario_limits_against_safety(
+            safety_document,
+            scenario_document,
+            safety,
+            policy,
+        )?;
+        validate_scenario_triggers_against_focus_signals(
+            runtime_document,
+            scenario_document,
+            runtime,
+            policy,
+        )?;
+        validate_live_action_scope(runtime_document, scenario_document, runtime, policy)?;
+    }
+    Ok(())
+}
+
+fn validate_scenario_limits_against_safety(
+    safety_document: &ConfigDocument,
+    scenario_document: &ConfigDocument,
+    safety: &SafetyConfig,
+    policy: &ScenarioPolicy,
+) -> Result<(), ConfigError> {
+    if policy.max_boost_duration_ms > safety.max_boost_duration_ms {
+        return Err(cross_file_error(
+            scenario_document,
+            safety_document,
+            "policy",
+            "max_boost_duration_ms",
+            format!(
+                "must be <= global_safety.max_boost_duration_ms ({})",
+                safety.max_boost_duration_ms
+            ),
+        ));
+    }
+
+    if let Some(delta) = policy.actions.raise_nice {
+        let max_delta = safety.normalized_max_priority_delta();
+        if delta.abs() > max_delta {
+            return Err(cross_file_error(
+                scenario_document,
+                safety_document,
+                format!("actions.{}", policy.scenario.as_str()),
+                "raise_nice",
+                format!("absolute value must be <= global_safety.max_priority_delta ({max_delta})"),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_scenario_triggers_against_focus_signals(
+    runtime_document: &ConfigDocument,
+    scenario_document: &ConfigDocument,
+    runtime: &RuntimeConfig,
+    policy: &ScenarioPolicy,
+) -> Result<(), ConfigError> {
+    for signal in required_focus_signals(policy) {
+        if !runtime.focus_signals.contains(&signal) {
+            return Err(cross_file_error(
+                scenario_document,
+                runtime_document,
+                format!("triggers.{}", policy.scenario.as_str()),
+                trigger_key_for_signal(&signal),
+                format!(
+                    "requires collection.focus_signals to include `{}`",
+                    signal.as_str()
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_live_action_scope(
+    runtime_document: &ConfigDocument,
+    scenario_document: &ConfigDocument,
+    runtime: &RuntimeConfig,
+    policy: &ScenarioPolicy,
+) -> Result<(), ConfigError> {
+    let action_section = format!("actions.{}", policy.scenario.as_str());
+
+    if policy.actions.pin_strategy.is_some() && !has_live_pid_allowlist_scope(runtime) {
+        return Err(cross_file_error(
+            scenario_document,
+            runtime_document,
+            &action_section,
+            "pin_strategy",
+            "live affinity requires selection.mode = \"pid_allowlist\" and a non-empty pid_allowlist",
+        ));
+    }
+
+    if policy.actions.use_cpuset == Some(true) {
+        return Err(cross_file_error(
+            scenario_document,
+            runtime_document,
+            &action_section,
+            "use_cpuset",
+            "live cpuset writes are disabled",
+        ));
+    }
+
+    Ok(())
+}
+
+fn has_live_pid_allowlist_scope(runtime: &RuntimeConfig) -> bool {
+    runtime.selection_mode == "pid_allowlist" && !runtime.pid_allowlist.is_empty()
+}
+
+fn required_focus_signals(policy: &ScenarioPolicy) -> Vec<SignalKind> {
+    let triggers = &policy.triggers;
+    let mut signals = Vec::new();
+    if triggers.run_queue_delay_us.is_some() {
+        signals.push(SignalKind::RunQueueDelay);
+    }
+    if triggers.offcpu_spike_us.is_some() {
+        signals.push(SignalKind::OffCpuTime);
+    }
+    if triggers.cpu_migrations_per_sec.is_some() {
+        signals.push(SignalKind::CpuMigration);
+    }
+    if triggers.major_page_faults_per_sec.is_some() {
+        signals.push(SignalKind::MajorPageFault);
+    }
+    if triggers.subprocess_start_delay_us.is_some() {
+        signals.push(SignalKind::SubprocessStartDelay);
+    }
+    if triggers.queue_wait_us.is_some() {
+        signals.push(SignalKind::QueueWait);
+    }
+    if triggers.optional_io_latency_us.is_some() {
+        signals.push(SignalKind::IoLatency);
+    }
+    signals
+}
+
+fn trigger_key_for_signal(signal: &SignalKind) -> &'static str {
+    match signal {
+        SignalKind::RunQueueDelay => "run_queue_delay_us",
+        SignalKind::OffCpuTime => "offcpu_spike_us",
+        SignalKind::CpuMigration => "cpu_migrations_per_sec",
+        SignalKind::MajorPageFault => "major_page_faults_per_sec",
+        SignalKind::SubprocessStartDelay => "subprocess_start_delay_us",
+        SignalKind::QueueWait => "queue_wait_us",
+        SignalKind::IoLatency => "optional_io_latency_us",
+        SignalKind::Unknown(_) => "*",
     }
 }
 
@@ -193,6 +372,24 @@ impl ConfigContext<'_> {
             constraint.as_ref()
         ))
     }
+}
+
+fn cross_file_error(
+    primary: &ConfigDocument,
+    related: &ConfigDocument,
+    section: impl AsRef<str>,
+    key: impl AsRef<str>,
+    constraint: impl AsRef<str>,
+) -> ConfigError {
+    ConfigError::new(format!(
+        "config cross-file error: profile `{}` files {} and {} section `{}` key `{}` violates constraint: {}",
+        primary.profile,
+        primary.path.display(),
+        related.path.display(),
+        section.as_ref(),
+        key.as_ref(),
+        constraint.as_ref()
+    ))
 }
 
 fn config_paths_for_profile(
@@ -1269,6 +1466,70 @@ mod tests {
             profile_root.join("scenarios/tool_call_booster.toml"),
         )
         .expect("tool profile copy");
+        overwrite_profile_file(
+            root,
+            profile,
+            "runtime.toml",
+            r#"
+[target]
+deployment_target = "linux"
+kernel_min = "5.15"
+cgroup_version = "v2"
+
+[runtime]
+primary_runtime = "ollama"
+fallback_runtime = "llama.cpp"
+
+[selection]
+mode = "pid_allowlist"
+process_names = []
+pid_allowlist = [4242]
+
+[collection]
+focus_signals = [
+  "run_queue_delay",
+  "offcpu_time",
+  "cpu_migration",
+  "major_page_fault",
+  "subprocess_start_delay",
+  "queue_wait",
+  "io_latency"
+]
+
+[metrics]
+track = [
+  "ttft",
+  "p95_latency",
+  "p99_latency",
+  "jitter",
+  "boost_hit_rate",
+  "rollback_count",
+  "side_effect_rate"
+]
+"#,
+        );
+        overwrite_profile_file(
+            root,
+            profile,
+            "scenarios/tool_call_booster.toml",
+            r#"
+[policy]
+active_scenarios = ["tool_call_booster"]
+evaluation_window_ms = 300
+cooldown_ms = 800
+max_boost_duration_ms = 800
+
+[triggers.tool_call_booster]
+subprocess_start_delay_us = 1500
+queue_wait_us = 2000
+optional_io_latency_us = 4000
+
+[actions.tool_call_booster]
+raise_nice = -3
+pin_strategy = "prefer_low_contention_cores"
+warmup_executor = true
+"#,
+        );
     }
 
     fn load_profile_error(root: &Path, profile: &str) -> String {
@@ -1298,6 +1559,24 @@ mod tests {
         assert!(error.contains("config schema error"), "{error}");
         assert!(error.contains(&format!("profile `{profile}`")), "{error}");
         assert!(error.contains(file), "{error}");
+        assert!(error.contains(&format!("section `{section}`")), "{error}");
+        assert!(error.contains(&format!("key `{key}`")), "{error}");
+        assert!(error.contains(constraint), "{error}");
+    }
+
+    fn assert_cross_file_error_context(
+        error: &str,
+        profile: &str,
+        primary_file: &str,
+        related_file: &str,
+        section: &str,
+        key: &str,
+        constraint: &str,
+    ) {
+        assert!(error.contains("config cross-file error"), "{error}");
+        assert!(error.contains(&format!("profile `{profile}`")), "{error}");
+        assert!(error.contains(primary_file), "{error}");
+        assert!(error.contains(related_file), "{error}");
         assert!(error.contains(&format!("section `{section}`")), "{error}");
         assert!(error.contains(&format!("key `{key}`")), "{error}");
         assert!(error.contains(constraint), "{error}");
@@ -1656,6 +1935,224 @@ raise_nice = -5
             "policy",
             "evaluation_window_ms",
             "positive duration",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_scenario_duration_above_global_max_is_rejected() {
+        let root = temp_repo_root("cross-file-duration");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            r#"
+[policy]
+active_scenarios = ["inference_tail_guard"]
+evaluation_window_ms = 500
+cooldown_ms = 1500
+max_boost_duration_ms = 900
+
+[triggers.inference_tail_guard]
+run_queue_delay_us = 2000
+offcpu_spike_us = 3000
+cpu_migrations_per_sec = 10
+major_page_faults_per_sec = 3
+
+[actions.inference_tail_guard]
+raise_nice = -5
+pin_strategy = "prefer_reserved_cores"
+use_cpuset = false
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_cross_file_error_context(
+            &error,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            "safety/default.toml",
+            "policy",
+            "max_boost_duration_ms",
+            "global_safety.max_boost_duration_ms (800)",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_priority_delta_outside_global_max_is_rejected() {
+        let root = temp_repo_root("cross-file-priority");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            r#"
+[policy]
+active_scenarios = ["inference_tail_guard"]
+evaluation_window_ms = 500
+cooldown_ms = 1500
+max_boost_duration_ms = 800
+
+[triggers.inference_tail_guard]
+run_queue_delay_us = 2000
+
+[actions.inference_tail_guard]
+raise_nice = -6
+pin_strategy = "prefer_reserved_cores"
+use_cpuset = false
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_cross_file_error_context(
+            &error,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            "safety/default.toml",
+            "actions.inference_tail_guard",
+            "raise_nice",
+            "global_safety.max_priority_delta (5)",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_trigger_requiring_absent_focus_signal_is_rejected() {
+        let root = temp_repo_root("cross-file-focus");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "runtime.toml",
+            r#"
+[target]
+deployment_target = "linux"
+kernel_min = "5.15"
+cgroup_version = "v2"
+
+[runtime]
+primary_runtime = "ollama"
+fallback_runtime = "llama.cpp"
+
+[selection]
+mode = "pid_allowlist"
+process_names = []
+pid_allowlist = [4242]
+
+[collection]
+focus_signals = ["run_queue_delay"]
+
+[metrics]
+track = ["ttft"]
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_cross_file_error_context(
+            &error,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            "runtime.toml",
+            "triggers.inference_tail_guard",
+            "offcpu_spike_us",
+            "collection.focus_signals to include `offcpu_time`",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_live_affinity_requires_pid_allowlist_mode() {
+        let root = temp_repo_root("cross-file-affinity-mode");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "runtime.toml",
+            r#"
+[target]
+deployment_target = "linux"
+kernel_min = "5.15"
+cgroup_version = "v2"
+
+[runtime]
+primary_runtime = "ollama"
+fallback_runtime = "llama.cpp"
+
+[selection]
+mode = "process_name"
+process_names = ["ollama"]
+pid_allowlist = []
+
+[collection]
+focus_signals = [
+  "run_queue_delay",
+  "offcpu_time",
+  "cpu_migration",
+  "major_page_fault",
+  "subprocess_start_delay",
+  "queue_wait",
+  "io_latency"
+]
+
+[metrics]
+track = ["ttft"]
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_cross_file_error_context(
+            &error,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            "runtime.toml",
+            "actions.inference_tail_guard",
+            "pin_strategy",
+            "selection.mode = \"pid_allowlist\" and a non-empty pid_allowlist",
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn production_live_cpuset_true_is_rejected() {
+        let root = temp_repo_root("cross-file-cpuset");
+        copy_profile_fixture(&root, "production");
+        overwrite_profile_file(
+            &root,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            r#"
+[policy]
+active_scenarios = ["inference_tail_guard"]
+evaluation_window_ms = 500
+cooldown_ms = 1500
+max_boost_duration_ms = 800
+
+[triggers.inference_tail_guard]
+run_queue_delay_us = 2000
+
+[actions.inference_tail_guard]
+raise_nice = -5
+pin_strategy = "prefer_reserved_cores"
+use_cpuset = true
+"#,
+        );
+
+        let error = load_profile_error(&root, "production");
+
+        assert_cross_file_error_context(
+            &error,
+            "production",
+            "scenarios/inference_tail_guard.toml",
+            "runtime.toml",
+            "actions.inference_tail_guard",
+            "use_cpuset",
+            "live cpuset writes are disabled",
         );
         let _ = fs::remove_dir_all(root);
     }
