@@ -12,27 +12,7 @@ Production packaging is complete, so the deferred extension planning items are
 now unblocked. They remain future work and must still pass their own evidence
 gates before any runtime behavior is added.
 
-### 1. Evidence-Gate Deferred Online Adaptive Policy
-
-- Issue: `AegisAI_Runtime-0ry.4`
-- Priority: `P4`
-- Why now: production packaging is complete, but adaptive policy remains a
-  high-risk extension that must start in shadow mode with operator approval
-  gates.
-- Scope:
-  - keep the first slice suggestion/shadow-only
-  - prove safety invariants, drift checks, bounded state retention, rollback,
-    and freeze behavior before any live mutation
-  - compare against the existing static policy baseline
-- Verify:
-  - deterministic replay tests
-  - safety invariant tests
-  - shadow-mode smoke
-  - benchmark report with artifact paths
-  - `bd lint`
-  - `git diff --check`
-
-### 2. Evidence-Gate Deferred GPU Coordination
+### 1. Evidence-Gate Deferred GPU Coordination
 
 - Issue: `AegisAI_Runtime-0ry.3`
 - Priority: `P4`
@@ -52,7 +32,7 @@ gates before any runtime behavior is added.
   - `bd lint`
   - `git diff --check`
 
-### 3. Evidence-Gate Deferred Observability Dashboard
+### 2. Evidence-Gate Deferred Observability Dashboard
 
 - Issue: `AegisAI_Runtime-0ry.2`
 - Priority: `P4`
@@ -75,3 +55,10 @@ gates before any runtime behavior is added.
 - Finish validation gaps before expanding runtime scope.
 - Keep production packaging before deferred dashboard/GPU/adaptive extensions.
 - Do not add new runtime behavior while doing deferred-extension planning.
+
+## Recently Completed
+
+- `AegisAI_Runtime-0ry.4`: deferred online adaptive policy now has a
+  shadow-only evidence gate in `docs/adaptive_policy_gate.md` and
+  `bench/scripts/adaptive_policy_gate.py`. Verification artifacts are under
+  `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/`.

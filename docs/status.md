@@ -1,6 +1,6 @@
 # Current Status
 
-_Last reviewed: 2026-05-13_
+_Last reviewed: 2026-05-14_
 
 This is the compact factual snapshot. Active task state lives in `bd`; accepted
 task history lives in `docs/acceptance_ledger.md`; stage rules live in
@@ -59,6 +59,12 @@ Implemented and accepted capabilities:
   `aegisai-ebpf-helper` as a separate helper boundary, uses
   `/etc/aegisai/configs/profiles/production/` for the selected production
   profile, and provides dry-run staging plus remove/purge behavior.
+- Deferred online adaptive policy now has a shadow-only evidence gate. The
+  design in `docs/adaptive_policy_gate.md` keeps the first slice disconnected
+  from the daemon, actuator, and profile writer; the offline gate in
+  `bench/scripts/adaptive_policy_gate.py` proves deterministic replay, safety
+  invariants, drift/freeze handling, bounded retention, rollback-plan evidence,
+  and static-baseline comparison before any future runtime integration.
 
 Latest product-evidence status:
 
@@ -299,6 +305,21 @@ High-degree runtime hotspot coverage audit on 2026-05-13 passed:
   `python3 -m unittest bench.scripts.test_inference_tail_guard_ollama_smoke`,
   and `bash -n bench/scripts/inference_tail_guard_ollama_smoke.sh`.
 
+Deferred online adaptive policy evidence gate on 2026-05-14 passed:
+
+- `python3 -m unittest bench.scripts.test_adaptive_policy_gate` (`4` tests)
+- `python3 bench/scripts/adaptive_policy_gate.py --run-id codex_adaptive_policy_gate_20260514T000000Z`
+- Artifact report:
+  `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_gate_report.md`
+- Replay audit:
+  `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_shadow_replay.json`
+- Benchmark CSV:
+  `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_benchmark.csv`
+- Verdict: `PASS`; the shadow gate produced `2` recommendations, `0`
+  live/profile mutations, `1` drift freeze, max retained samples `3`, adaptive
+  false positives `0` versus static baseline false positives `2`, and explicitly
+  states runtime behavior `not_connected`.
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -352,6 +373,14 @@ Tool Call Booster:
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`: `live_guarded` improved `0/3` comparable rounds by at least `5.0%` |
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 
+Deferred Adaptive Policy:
+
+| run id | artifact | verdict | boundary |
+| --- | --- | --- | --- |
+| `codex_adaptive_policy_gate_20260514T000000Z` | `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_gate_report.md` | `PASS` | shadow-only; runtime `not_connected`; `0` live/profile mutations |
+| `codex_adaptive_policy_gate_20260514T000000Z` | `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_benchmark.csv` | `PASS` | static baseline versus adaptive shadow benchmark; adaptive false positives `0` versus static baseline `2` |
+| `codex_adaptive_policy_gate_20260514T000000Z` | `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_shadow_replay.json` | `PASS` | deterministic replay audit with rollback-plan and freeze evidence |
+
 Helper validation:
 
 | signal | verification entry | artifact root | result |
@@ -371,15 +400,12 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after daemon/helper packaging implementation: `78` total
-issues, `3` open, `0` in progress, `0` blocked, `75` closed.
+Current `bd` state after deferred adaptive policy evidence gate implementation:
+`78` total issues, `2` open, `0` in progress, `0` blocked, `76` closed.
 `docs/latest_tasks.md` now contains only the active prioritized todo queue;
 historical evidence remains in this file, `docs/acceptance_ledger.md`, and
 `docs/verification_log.md`.
 
-- `AegisAI_Runtime-0ry.4` — deferred online adaptive policy. The issue records
-  prerequisites, non-goals, shadow-mode safety evidence, benchmark evidence,
-  and a verification gate.
 - `AegisAI_Runtime-0ry.3` — deferred GPU coordination. The issue records
   prerequisites, non-goals, device and privilege safety evidence, benchmark
   evidence, and a verification gate.
@@ -389,6 +415,12 @@ historical evidence remains in this file, `docs/acceptance_ledger.md`, and
 
 Recently closed:
 
+- `AegisAI_Runtime-0ry.4` — added the deferred online adaptive policy
+  shadow-only evidence gate. The gate records prerequisites and promotion
+  boundaries in `docs/adaptive_policy_gate.md`, implements deterministic
+  replay and static-baseline benchmark artifacts in
+  `bench/scripts/adaptive_policy_gate.py`, and keeps runtime behavior
+  disconnected from daemon, actuator, and profile writes.
 - `AegisAI_Runtime-ufp` — implemented the first Debian/Ubuntu systemd
   packaging path under `packaging/debian-systemd/`. The package artifacts
   include the rootless `aegisai-runtime.service`, `_aegisai` sysusers entry,
@@ -405,11 +437,11 @@ Recently closed:
 
 - `AegisAI_Runtime-0ry` — closed the deferred extension parent after
   `AegisAI_Runtime-0ry.1` split planning completed. Dashboard, GPU
-  coordination, and online adaptive policy remain as
+  coordination, and online adaptive policy were split into
   `AegisAI_Runtime-0ry.2`, `AegisAI_Runtime-0ry.3`, and
-  `AegisAI_Runtime-0ry.4`, each blocked behind production packaging with
-  prerequisites, non-goals, safety evidence, benchmark evidence, and
-  verification gates recorded in Beads. Verification: `bd show
+  `AegisAI_Runtime-0ry.4`, each behind independent evidence gates.
+  `AegisAI_Runtime-0ry.4` is now closed with a shadow-only adaptive policy
+  gate; dashboard and GPU coordination remain open. Verification: `bd show
   AegisAI_Runtime-0ry`, `bd ready`, `bd blocked`, `bd lint`, and
   `git diff --check`.
 

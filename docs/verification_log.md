@@ -19949,3 +19949,73 @@ No output.
 - Overall result: `PASS`. The only code change is two behavior-preserving
   tests in `agent/actuator/src/backend.rs`; no hotspot decomposition or
   production behavior change was made.
+
+### 2026-05-14T00:00:00Z - Deferred online adaptive policy evidence gate
+
+- Scope: close `AegisAI_Runtime-0ry.4` by adding a shadow-only adaptive policy
+  evidence gate, deterministic replay tests, safety invariant tests,
+  shadow-mode smoke, and benchmark artifacts. No runtime daemon, actuator, or
+  production profile mutation path was added.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Artifact directory:
+  `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/`
+- Reference framing: NIST AI RMF 1.0 and NIST AI RMF Playbook were used to map
+  Govern/Map/Measure/Manage into prerequisites, shadow-only operation,
+  measured replay evidence, and managed freeze/rollback/operator gates.
+
+- Command: `python3 -m unittest bench.scripts.test_adaptive_policy_gate`
+- Exit status: `0`
+```text
+Ran 4 tests in 0.061s
+OK
+```
+
+- Command: `python3 bench/scripts/adaptive_policy_gate.py --run-id codex_adaptive_policy_gate_20260514T000000Z`
+- Exit status: `0`
+```text
+adaptive_policy_gate=PASS artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z report=/home/gg/AegisAI_Runtime/.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_gate_report.md
+```
+
+- Gate report summary:
+```text
+Verdict: PASS
+Runtime behavior: not_connected
+Mode: shadow_only
+Deterministic replay: PASS
+Shadow recommendations: 2
+Live/profile mutations: 0
+Drift freezes: 1
+Max retained samples: 3
+Adaptive shadow false positives: 0
+Static baseline false positives: 2
+```
+
+- Command: `python3 -m unittest discover -s bench/scripts -p 'test_*.py'`
+- Exit status: `0`
+```text
+Ran 25 tests in 6.633s
+OK
+```
+
+- Command: `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `bd lint`
+- Exit status: `0`
+```text
+No template warnings found.
+```
+
+- Command: `git diff --check`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Overall result: `PASS`. Adaptive policy remains shadow-only and disconnected;
+  no runtime mutation path was added. Rust workspace gates were not rerun
+  because this change touched Python benchmark tooling, checked-in replay data,
+  and docs only.

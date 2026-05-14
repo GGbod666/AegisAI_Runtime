@@ -850,10 +850,9 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 
 `bd` 是任务源，最新精细任务清单见 `docs/latest_tasks.md`。当前 open issue：
 
-- `AegisAI_Runtime-0ry.2` / `AegisAI_Runtime-0ry.3` /
-  `AegisAI_Runtime-0ry.4`：dashboard、GPU coordination 和 online adaptive
-  policy 已拆成 evidence-gated future work；production packaging gate 已完成，
-  但各自仍需独立 safety/benchmark/verification gate。
+- `AegisAI_Runtime-0ry.2` / `AegisAI_Runtime-0ry.3`：dashboard 和 GPU
+  coordination 已拆成 evidence-gated future work；production packaging gate
+  已完成，但二者仍需独立 safety/benchmark/verification gate。
 
 最近关闭的父级 gap：
 
@@ -862,9 +861,11 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
   install path、production profile staging、preflight、remove/purge 和 dry-run
   smoke。
 - `AegisAI_Runtime-0ry`：deferred extension parent 已关闭；dashboard、GPU
-  coordination 和 online adaptive policy 保持为
-  `AegisAI_Runtime-0ry.2` / `AegisAI_Runtime-0ry.3` /
-  `AegisAI_Runtime-0ry.4` 的独立 evidence-gated future work。
+  coordination 和 online adaptive policy 拆成独立 evidence-gated future work。
+- `AegisAI_Runtime-0ry.4`：online adaptive policy 的 shadow-only evidence
+  gate 已完成，设计在 `docs/adaptive_policy_gate.md`，离线 replay/benchmark
+  gate 在 `bench/scripts/adaptive_policy_gate.py`，最新 artifact 在
+  `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/`。
 - `AegisAI_Runtime-dxh`：`aegisai-runtime-daemon --help` 现在打印当前 usage
   并以 `0` 退出；无效或不完整参数仍保持 nonzero。
 - `AegisAI_Runtime-cqv`：production config profile selector、strict schema
@@ -903,8 +904,8 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
   `agent/explain_tune/src/engine.rs`、`agent/runtime_daemon/src/runtime_loop.rs`、
   `scenarios/tool_call_booster/src/policy.rs` 和 `agent/policy_engine/src/engine.rs`；
   后续修改应小步、测试先行。
-- 还没有生产 service packaging、installer、dashboard、GPU scheduler 或在线 adaptive policy
-  loop。
+- 还没有 dashboard、GPU scheduler 或在线 adaptive policy live loop；adaptive policy
+  当前只有 shadow-only evidence gate。
 
 ## 阅读路线
 
@@ -914,6 +915,8 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 - `docs/strategy.md`：MVP 定义、严格收益规则、当前阶段和实验方法。
 - `docs/acceptance_ledger.md`：已验收 19 项 evidence-hardening 台账。
 - `docs/linux_validation.md`：Linux 主机、helper 和 live guarded 实验检查清单。
+- `docs/adaptive_policy_gate.md`：online adaptive policy 的 shadow-only
+  evidence gate 和 promotion boundary。
 - `docs/mvp_benefit_report.md`：最新收益证据和当前 Inference Tail Guard PASS 结论。
 - `docs/verification_log.md`：append-only 验证历史。
 - `docs/architecture.md`：稳定架构、部署边界和工程债边界。

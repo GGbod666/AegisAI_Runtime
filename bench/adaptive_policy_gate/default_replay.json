@@ -1,0 +1,52 @@
+[
+  {
+    "timestamp_ms": 1000,
+    "scenario": "inference_tail_guard",
+    "pid": 101,
+    "process_name": "ollama",
+    "run_queue_delay_us": 900,
+    "p99_latency_ms": 190.0,
+    "baseline_p99_latency_ms": 200.0,
+    "should_intervene": false
+  },
+  {
+    "timestamp_ms": 2000,
+    "scenario": "inference_tail_guard",
+    "pid": 101,
+    "process_name": "ollama",
+    "run_queue_delay_us": 2350,
+    "p99_latency_ms": 230.0,
+    "baseline_p99_latency_ms": 200.0,
+    "should_intervene": true
+  },
+  {
+    "timestamp_ms": 3000,
+    "scenario": "inference_tail_guard",
+    "pid": 101,
+    "process_name": "ollama",
+    "run_queue_delay_us": 2650,
+    "p99_latency_ms": 235.0,
+    "baseline_p99_latency_ms": 200.0,
+    "should_intervene": true
+  },
+  {
+    "timestamp_ms": 4000,
+    "scenario": "inference_tail_guard",
+    "pid": 101,
+    "process_name": "ollama",
+    "run_queue_delay_us": 2100,
+    "p99_latency_ms": 205.0,
+    "baseline_p99_latency_ms": 200.0,
+    "should_intervene": false
+  },
+  {
+    "timestamp_ms": 5000,
+    "scenario": "inference_tail_guard",
+    "pid": 101,
+    "process_name": "ollama",
+    "run_queue_delay_us": 2700,
+    "p99_latency_ms": 330.0,
+    "baseline_p99_latency_ms": 200.0,
+    "should_intervene": false
+  }
+]

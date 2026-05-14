@@ -87,12 +87,15 @@ configured, and the runtime daemon explicit help path now exits successfully
 without weakening invalid-argument failures. The Debian/Ubuntu systemd
 packaging path now exists under `packaging/debian-systemd/` with a rootless
 daemon unit, separate helper install path, production-profile staging,
-preflight checks, remove/purge behavior, and dry-run smoke coverage. The
+preflight checks, remove/purge behavior, and dry-run smoke coverage. Deferred
+online adaptive policy planning now has a shadow-only evidence gate with
+deterministic replay, safety invariant tests, drift/freeze handling, bounded
+retention, rollback-plan checks, and static-baseline comparison artifacts. The
 remaining blockers are:
 
 - unblocked but still evidence-gated deferred runtime extensions:
-  `AegisAI_Runtime-0ry.2` (dashboard), `AegisAI_Runtime-0ry.3` (GPU
-  coordination), and `AegisAI_Runtime-0ry.4` (online adaptive policy)
+  `AegisAI_Runtime-0ry.2` (dashboard) and `AegisAI_Runtime-0ry.3` (GPU
+  coordination)
 
 See `docs/status.md` for the current issue index and `bd ready` for executable
 work.

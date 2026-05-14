@@ -249,6 +249,23 @@ Deferred config work:
 - adaptive policy writes back into profile files
 - enabling live cpuset writes by profile alone
 
+## Deferred Adaptive Policy Boundary
+
+Current adaptive policy evidence is offline and shadow-only:
+
+- `bench/scripts/adaptive_policy_gate.py` runs deterministic replay from fixed
+  samples or a supplied JSON dataset and writes artifacts under
+  `.cache/aegisai/adaptive_policy_gate/<run_id>/`.
+- `docs/adaptive_policy_gate.md` defines the promotion boundary. Suggestions
+  are audited recommendations, not daemon inputs, actuator actions, config
+  profile writes, or scheduler benefit proof.
+- The gate hard-rejects live mutation, profile writes, consumed operator
+  approval, missing rollback plans, and unbounded state retention. Drift above
+  the configured threshold latches freeze behavior.
+- Future runtime integration still needs a separate issue with production-like
+  replay artifacts, guarded live A/B proof, operator approval flow, rollback
+  evidence, and profile review.
+
 ## Hotspot Refactor Boundaries
 
 Known hotspots:

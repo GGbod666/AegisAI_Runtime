@@ -15,6 +15,7 @@
 - `inference_tail_guard_phase2r2_actuator_quality.sh`：阶段 2R-2 actuator 质量收敛入口。它先跑至少 3 轮 `live_guarded` nice-only，要求无 action audit error、记录 lease、记录 rollback、cpuset 禁用；通过后才跑一轮 affinity。
 - `inference_tail_guard_phase4_report.sh`：阶段 4 多轮收益报告入口。它会循环跑 CPU 干扰和可选 CPU+I/O 扰动矩阵，汇总每轮 `summary.csv`，输出 `docs/mvp_benefit_report.md` 和 `.cache/aegisai/inference_tail_guard_phase4/<run_id>/` 下的对照 CSV。设置 `AEGISAI_PHASE4_REUSE_ARTIFACTS=1` 可复用已有 run 的 artifacts 重新生成报告，不重跑 Ollama 或压力负载。
 - `tool_call_booster_real_executor_harness.sh`：阶段 2R-5 Tool Call Booster 入口。它重复启动真实本地 tool executor / retrieval / rerank / background 进程树，默认跑 `baseline,noop,dry_run` 对照，可显式加入 `live_guarded`，再用 runtime daemon `linux` + `procfs` source 验证 `tool_call_lifecycles`、`tool_call_booster` 触发、可回滚链路、stage effectiveness 和 latency delta benefit verdict。
+- `adaptive_policy_gate.py`：deferred online adaptive policy 的离线 evidence gate。它只跑 deterministic replay 和 shadow-mode suggestion，不连接 daemon、actuator 或 profile writer；输出 shadow replay JSON、static-vs-adaptive benchmark CSV 和 gate report，用于证明 drift/freeze、rollback plan、bounded retention、operator gate 和 no-mutation invariants。
 
 ## Tool Call Booster real executor harness
 
@@ -96,6 +97,10 @@ bash bench/scripts/inference_tail_guard_ollama_smoke.sh
 bash bench/scripts/tool_call_booster_real_executor_harness.sh
 ```
 
+```bash
+python3 bench/scripts/adaptive_policy_gate.py
+```
+
 可用 `AEGISAI_VERIFY_LOG=/path/to/log.md` 覆盖日志路径。
 可用 `AEGISAI_OLLAMA_MODEL=qwen2.5:0.5b`、`AEGISAI_AB_SAMPLES=12`、`AEGISAI_AB_CONCURRENCY=2`、`AEGISAI_STRESS_CPU=2` 覆盖默认实验参数。
 可用 `AEGISAI_STRESS_IO=1`、`AEGISAI_STRESS_HDD=1`、`AEGISAI_STRESS_HDD_BYTES=128M` 给单次 harness 增加可选 I/O 扰动。
@@ -173,6 +178,9 @@ as `action_effectiveness`, `noisy_workload`, `insufficient_sample_size`, or
 - permission snapshot：`.cache/aegisai/inference_tail_guard/<run_id>/permission_state.txt`
 - Phase 4 report：`docs/mvp_benefit_report.md`
 - Phase 4 aggregate：`.cache/aegisai/inference_tail_guard_phase4/<run_id>/phase4_aggregate.csv`
+- Adaptive policy shadow replay：`.cache/aegisai/adaptive_policy_gate/<run_id>/adaptive_policy_shadow_replay.json`
+- Adaptive policy benchmark：`.cache/aegisai/adaptive_policy_gate/<run_id>/adaptive_policy_benchmark.csv`
+- Adaptive policy gate report：`.cache/aegisai/adaptive_policy_gate/<run_id>/adaptive_policy_gate_report.md`
 
 结果解释：
 
