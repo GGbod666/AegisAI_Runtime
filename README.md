@@ -857,6 +857,10 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 
 最近关闭的父级 gap：
 
+- `AegisAI_Runtime-0ry`：deferred extension parent 已关闭；dashboard、GPU
+  coordination 和 online adaptive policy 保持为
+  `AegisAI_Runtime-0ry.2` / `AegisAI_Runtime-0ry.3` /
+  `AegisAI_Runtime-0ry.4`，并继续被 production packaging gate 阻塞。
 - `AegisAI_Runtime-dxh`：`aegisai-runtime-daemon --help` 现在打印当前 usage
   并以 `0` 退出；无效或不完整参数仍保持 nonzero。
 - `AegisAI_Runtime-cqv`：production config profile selector、strict schema

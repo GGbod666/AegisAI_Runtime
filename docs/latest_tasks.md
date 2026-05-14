@@ -29,22 +29,6 @@ queue. Historical evidence belongs in `docs/status.md`,
   - `bd lint`
   - `git diff --check`
 
-### 2. Close Deferred Extension Parent
-
-- Issue: `AegisAI_Runtime-0ry`
-- Priority: `P4`
-- Why now: close only after the extension planning bucket is split.
-- Scope:
-  - confirm dashboard, GPU coordination, and online adaptive policy are separate
-    deferred work items:
-    `AegisAI_Runtime-0ry.2`, `AegisAI_Runtime-0ry.3`, and
-    `AegisAI_Runtime-0ry.4`
-  - confirm `AegisAI_Runtime-0ry.1` is closed
-  - keep them behind production packaging, helper portability, and safety gates
-- Verify:
-  - `bd show AegisAI_Runtime-0ry`
-  - `bd ready`
-
 ## Blocked Deferred Extensions
 
 These are intentionally blocked behind `AegisAI_Runtime-ufp` and should not

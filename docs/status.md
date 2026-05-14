@@ -371,8 +371,8 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after runtime daemon help exit fix: `78` total issues,
-`5` open, `0` in progress, `3` blocked, `73` closed.
+Current `bd` state after deferred extension parent closure: `78` total issues,
+`4` open, `0` in progress, `3` blocked, `74` closed.
 `docs/latest_tasks.md` now contains only the active prioritized todo queue;
 historical evidence remains in this file, `docs/acceptance_ledger.md`, and
 `docs/verification_log.md`.
@@ -384,9 +384,6 @@ historical evidence remains in this file, `docs/acceptance_ledger.md`, and
   prerequisite behavior, rollback, and uninstall rules defined. The remaining
   open work is installer/service implementation plus dry-run or VM smoke
   verification.
-- `AegisAI_Runtime-0ry` — close the deferred extension parent after
-  `AegisAI_Runtime-0ry.1` completed the split. `bd ready` now lists this
-  parent for closure validation.
 - `AegisAI_Runtime-0ry.2` — deferred observability dashboard, blocked behind
   production packaging. The issue records prerequisites, non-goals, read-only
   safety evidence, benchmark evidence, and a verification gate.
@@ -398,6 +395,16 @@ historical evidence remains in this file, `docs/acceptance_ledger.md`, and
   safety evidence, benchmark evidence, and a verification gate.
 
 Recently closed:
+
+- `AegisAI_Runtime-0ry` — closed the deferred extension parent after
+  `AegisAI_Runtime-0ry.1` split planning completed. Dashboard, GPU
+  coordination, and online adaptive policy remain as
+  `AegisAI_Runtime-0ry.2`, `AegisAI_Runtime-0ry.3`, and
+  `AegisAI_Runtime-0ry.4`, each blocked behind production packaging with
+  prerequisites, non-goals, safety evidence, benchmark evidence, and
+  verification gates recorded in Beads. Verification: `bd show
+  AegisAI_Runtime-0ry`, `bd ready`, `bd blocked`, `bd lint`, and
+  `git diff --check`.
 
 - `AegisAI_Runtime-dxh` — normalized explicit
   `aegisai-runtime-daemon --help` behavior so usage prints to stdout and exits
