@@ -20249,3 +20249,86 @@ No template warnings found (2 issues checked).
 - Overall result: `PASS` for the Phase 5 readiness evidence gates. The next
   executable Tail Guard task is the guarded owned-cgroup isolation applier, not
   the Phase 5 A/B proof yet.
+
+### 2026-05-14T07:15:53Z - Guarded owned-cgroup isolation applier
+
+- Scope: close `AegisAI_Runtime-20w` by adding the low-level
+  `OwnedCgroupIsolationApplier` in `aegisai-actuator`. It is intentionally not
+  wired into the Phase 5 A/B harness or production profile `use_cpuset` yet.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Implementation: `agent/actuator/src/cgroup_isolation.rs`
+- Reference framing: Linux kernel cgroup v2 documentation
+  (`https://www.kernel.org/doc/html/v6.9/admin-guide/cgroup-v2.html`) for
+  `cgroup.procs`, `cpuset.cpus`, `cpuset.mems`, and `cpu.max` kept the first
+  live-write slice restricted to administrator-created owned subtrees with
+  capture-before-write rollback evidence.
+- Safety coverage: explicit confirmation, PID allowlist, max affected set,
+  configured root under `/sys/fs/cgroup/aegisai.runtime`, pre-existing owned
+  root/child cgroups, traversal rejection, unsafe target rejection,
+  system/container scope rejection, unknown/mixed process classification
+  rejection, daemon/helper/self migration rejection, non-owned original
+  membership rejection, forged rollback lease rejection, apply audit, rollback
+  audit, rollback success-rate reporting, and failure-disable behavior.
+- Boundary: `AegisAI_Runtime-0gr` now tracks wiring a Phase 5-only isolation
+  mode to this applier before `AegisAI_Runtime-t49` can run the A/B proof.
+
+- Command: `cargo fmt --all -- --check`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `cargo test -p aegisai-actuator owned_cgroup_isolation`
+- Exit status: `0`
+```text
+running 10 tests
+test cgroup_isolation::tests::owned_cgroup_isolation_applies_and_rolls_back_with_audit ... ok
+test cgroup_isolation::tests::owned_cgroup_isolation_rejects_container_scope_membership ... ok
+test cgroup_isolation::tests::owned_cgroup_isolation_rejects_daemon_helper_self_migration ... ok
+test cgroup_isolation::tests::owned_cgroup_isolation_rejects_forged_rollback_lease_outside_owned_subtree ... ok
+test cgroup_isolation::tests::owned_cgroup_isolation_rejects_guard_root_outside_aegisai_owned_subtree ... ok
+test cgroup_isolation::tests::owned_cgroup_isolation_rejects_mixed_or_unknown_process_sets ... ok
+test cgroup_isolation::tests::owned_cgroup_isolation_rejects_original_membership_outside_owned_subtree ... ok
+test cgroup_isolation::tests::owned_cgroup_isolation_rejects_target_outside_owned_subtree ... ok
+test cgroup_isolation::tests::owned_cgroup_isolation_rejects_traversal_in_owned_root ... ok
+test cgroup_isolation::tests::owned_cgroup_isolation_write_failure_rolls_back_and_disables ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out
+```
+
+- Command: `cargo test -p aegisai-actuator cpuset_dry_run`
+- Exit status: `0`
+```text
+running 8 tests
+test cpuset_dry_run::tests::rejects_empty_computed_cpu_set ... ok
+test cpuset_dry_run::tests::rejects_missing_process_classification ... ok
+test cpuset_dry_run::tests::rejects_missing_rollback_capture ... ok
+test cpuset_dry_run::tests::rejects_overbroad_process_set ... ok
+test cpuset_dry_run::tests::rejects_target_cgroup_at_owned_root ... ok
+test cpuset_dry_run::tests::rejects_unsafe_cgroup_root ... ok
+test cpuset_dry_run::tests::rejects_unsupported_live_write_mode ... ok
+test cpuset_dry_run::tests::valid_dry_run_plan_includes_target_capture_and_rollback_context ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 51 filtered out
+```
+
+- Command: `cargo test -p aegisai-actuator`
+- Exit status: `0`
+```text
+running 63 tests
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+Doc-tests aegisai_actuator: 0 passed; 0 failed
+```
+
+- Command: `cargo clippy -p aegisai-actuator --all-targets -- -D warnings`
+- Exit status: `0`
+```text
+Finished `dev` profile.
+```
+
+- Beads update: created `AegisAI_Runtime-0gr` for Phase 5 isolation-mode
+  harness/runtime wiring, added dependency `0gr -> 20w`, and added dependency
+  `t49 -> 0gr`.
+- Overall result: `PASS` for the low-level applier. Phase 5 A/B proof remains
+  blocked until `AegisAI_Runtime-0gr` exposes a controlled isolation mode and
+  artifact fields.

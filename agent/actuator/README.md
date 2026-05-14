@@ -41,6 +41,14 @@ For the Linux path, the backend is split one level further:
   audits success, timeout, or failure. Rollback remains a no-op audit because
   cache/process priming is not reversible.
 
+- `OwnedCgroupIsolationApplier`
+  Low-level cgroup v2 isolation applier for the Tail Guard Phase 5 path. It is
+  not connected to production profile `use_cpuset` yet. It only writes
+  administrator-created AegisAI-owned cgroup subtrees after explicit
+  confirmation, PID allowlist validation, process classification checks, and
+  rollback capture. Apply failures disable the applier and attempt rollback
+  with audited success-rate fields.
+
 - `DryRunLinuxCommandRunner`
   Command runner for Linux VM preflight rehearsals. It builds the same command arguments as the host runner but returns auditable `dry_run:` details without invoking host commands.
 

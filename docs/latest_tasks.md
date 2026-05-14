@@ -23,16 +23,16 @@ Target for the next proof:
 
 Ready now:
 
-- `AegisAI_Runtime-20w`: implement the guarded owned-cgroup isolation applier.
-  This is now unblocked by the attribution and dry-run planner artifacts. Keep
-  live cgroup writes limited to an administrator-created AegisAI-owned cgroup
-  v2 subtree, with explicit confirmation, bounded affected sets, hard
-  rejections, apply audit, and rollback evidence.
+- `AegisAI_Runtime-0gr`: wire a Phase 5-only Tail Guard isolation mode to the
+  guarded owned-cgroup applier or equivalent controlled preparation step. Keep
+  production profile `use_cpuset` disabled by default; the next slice is the
+  explicit harness/runtime entry point and artifact fields for effective live
+  isolation actions.
 
 Blocked follow-up:
 
 - `AegisAI_Runtime-t49`: run the Phase 5 Tail Guard isolation A/B proof. It
-  is now blocked only on `AegisAI_Runtime-20w`.
+  is now blocked on the Phase 5 isolation-mode wiring in `AegisAI_Runtime-0gr`.
 
 ## Ordering Rules
 
@@ -65,6 +65,12 @@ Blocked follow-up:
   plan found `0/8` affected candidates, rejected unknown and interactive
   processes, recorded rollback capture requirements, and performed no live
   mutation.
+- `AegisAI_Runtime-20w`: the guarded owned-cgroup isolation applier now lives
+  in `agent/actuator/src/cgroup_isolation.rs`. It writes only inside
+  administrator-created `/sys/fs/cgroup/aegisai.runtime/...` subtrees, rejects
+  unsafe roots, unknown/mixed classifications, daemon/helper/self migration,
+  and non-owned original memberships, captures rollback state, audits
+  apply/rollback writes, and disables itself after apply write failure.
 - `AegisAI_Runtime-0ry.3`: deferred GPU coordination now has an
   observe/plan-only evidence gate in `docs/gpu_coordination_gate.md` and
   `bench/scripts/gpu_coordination_gate.py`. Verification artifacts are under

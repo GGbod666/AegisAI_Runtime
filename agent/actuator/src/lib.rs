@@ -8,6 +8,7 @@
 
 mod actuator;
 mod backend;
+mod cgroup_isolation;
 pub mod cpu_affinity;
 mod cpuset_dry_run;
 mod model;
@@ -24,6 +25,11 @@ pub use backend::{
     ProcfsLinuxProcessStateProvider, RecordingActuatorBackend, SystemLinuxCommandRunner,
     SystemWarmupExecutorRunner, UnavailableLinuxProcessStateProvider,
     UnconfirmedLinuxCommandRunner, WarmupExecutorCommand, WarmupExecutorRunner,
+};
+pub use cgroup_isolation::{
+    CgroupFs, OwnedCgroupIsolationApplier, OwnedCgroupIsolationApplyResult,
+    OwnedCgroupIsolationGuard, OwnedCgroupIsolationLease, OwnedCgroupIsolationRequest,
+    SystemCgroupFs,
 };
 pub use cpu_affinity::{CpuAffinityCapture, CpuAffinityPlanner, CpuAffinityTarget, CpuTopology};
 pub use cpuset_dry_run::{

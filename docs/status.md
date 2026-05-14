@@ -96,6 +96,14 @@ Latest product-evidence status:
   records a dry-run-only background demotion plan with `0/8` affected
   candidates on the current host, explicit unknown/interactive rejections, and
   no live mutation.
+- Inference Tail Guard guarded owned-cgroup isolation: the low-level
+  `OwnedCgroupIsolationApplier` now exists in `aegisai-actuator`. It limits
+  live cgroup writes and rollback writes to administrator-created
+  `/sys/fs/cgroup/aegisai.runtime/...` subtrees, requires explicit
+  confirmation, PID allowlists, process classifications, and rollback capture,
+  rejects daemon/helper/self migration, and disables itself after apply write
+  failure. It is not yet wired into the Phase 5 A/B harness or production
+  profile `use_cpuset`.
 - Tool Call Booster: `PASS`. The fixed-work live guarded run passed contracts,
   generated `tool_call_booster_stage_effectiveness.csv`, improved `3/3`
   comparable rounds above the configured `5.0%` latency-improvement threshold
