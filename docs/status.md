@@ -65,6 +65,19 @@ Implemented and accepted capabilities:
   `bench/scripts/adaptive_policy_gate.py` proves deterministic replay, safety
   invariants, drift/freeze handling, bounded retention, rollback-plan evidence,
   and static-baseline comparison before any future runtime integration.
+- Deferred GPU coordination now has an observe/plan-only evidence gate. The
+  design in `docs/gpu_coordination_gate.md` keeps the first slice disconnected
+  from the daemon, actuator, helper, DCGM/NVML/CUDA calls, and MIG mutation;
+  the offline gate in `bench/scripts/gpu_coordination_gate.py` proves recorded
+  telemetry parsing, NVIDIA-only first-slice scope, unsupported-host no-op
+  behavior, safety rejection matrix coverage, and dry-run overhead boundaries.
+- Deferred observability dashboard planning now has a read-only evidence gate.
+  The design in `docs/observability_dashboard_gate.md` keeps the dashboard
+  disconnected from policy/profile editing, helper control, scheduler actions,
+  remote config, and benefit-truth overrides; the offline gate in
+  `bench/scripts/observability_dashboard_gate.py` proves recorded audit,
+  verification artifact, and telemetry export parsing with redaction and
+  overhead checks.
 
 Latest product-evidence status:
 
@@ -320,6 +333,39 @@ Deferred online adaptive policy evidence gate on 2026-05-14 passed:
   false positives `0` versus static baseline false positives `2`, and explicitly
   states runtime behavior `not_connected`.
 
+Deferred GPU coordination and observability dashboard evidence gates on
+2026-05-14 passed:
+
+- `python3 -m unittest bench.scripts.test_gpu_coordination_gate` (`4` tests)
+- `python3 -m unittest bench.scripts.test_observability_dashboard_gate`
+  (`4` tests)
+- `python3 bench/scripts/gpu_coordination_gate.py --run-id codex_gpu_coordination_gate_20260514T000000Z`
+- `python3 bench/scripts/observability_dashboard_gate.py --run-id codex_observability_dashboard_gate_20260514T000000Z`
+- `python3 -m unittest discover -s bench/scripts -p 'test_*.py'` (`33`
+  tests)
+- GPU artifact report:
+  `.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/gpu_coordination_gate_report.md`
+- GPU plan JSON:
+  `.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/gpu_coordination_plan.json`
+- GPU benchmark CSV:
+  `.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/gpu_coordination_benchmark.csv`
+- GPU safety matrix:
+  `.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/gpu_coordination_safety_matrix.csv`
+- Dashboard artifact report:
+  `.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z/observability_dashboard_gate_report.md`
+- Dashboard snapshot:
+  `.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z/observability_dashboard_snapshot.json`
+- Dashboard export CSV:
+  `.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z/observability_dashboard_export.csv`
+- GPU verdict: `PASS`; the observe/plan-only gate evaluated `4` recorded hosts,
+  produced `1` NVIDIA dry-run plan, kept `3` unsupported hosts no-op, recorded
+  `6` safety rejections, `0` live GPU mutations, max latency overhead `1.0%`,
+  host CPU delta `0.4%`, and GPU memory delta `18 MiB`.
+- Dashboard verdict: `PASS`; the read-only gate parsed `2` runtime audit
+  records, `2` verification artifacts, and `3` telemetry exports with `0`
+  control paths, redaction `PASS`, artifact-derived benefit truth, parse
+  `8.0 ms`, render `14.0 ms`, and daemon-loop regression `0.588235%`.
+
 Audit caveats:
 
 - Linux source preflight passed with `processed_events=0`; this is a safe
@@ -373,13 +419,19 @@ Tool Call Booster:
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_benefit_report.md` | `PASS` | `FAIL`: `live_guarded` improved `0/3` comparable rounds by at least `5.0%` |
 | `live_guarded_tcb_issue_94s_final_20260510T053527Z` | `.cache/aegisai/tool_call_booster/live_guarded_tcb_issue_94s_final_20260510T053527Z/tool_call_booster_summary.csv` | `PASS` | `FAIL` |
 
-Deferred Adaptive Policy:
+Deferred Extension Gates:
 
 | run id | artifact | verdict | boundary |
 | --- | --- | --- | --- |
 | `codex_adaptive_policy_gate_20260514T000000Z` | `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_gate_report.md` | `PASS` | shadow-only; runtime `not_connected`; `0` live/profile mutations |
 | `codex_adaptive_policy_gate_20260514T000000Z` | `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_benchmark.csv` | `PASS` | static baseline versus adaptive shadow benchmark; adaptive false positives `0` versus static baseline `2` |
 | `codex_adaptive_policy_gate_20260514T000000Z` | `.cache/aegisai/adaptive_policy_gate/codex_adaptive_policy_gate_20260514T000000Z/adaptive_policy_shadow_replay.json` | `PASS` | deterministic replay audit with rollback-plan and freeze evidence |
+| `codex_gpu_coordination_gate_20260514T000000Z` | `.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/gpu_coordination_gate_report.md` | `PASS` | observe/plan-only; runtime `not_connected`; `0` live GPU mutations |
+| `codex_gpu_coordination_gate_20260514T000000Z` | `.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/gpu_coordination_benchmark.csv` | `PASS` | recorded NVIDIA dry-run overhead plus unsupported-host no-op benchmark rows |
+| `codex_gpu_coordination_gate_20260514T000000Z` | `.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/gpu_coordination_safety_matrix.csv` | `PASS` | live action, allowlist, vendor, isolation, privilege, and rollback rejection matrix |
+| `codex_observability_dashboard_gate_20260514T000000Z` | `.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z/observability_dashboard_gate_report.md` | `PASS` | read-only; runtime `not_connected`; `0` control paths |
+| `codex_observability_dashboard_gate_20260514T000000Z` | `.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z/observability_dashboard_export.csv` | `PASS` | runtime audit, verification artifact, and telemetry export rows |
+| `codex_observability_dashboard_gate_20260514T000000Z` | `.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z/observability_dashboard_snapshot.json` | `PASS` | artifact-derived benefit truth with redaction and overhead checks |
 
 Helper validation:
 
@@ -400,21 +452,34 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after deferred adaptive policy evidence gate implementation:
-`78` total issues, `2` open, `0` in progress, `0` blocked, `76` closed.
+Current `bd` state after deferred GPU and dashboard evidence gate
+implementation: `78` total issues, `0` open, `0` in progress, `0` blocked,
+`78` closed.
 `docs/latest_tasks.md` now contains only the active prioritized todo queue;
 historical evidence remains in this file, `docs/acceptance_ledger.md`, and
 `docs/verification_log.md`.
 
-- `AegisAI_Runtime-0ry.3` — deferred GPU coordination. The issue records
-  prerequisites, non-goals, device and privilege safety evidence, benchmark
-  evidence, and a verification gate.
-- `AegisAI_Runtime-0ry.2` — deferred observability dashboard. The issue records
-  prerequisites, non-goals, read-only safety evidence, benchmark evidence, and
-  a verification gate.
+- No active open gaps are listed in this snapshot. Runtime implementations for
+  GPU coordination, observability dashboard service/UI, and adaptive policy
+  remain future work behind separate promotion issues and evidence gates.
 
 Recently closed:
 
+- `AegisAI_Runtime-0ry.3` — added the deferred GPU coordination
+  observe/plan-only evidence gate. The gate records prerequisites and
+  promotion boundaries in `docs/gpu_coordination_gate.md`, implements recorded
+  telemetry parsing, unsupported-host no-op behavior, safety rejection matrix,
+  and dry-run benchmark artifacts in
+  `bench/scripts/gpu_coordination_gate.py`, and keeps runtime behavior
+  disconnected from daemon, actuator, helper, DCGM/NVML/CUDA calls, and MIG
+  mutation.
+- `AegisAI_Runtime-0ry.2` — added the deferred observability dashboard
+  read-only evidence gate. The gate records prerequisites and promotion
+  boundaries in `docs/observability_dashboard_gate.md`, implements recorded
+  audit/artifact/telemetry parsing and export artifacts in
+  `bench/scripts/observability_dashboard_gate.py`, and keeps runtime behavior
+  disconnected from policy/profile editing, helper control, scheduler actions,
+  remote config, and dashboard-sourced benefit truth.
 - `AegisAI_Runtime-0ry.4` — added the deferred online adaptive policy
   shadow-only evidence gate. The gate records prerequisites and promotion
   boundaries in `docs/adaptive_policy_gate.md`, implements deterministic

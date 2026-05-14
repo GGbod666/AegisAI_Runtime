@@ -1,0 +1,86 @@
+{
+  "runtime_audit": [
+    {
+      "schema_version": "runtime_audit.v1",
+      "artifact_path": ".cache/aegisai/inference_tail_guard_phase4/codex_live_guarded_sample_sizing_20260511T000000Z/daemon.live_guarded.md",
+      "source": "daemon_audit",
+      "mode": "live_guarded",
+      "backend": "linux-command",
+      "processed_events": 24,
+      "applied_actions": 3,
+      "rollback_count": 3,
+      "action_error_count": 0,
+      "redaction": "sanitized"
+    },
+    {
+      "schema_version": "runtime_audit.v1",
+      "artifact_path": ".cache/aegisai/tool_call_booster/codex_fixed_work_guarded_final_20260511T141942Z/daemon.live_guarded.md",
+      "source": "daemon_audit",
+      "mode": "live_guarded",
+      "backend": "linux-command",
+      "processed_events": 18,
+      "applied_actions": 6,
+      "rollback_count": 6,
+      "action_error_count": 0,
+      "redaction": "sanitized"
+    }
+  ],
+  "verification_artifacts": [
+    {
+      "schema_version": "verification_artifact.v1",
+      "artifact_path": "docs/mvp_benefit_report.md",
+      "scenario": "inference_tail_guard",
+      "contract_verdict": "PASS",
+      "benefit_verdict": "PASS",
+      "benefit_source": "artifact",
+      "summary": "controlled live guarded jitter benefit with effective host actions"
+    },
+    {
+      "schema_version": "verification_artifact.v1",
+      "artifact_path": ".cache/aegisai/tool_call_booster/codex_fixed_work_guarded_final_20260511T141942Z/tool_call_booster_benefit_report.md",
+      "scenario": "tool_call_booster",
+      "contract_verdict": "PASS",
+      "benefit_verdict": "PASS",
+      "benefit_source": "artifact",
+      "summary": "fixed-work guarded run with executor retrieval rerank effectiveness"
+    }
+  ],
+  "telemetry_exports": [
+    {
+      "schema_version": "otel_metric_export.v1",
+      "name": "aegisai.runtime.loop_latency_ms",
+      "unit": "ms",
+      "value": 3.4,
+      "attributes": {
+        "service.name": "aegisai-runtime-daemon",
+        "scenario": "inference_tail_guard"
+      }
+    },
+    {
+      "schema_version": "otel_metric_export.v1",
+      "name": "aegisai.actions.applied",
+      "unit": "{action}",
+      "value": 9,
+      "attributes": {
+        "service.name": "aegisai-runtime-daemon",
+        "mode": "live_guarded"
+      }
+    },
+    {
+      "schema_version": "otel_metric_export.v1",
+      "name": "aegisai.rollbacks.completed",
+      "unit": "{rollback}",
+      "value": 9,
+      "attributes": {
+        "service.name": "aegisai-runtime-daemon",
+        "mode": "live_guarded"
+      }
+    }
+  ],
+  "benchmark": {
+    "baseline_daemon_loop_latency_ms": 3.4,
+    "dashboard_parse_ms": 8.0,
+    "dashboard_render_ms": 14.0,
+    "post_dashboard_daemon_loop_latency_ms": 3.42
+  }
+}

@@ -8,47 +8,8 @@ queue. Historical evidence belongs in `docs/status.md`,
 
 ## Queue
 
-Production packaging is complete, so the deferred extension planning items are
-now unblocked. They remain future work and must still pass their own evidence
-gates before any runtime behavior is added.
-
-### 1. Evidence-Gate Deferred GPU Coordination
-
-- Issue: `AegisAI_Runtime-0ry.3`
-- Priority: `P4`
-- Why now: production packaging is complete, but GPU coordination requires
-  explicit device isolation, privilege, fallback, and benchmark evidence.
-- Scope:
-  - keep the first slice observe/plan-only
-  - define NVIDIA/non-NVIDIA scope and unsupported-host behavior
-  - require deny-by-default live actions and target allowlists before any
-    mutation path
-- Verify:
-  - telemetry parser tests
-  - unsupported-host smoke
-  - dry-run planner proof on a GPU host
-  - safety rejection matrix
-  - benchmark report with artifact paths
-  - `bd lint`
-  - `git diff --check`
-
-### 2. Evidence-Gate Deferred Observability Dashboard
-
-- Issue: `AegisAI_Runtime-0ry.2`
-- Priority: `P4`
-- Why now: production packaging is complete, but the dashboard must stay
-  read-only and consume stable telemetry/artifacts instead of becoming an
-  actuator or source of benefit truth.
-- Scope:
-  - consume runtime audit output, verification artifacts, and stable telemetry
-  - keep dashboard mode read-only
-  - exclude live policy/profile editing, helper control, and scheduler actions
-- Verify:
-  - focused parser/export tests
-  - local smoke against recorded artifacts
-  - docs/status update
-  - `bd lint`
-  - `git diff --check`
+No active queued work is listed in this snapshot. Run `bd ready` for the
+current source of truth before starting the next item.
 
 ## Ordering Rules
 
@@ -58,6 +19,15 @@ gates before any runtime behavior is added.
 
 ## Recently Completed
 
+- `AegisAI_Runtime-0ry.3`: deferred GPU coordination now has an
+  observe/plan-only evidence gate in `docs/gpu_coordination_gate.md` and
+  `bench/scripts/gpu_coordination_gate.py`. Verification artifacts are under
+  `.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/`.
+- `AegisAI_Runtime-0ry.2`: deferred observability dashboard now has a
+  read-only evidence gate in `docs/observability_dashboard_gate.md` and
+  `bench/scripts/observability_dashboard_gate.py`. Verification artifacts are
+  under
+  `.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z/`.
 - `AegisAI_Runtime-0ry.4`: deferred online adaptive policy now has a
   shadow-only evidence gate in `docs/adaptive_policy_gate.md` and
   `bench/scripts/adaptive_policy_gate.py`. Verification artifacts are under

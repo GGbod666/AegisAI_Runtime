@@ -90,12 +90,18 @@ daemon unit, separate helper install path, production-profile staging,
 preflight checks, remove/purge behavior, and dry-run smoke coverage. Deferred
 online adaptive policy planning now has a shadow-only evidence gate with
 deterministic replay, safety invariant tests, drift/freeze handling, bounded
-retention, rollback-plan checks, and static-baseline comparison artifacts. The
-remaining blockers are:
+retention, rollback-plan checks, and static-baseline comparison artifacts.
+Deferred GPU coordination now has an observe/plan-only evidence gate with
+recorded telemetry parsing, unsupported-host no-op handling, dry-run planning,
+safety rejection matrix, and overhead benchmark artifacts. Deferred
+observability dashboard planning now has a read-only evidence gate with
+recorded audit/artifact/telemetry parsing, export artifacts, redaction checks,
+control-path rejection, and artifact-derived benefit truth. The remaining
+blockers are:
 
-- unblocked but still evidence-gated deferred runtime extensions:
-  `AegisAI_Runtime-0ry.2` (dashboard) and `AegisAI_Runtime-0ry.3` (GPU
-  coordination)
+- no active deferred-extension planning blockers are listed in the current
+  task queue; runtime implementations remain future work behind separate
+  promotion issues and evidence gates.
 
 See `docs/status.md` for the current issue index and `bd ready` for executable
 work.

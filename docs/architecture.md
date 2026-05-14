@@ -266,6 +266,38 @@ Current adaptive policy evidence is offline and shadow-only:
   replay artifacts, guarded live A/B proof, operator approval flow, rollback
   evidence, and profile review.
 
+## Deferred GPU Coordination Boundary
+
+Current GPU coordination evidence is offline and observe/plan-only:
+
+- `bench/scripts/gpu_coordination_gate.py` parses fixed recorded GPU inventory
+  and benchmark observations and writes artifacts under
+  `.cache/aegisai/gpu_coordination_gate/<run_id>/`.
+- `docs/gpu_coordination_gate.md` defines the promotion boundary. Plans are
+  audit evidence only, not daemon inputs, helper calls, actuator actions, DCGM
+  queries, NVML calls, CUDA calls, MIG changes, or scheduler benefit proof.
+- The first slice is NVIDIA-only for supported dry-run plans. Non-NVIDIA,
+  CPU-only, missing-DCGM, missing-target, and unsupported hosts remain no-op.
+- The gate hard-rejects future mutation candidates without live-action denial,
+  target allowlists, isolation review, privilege review, and rollback/no-op
+  plans.
+
+## Deferred Observability Dashboard Boundary
+
+Current observability dashboard evidence is offline and read-only:
+
+- `bench/scripts/observability_dashboard_gate.py` parses fixed recorded runtime
+  audit records, verification artifacts, and telemetry exports and writes
+  artifacts under `.cache/aegisai/observability_dashboard_gate/<run_id>/`.
+- `docs/observability_dashboard_gate.md` defines the promotion boundary.
+  Dashboard snapshots are parsed views only, not daemon calls, actuator
+  commands, helper controls, profile writes, scheduler actions, remote config,
+  or benefit-truth overrides.
+- Dashboard-facing schemas are versioned as `runtime_audit.v1`,
+  `verification_artifact.v1`, and `otel_metric_export.v1`.
+- Benefit verdicts remain artifact-derived. Dashboard render/export overhead is
+  evidence for UI feasibility only, not scheduler benefit proof.
+
 ## Hotspot Refactor Boundaries
 
 Known hotspots:

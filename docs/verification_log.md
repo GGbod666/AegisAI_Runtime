@@ -20019,3 +20019,121 @@ No output.
   no runtime mutation path was added. Rust workspace gates were not rerun
   because this change touched Python benchmark tooling, checked-in replay data,
   and docs only.
+
+### 2026-05-14T00:00:00Z - Deferred GPU coordination and observability dashboard evidence gates
+
+- Scope: close `AegisAI_Runtime-0ry.3` and `AegisAI_Runtime-0ry.2` by adding
+  observe/plan-only GPU coordination and read-only observability dashboard
+  evidence gates, deterministic parser/export tests, local smokes against
+  recorded artifacts, safety rejection matrices, and benchmark/report
+  artifacts. No runtime daemon, actuator, helper, GPU driver, MIG, policy
+  editor, dashboard service, scheduler action, or production mutation path was
+  added.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- GPU artifact directory:
+  `.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/`
+- Dashboard artifact directory:
+  `.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z/`
+- Reference framing: NVIDIA DCGM feature overview and NVIDIA MIG guide were
+  used to keep GPU work read-only, NVIDIA-scoped for the first dry-run slice,
+  unsupported-host no-op, and mutation-denied until isolation, privilege,
+  allowlist, rollback, and benchmark evidence exist. OpenTelemetry metrics
+  concepts/specification were used to keep dashboard inputs as stable exported
+  telemetry/artifacts with API/SDK/export separation and no actuator or benefit
+  truth authority.
+
+- Command: `python3 -m unittest bench.scripts.test_gpu_coordination_gate`
+- Exit status: `0`
+```text
+Ran 4 tests in 0.067s
+OK
+```
+
+- Command: `python3 -m unittest bench.scripts.test_observability_dashboard_gate`
+- Exit status: `0`
+```text
+Ran 4 tests in 0.057s
+OK
+```
+
+- Command: `python3 bench/scripts/gpu_coordination_gate.py --run-id codex_gpu_coordination_gate_20260514T000000Z`
+- Exit status: `0`
+```text
+gpu_coordination_gate=PASS artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z report=/home/gg/AegisAI_Runtime/.cache/aegisai/gpu_coordination_gate/codex_gpu_coordination_gate_20260514T000000Z/gpu_coordination_gate_report.md
+```
+
+- Gate report summary:
+```text
+Verdict: PASS
+Runtime behavior: not_connected
+Mode: observe_plan_only
+Evaluated hosts: 4
+GPU dry-run plans: 1
+Unsupported/no-op hosts: 3
+Live GPU mutations: 0
+Safety rejections: 6
+Max latency overhead pct: 1.0 / 2.0
+Max host CPU delta pct: 0.4 / 1.0
+Max GPU memory delta MiB: 18 / 128
+```
+
+- Command: `python3 bench/scripts/observability_dashboard_gate.py --run-id codex_observability_dashboard_gate_20260514T000000Z`
+- Exit status: `0`
+```text
+observability_dashboard_gate=PASS artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z report=/home/gg/AegisAI_Runtime/.cache/aegisai/observability_dashboard_gate/codex_observability_dashboard_gate_20260514T000000Z/observability_dashboard_gate_report.md
+```
+
+- Gate report summary:
+```text
+Verdict: PASS
+Runtime behavior: not_connected
+Mode: read_only
+Auth scope: local_operator
+Runtime audit records: 2
+Verification artifacts: 2
+Telemetry exports: 3
+Control paths: 0
+Redaction: PASS
+Benefit truth source: artifact
+Parse ms: 8.0 / 25.0
+Render ms: 14.0 / 50.0
+Daemon loop regression pct: 0.588235 / 1.0
+```
+
+- Command: `python3 -m unittest discover -s bench/scripts -p 'test_*.py'`
+- Exit status: `0`
+```text
+Ran 33 tests in 6.671s
+OK
+```
+
+- Command: `python3 -m py_compile bench/scripts/gpu_coordination_gate.py bench/scripts/observability_dashboard_gate.py bench/scripts/test_gpu_coordination_gate.py bench/scripts/test_observability_dashboard_gate.py`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `bd lint`
+- Exit status: `0`
+```text
+No template warnings found.
+```
+
+- Command: `git diff --check`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Beads status after close: `78` total issues, `0` open, `0` in progress,
+  `0` blocked, `78` closed.
+- Overall result: `PASS`. GPU coordination remains observe/plan-only and
+  disconnected; observability dashboard planning remains read-only and
+  disconnected. Rust workspace gates were not rerun because this change touched
+  Python benchmark tooling, recorded JSON fixtures, and docs only.
