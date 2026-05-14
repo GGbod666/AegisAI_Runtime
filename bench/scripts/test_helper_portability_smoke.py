@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import json
 import stat
 import subprocess
 import tempfile
@@ -119,9 +120,18 @@ class HelperPortabilitySmokeTests(unittest.TestCase):
             self.assertIn("helper_portability_smoke=helper unavailable", result.stdout)
             log = (root / "artifacts" / "helper_portability.md").read_text(encoding="utf-8")
             self.assertIn("- Final bucket: `helper unavailable`", log)
+            self.assertIn("- Phase 5 helper-backed signals: `excluded`", log)
             self.assertIn("- Overall result: `FAIL`", log)
             self.assertNotIn("- Final bucket: `no workload events`", log)
             self.assertNotIn("- Overall result: `PASS`", log)
+            availability = json.loads(
+                (root / "artifacts" / "helper_signal_availability.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(availability["bucket"], "helper unavailable")
+            self.assertEqual(
+                availability["phase5_helper_backed_signals"]["offcpu_time"]["phase5_planning_status"],
+                "excluded",
+            )
 
     def test_tracepoint_incompatible_is_not_reported_as_no_workload_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -132,6 +142,7 @@ class HelperPortabilitySmokeTests(unittest.TestCase):
             self.assertIn("helper_portability_smoke=tracepoint incompatible", result.stdout)
             log = (root / "artifacts" / "helper_portability.md").read_text(encoding="utf-8")
             self.assertIn("- Final bucket: `tracepoint incompatible`", log)
+            self.assertIn("- Phase 5 helper-backed signals: `excluded`", log)
             self.assertIn("- Overall result: `FAIL`", log)
             self.assertNotIn("- Final bucket: `no workload events`", log)
             self.assertNotIn("- Overall result: `PASS`", log)
@@ -151,7 +162,13 @@ class HelperPortabilitySmokeTests(unittest.TestCase):
             self.assertIn("helper_portability_smoke=no workload events", result.stdout)
             log = (root / "artifacts" / "helper_portability.md").read_text(encoding="utf-8")
             self.assertIn("- Final bucket: `no workload events`", log)
+            self.assertIn("- Phase 5 helper-backed signals: `excluded`", log)
             self.assertIn("- Overall result: `PASS`", log)
+            availability_csv = (
+                root / "artifacts" / "helper_signal_availability.csv"
+            ).read_text(encoding="utf-8")
+            self.assertIn("offcpu_time,excluded,0,0", availability_csv)
+            self.assertIn("io_latency,excluded,0,0", availability_csv)
 
     def test_daemon_compatibility_failure_is_authoritative(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -168,6 +185,31 @@ class HelperPortabilitySmokeTests(unittest.TestCase):
             self.assertIn("- Final bucket: `helper unavailable`", log)
             self.assertNotIn("- Final bucket: `no workload events`", log)
             self.assertNotIn("- Overall result: `PASS`", log)
+
+    def test_validated_signal_marks_phase5_signals_included(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = self.run_smoke(
+                root,
+                helper_status="compatible",
+                daemon_status="compatible",
+                raw_events="2",
+                normalized_events="3",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("helper_portability_smoke=validated signal", result.stdout)
+            log = (root / "artifacts" / "helper_portability.md").read_text(encoding="utf-8")
+            self.assertIn("- Phase 5 helper-backed signals: `included`", log)
+            availability = json.loads(
+                (root / "artifacts" / "helper_signal_availability.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(availability["bucket"], "validated signal")
+            for signal in ("offcpu_time", "io_latency"):
+                self.assertEqual(
+                    availability["phase5_helper_backed_signals"][signal]["phase5_planning_status"],
+                    "included",
+                )
 
 
 if __name__ == "__main__":

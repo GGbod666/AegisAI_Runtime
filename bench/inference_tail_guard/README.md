@@ -264,3 +264,56 @@ independently.
 阶段 4 成功条件比单次 harness 更严格：只有当 `live_guarded` 的 TTFT P95/P99、latency P95/P99 或 jitter 在至少三分之二可比较轮次里相对 baseline 改善，平均改善不低于 5%，并且 live daemon 审计显示至少一次有效主机级 actuator 变化，才算看到稳定收益趋势。`noop_observation` 与 `dry_run` 可以证明识别、触发、审计和 rollback 闭环；真实收益仍需要 live guarded actuator 在当前主机权限下有效执行并出现同样趋势。如果 live `renice` 被权限限制为 no-op，报告必须标记为收益未证明，而不是把闭环或 dry-run 结果当成收益。
 
 本机 affinity 收敛标记：当前 VM 上 `/proc/<pid>/status` 可能暴露 configured CPU 范围，而 online CPU 只有 `/sys/devices/system/cpu/online` 中的子集；live actuator 会先通过 `agent/actuator/src/cpu_affinity.rs` 取交集再规划 `taskset` 目标，Phase 4 也只在 `taskset -pc` 的 current/new affinity CPU 集合真的不同时计入 `live_effective_action_count`。
+
+## Phase 5 前置归因与 dry-run isolation planning
+
+Phase 5 不直接从当前 MVP 进入 live cgroup/background isolation。先生成三个前置证据：
+
+```bash
+python3 bench/scripts/inference_tail_guard_tail_attribution.py
+```
+
+默认读取当前基线
+`.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_sample_sizing_20260511T000000Z/phase4_runs.csv`，
+输出：
+
+- `docs/tail_guard_attribution_report.md`
+- `.cache/aegisai/inference_tail_guard_tail_attribution/<run_id>/tail_attribution.csv`
+- `.cache/aegisai/inference_tail_guard_tail_attribution/<run_id>/tail_attribution_summary.json`
+
+报告会把 Phase 4 样本拆成 `model/runtime`、`run_queue_delay`、helper-backed
+`offcpu_time` / `io_latency`、CPU migration、major page fault、trigger/apply/rollback
+audit，并给出 `scheduler_attributable_tail_pct` 和 P95/P99 达到 `15%` 改善的
+理论可行性判断。CPU migration 与 major page fault 是事件压力归因；只有
+`run_queue_delay`、`offcpu_time` 和 `io_latency` 被加进 duration-backed tail 百分比。
+
+helper-backed 信号用现有 smoke 重新分类：
+
+```bash
+bash bench/scripts/helper_portability_smoke.sh
+```
+
+无论 helper 当前是 `validated signal`、`helper unavailable`、`tracepoint incompatible`
+还是 `no workload events`，脚本都会写：
+
+- `helper_signal_availability.json`
+- `helper_signal_availability.csv`
+
+这些 artifact 明确 Phase 5 是否把 `offcpu_time` / `io_latency` 纳入，或者把它们作为 intentional-unavailable/excluded bucket 处理。
+
+后台降级先保持 dry-run-only：
+
+```bash
+python3 bench/scripts/inference_tail_guard_background_demotion_planner.py
+```
+
+输出：
+
+- `docs/tail_guard_background_demotion_plan.md`
+- `.cache/aegisai/inference_tail_guard_background_demotion/<run_id>/background_demotion_plan.json`
+- `.cache/aegisai/inference_tail_guard_background_demotion/<run_id>/background_demotion_candidates.csv`
+
+planner 只接受明确分类为 `BACKGROUND_JOB` 的进程作为候选，显式拒绝 unknown、
+interactive-sensitive 和 protected inference 进程，限制 affected set，并记录后续
+live applier 必须捕获的 rollback 状态。它不会执行 `renice`、`taskset`，也不会写入
+`cpu.weight`、`cpu.max`、`cgroup.procs` 或任何 cgroup 路径。

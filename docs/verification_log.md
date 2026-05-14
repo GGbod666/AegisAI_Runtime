@@ -20137,3 +20137,115 @@ No output.
   disconnected; observability dashboard planning remains read-only and
   disconnected. Rust workspace gates were not rerun because this change touched
   Python benchmark tooling, recorded JSON fixtures, and docs only.
+
+### 2026-05-14T06:49:25Z - Inference Tail Guard Phase 5 readiness evidence
+
+- Scope: close `AegisAI_Runtime-4cc`, `AegisAI_Runtime-33i`, and
+  `AegisAI_Runtime-8iy` by adding tail attribution, helper signal availability
+  classification, and a dry-run-only background demotion planner. No live
+  background demotion, cgroup write, `renice`, or `taskset` action was added.
+- Working directory: `/home/gg/AegisAI_Runtime`
+- Tail attribution report: `docs/tail_guard_attribution_report.md`
+- Tail attribution artifact directory:
+  `.cache/aegisai/inference_tail_guard_tail_attribution/live_guarded_phase4_sample_sizing_20260511T000000Z/`
+- Background demotion report: `docs/tail_guard_background_demotion_plan.md`
+- Background demotion artifact directory:
+  `.cache/aegisai/inference_tail_guard_background_demotion/codex_tail_background_demotion_20260514T000000Z/`
+- Helper availability artifact directory:
+  `.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260514T064925Z/`
+- Reference framing: Linux kernel cgroup v2 CPU interface documentation and
+  scheduler statistics documentation were used to keep future stronger
+  isolation scoped to an administrator-owned cgroup v2 subtree and to keep
+  `run_queue_delay` attribution tied to scheduler wait evidence.
+
+- Command: `python3 -m unittest bench.scripts.test_inference_tail_guard_tail_attribution bench.scripts.test_inference_tail_guard_background_demotion_planner bench.scripts.test_helper_portability_smoke`
+- Exit status: `0`
+```text
+Ran 9 tests in 7.704s
+OK
+```
+
+- Command: `python3 -m unittest bench.scripts.test_inference_tail_guard_tail_attribution bench.scripts.test_inference_tail_guard_background_demotion_planner`
+- Exit status: `0`
+```text
+Ran 4 tests in 0.132s
+OK
+```
+
+- Command: `bash -n bench/scripts/helper_portability_smoke.sh`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `python3 -m py_compile bench/scripts/inference_tail_guard_tail_attribution.py bench/scripts/inference_tail_guard_background_demotion_planner.py`
+- Exit status: `0`
+```text
+No output.
+```
+
+- Command: `python3 bench/scripts/inference_tail_guard_tail_attribution.py --run-id live_guarded_phase4_sample_sizing_20260511T000000Z`
+- Exit status: `0`
+```text
+tail_attribution=NOT_PROVEN_HELPER_GAP scheduler_attributable_tail_pct_max=1.57 report=/home/gg/AegisAI_Runtime/docs/tail_guard_attribution_report.md artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_tail_attribution/live_guarded_phase4_sample_sizing_20260511T000000Z
+```
+
+- Tail attribution summary:
+```text
+P95/P99 >=15% plausibility: NOT_PROVEN_HELPER_GAP
+Visible duration-backed scheduler tail max: 1.57% of P95
+Run-queue delay max: 567.592 ms
+Helper off-CPU events: 0
+Helper I/O events: 0
+Live triggers/rollbacks: 125/125
+Live effective actions: 3
+Timing capture status: audit_counts_only
+```
+
+- Command: `python3 bench/scripts/inference_tail_guard_background_demotion_planner.py --run-id codex_tail_background_demotion_20260514T000000Z --max-candidates 8`
+- Exit status: `0`
+```text
+background_demotion_planner=PASS candidates=0 affected_set=0/8 live_mutations=0 artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_background_demotion/codex_tail_background_demotion_20260514T000000Z
+```
+
+- Background demotion summary:
+```text
+Mode: dry_run_only
+Runtime behavior: not_connected
+Live mutation: false
+Affected set: 0/8
+Unknown processes rejected: 241
+Interactive-sensitive processes rejected: 6
+Rollback capture requirements: current_nice,cgroup_path,cpus_allowed_list,cpu.weight,cpu.max,cgroup.procs membership
+```
+
+- Command: `bash bench/scripts/helper_portability_smoke.sh`
+- Exit status: `1`
+```text
+FAIL: helper compatibility preflight reported helper unavailable.
+helper_portability_smoke=helper unavailable failure_reason=helper\ compatibility\ preflight\ reported\ helper\ unavailable. artifact_dir=/home/gg/AegisAI_Runtime/.cache/aegisai/helper_portability/helper_portability_gg-vm_6_8_0_111_generic_20260514T064925Z
+```
+
+- Helper availability summary:
+```text
+bucket: helper unavailable
+offcpu_time phase5_planning_status: excluded
+io_latency phase5_planning_status: excluded
+availability artifacts: helper_signal_availability.json, helper_signal_availability.csv
+```
+
+- Command: `python3 -m unittest discover -s bench/scripts -p 'test_*.py' && for f in bench/scripts/*.sh; do bash -n "$f" || exit 1; done && git diff --check && bd lint`
+- Exit status: `0`
+```text
+Ran 38 tests in 10.303s
+OK
+No shell syntax errors.
+No git diff whitespace errors.
+No template warnings found (2 issues checked).
+```
+
+- Beads status after close: `AegisAI_Runtime-20w` is now ready and
+  `AegisAI_Runtime-t49` remains blocked on it.
+- Overall result: `PASS` for the Phase 5 readiness evidence gates. The next
+  executable Tail Guard task is the guarded owned-cgroup isolation applier, not
+  the Phase 5 A/B proof yet.

@@ -9,6 +9,8 @@ LOG_PATH="${AEGISAI_VERIFY_LOG:-${ARTIFACT_DIR}/helper_portability.md}"
 HELPER_PATH="${AEGISAI_EBPF_HELPER:-${REPO_ROOT}/target/debug/aegisai-ebpf-helper}"
 DAEMON_PATH="${AEGISAI_RUNTIME_DAEMON:-${REPO_ROOT}/target/debug/aegisai-runtime-daemon}"
 BPFTRACE_PATH="${AEGISAI_BPFTRACE:-/usr/bin/bpftrace}"
+SIGNAL_AVAILABILITY_JSON="${ARTIFACT_DIR}/helper_signal_availability.json"
+SIGNAL_AVAILABILITY_CSV="${ARTIFACT_DIR}/helper_signal_availability.csv"
 RAW_OFFCPU_SECONDS="${AEGISAI_HELPER_PORTABILITY_RAW_OFFCPU_SECONDS:-8}"
 RAW_IO_SECONDS="${AEGISAI_HELPER_PORTABILITY_RAW_IO_SECONDS:-10}"
 DAEMON_TIMEOUT_SECONDS="${AEGISAI_HELPER_PORTABILITY_DAEMON_TIMEOUT_SECONDS:-20}"
@@ -34,10 +36,108 @@ append_block() {
   append '```'
 }
 
+write_signal_availability() {
+  local bucket="$1"
+  local overall_result="$2"
+  local reason="$3"
+  local offcpu_raw="${4:-0}"
+  local io_raw="${5:-0}"
+  local offcpu_normalized="${6:-0}"
+  local io_normalized="${7:-0}"
+
+  python3 - "${SIGNAL_AVAILABILITY_JSON}" "${SIGNAL_AVAILABILITY_CSV}" \
+    "${RUN_ID}" "${bucket}" "${overall_result}" "${reason}" \
+    "${offcpu_raw}" "${io_raw}" "${offcpu_normalized}" "${io_normalized}" <<'PY'
+import csv
+import json
+import sys
+from datetime import datetime, timezone
+
+(
+    json_path,
+    csv_path,
+    run_id,
+    bucket,
+    overall_result,
+    reason,
+    offcpu_raw,
+    io_raw,
+    offcpu_normalized,
+    io_normalized,
+) = sys.argv[1:11]
+
+counts = {
+    "offcpu_time": {
+        "raw_events": int(offcpu_raw or 0),
+        "normalized_events": int(offcpu_normalized or 0),
+    },
+    "io_latency": {
+        "raw_events": int(io_raw or 0),
+        "normalized_events": int(io_normalized or 0),
+    },
+}
+for signal, values in counts.items():
+    values["phase5_planning_status"] = (
+        "included"
+        if bucket == "validated signal"
+        and values["raw_events"] > 0
+        and values["normalized_events"] > 0
+        else "excluded"
+    )
+    if values["phase5_planning_status"] == "included":
+        values["reason"] = "raw and normalized helper-backed events observed"
+    elif bucket in ("helper unavailable", "tracepoint incompatible"):
+        values["reason"] = bucket
+    elif bucket == "no workload events":
+        values["reason"] = "compatible helper diagnostics but zero raw or normalized workload events"
+    else:
+        values["reason"] = reason
+
+payload = {
+    "schema_version": "helper_signal_availability.v1",
+    "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "run_id": run_id,
+    "bucket": bucket,
+    "overall_result": overall_result,
+    "reason": reason,
+    "phase5_helper_backed_signals": counts,
+}
+with open(json_path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+
+with open(csv_path, "w", newline="", encoding="utf-8") as handle:
+    writer = csv.DictWriter(
+        handle,
+        fieldnames=[
+            "signal",
+            "phase5_planning_status",
+            "raw_events",
+            "normalized_events",
+            "reason",
+        ],
+    )
+    writer.writeheader()
+    for signal, values in counts.items():
+        writer.writerow(
+            {
+                "signal": signal,
+                "phase5_planning_status": values["phase5_planning_status"],
+                "raw_events": values["raw_events"],
+                "normalized_events": values["normalized_events"],
+                "reason": values["reason"],
+            }
+        )
+PY
+}
+
 finish_fail() {
   local reason="$1"
 
+  write_signal_availability "script failure" "FAIL" "${reason}" 0 0 0 0
   append ""
+  append "- Helper signal availability JSON: \`${SIGNAL_AVAILABILITY_JSON}\`"
+  append "- Helper signal availability CSV: \`${SIGNAL_AVAILABILITY_CSV}\`"
   append "- Status: \`FAIL\`"
   append "- Failure reason: ${reason}"
   append "- Overall result: \`FAIL\`"
@@ -49,7 +149,11 @@ finish_bucket_fail() {
   local bucket="$1"
   local reason="$2"
 
+  write_signal_availability "${bucket}" "FAIL" "${reason}" 0 0 0 0
   append "- Final bucket: \`${bucket}\`"
+  append "- Phase 5 helper-backed signals: \`excluded\`"
+  append "- Helper signal availability JSON: \`${SIGNAL_AVAILABILITY_JSON}\`"
+  append "- Helper signal availability CSV: \`${SIGNAL_AVAILABILITY_CSV}\`"
   append "- Status: \`FAIL\`"
   append "- Failure reason: ${reason}"
   append "- Overall result: \`FAIL\`"
@@ -372,7 +476,16 @@ if (( offcpu_raw == 0 || io_raw == 0 || offcpu_normalized == 0 || io_normalized 
   bucket="no workload events"
 fi
 
+write_signal_availability "${bucket}" "PASS" "helper portability smoke completed" "${offcpu_raw}" "${io_raw}" "${offcpu_normalized}" "${io_normalized}"
+
 append "- Final bucket: \`${bucket}\`"
+if [[ "${bucket}" == "validated signal" ]]; then
+  append "- Phase 5 helper-backed signals: \`included\`"
+else
+  append "- Phase 5 helper-backed signals: \`excluded\`"
+fi
+append "- Helper signal availability JSON: \`${SIGNAL_AVAILABILITY_JSON}\`"
+append "- Helper signal availability CSV: \`${SIGNAL_AVAILABILITY_CSV}\`"
 append "- Overall result: \`PASS\`"
 
 printf 'helper_portability_smoke=%s offcpu_raw=%s io_raw=%s offcpu_normalized=%s io_normalized=%s artifact_dir=%s\n' \

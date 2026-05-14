@@ -23,22 +23,16 @@ Target for the next proof:
 
 Ready now:
 
-- `AegisAI_Runtime-4cc`: build a Tail Guard attribution report that quantifies
-  how much of current tail latency is scheduler/offcpu/migration/page-fault/I/O
-  attributable before stronger isolation work starts.
-- `AegisAI_Runtime-33i`: restore or explicitly classify helper-backed
-  `offcpu_time` and `io_latency` evidence on the current host.
-- `AegisAI_Runtime-8iy`: add a dry-run background demotion planner for
-  Tail Guard, with bounded affected sets and explicit rejection of unknown or
-  interactive-sensitive processes.
+- `AegisAI_Runtime-20w`: implement the guarded owned-cgroup isolation applier.
+  This is now unblocked by the attribution and dry-run planner artifacts. Keep
+  live cgroup writes limited to an administrator-created AegisAI-owned cgroup
+  v2 subtree, with explicit confirmation, bounded affected sets, hard
+  rejections, apply audit, and rollback evidence.
 
 Blocked follow-up:
 
-- `AegisAI_Runtime-20w`: implement the guarded owned-cgroup isolation applier.
-  It depends on `AegisAI_Runtime-4cc` and `AegisAI_Runtime-8iy`.
 - `AegisAI_Runtime-t49`: run the Phase 5 Tail Guard isolation A/B proof. It
-  depends on `AegisAI_Runtime-4cc`, `AegisAI_Runtime-33i`,
-  `AegisAI_Runtime-8iy`, and `AegisAI_Runtime-20w`.
+  is now blocked only on `AegisAI_Runtime-20w`.
 
 ## Ordering Rules
 
@@ -53,6 +47,24 @@ Blocked follow-up:
 
 ## Recently Completed
 
+- `AegisAI_Runtime-4cc`: Tail Guard attribution now has
+  `docs/tail_guard_attribution_report.md` and
+  `.cache/aegisai/inference_tail_guard_tail_attribution/live_guarded_phase4_sample_sizing_20260511T000000Z/`.
+  Current result is `NOT_PROVEN_HELPER_GAP`: visible duration-backed scheduler
+  attribution peaks at `1.57%` of P95, below the `15%` P95/P99 target, while
+  helper-backed `offcpu_time` / `io_latency` are absent from the Phase 4
+  artifacts.
+- `AegisAI_Runtime-33i`: helper portability now writes
+  `helper_signal_availability.json/csv`. Current-host rerun
+  `helper_portability_gg-vm_6_8_0_111_generic_20260514T064925Z` remains
+  `helper unavailable`; both helper-backed signals are explicitly `excluded`
+  for Phase 5 planning.
+- `AegisAI_Runtime-8iy`: Tail Guard background demotion now has a dry-run-only
+  planner in `bench/scripts/inference_tail_guard_background_demotion_planner.py`
+  and report `docs/tail_guard_background_demotion_plan.md`. The current host
+  plan found `0/8` affected candidates, rejected unknown and interactive
+  processes, recorded rollback capture requirements, and performed no live
+  mutation.
 - `AegisAI_Runtime-0ry.3`: deferred GPU coordination now has an
   observe/plan-only evidence gate in `docs/gpu_coordination_gate.md` and
   `bench/scripts/gpu_coordination_gate.py`. Verification artifacts are under

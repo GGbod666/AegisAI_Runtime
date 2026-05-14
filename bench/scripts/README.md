@@ -8,12 +8,15 @@
 - `project_preflight.sh`：本仓库的可见 preflight 清单入口；默认打印 Rust/Cargo、Python unittest、shell 语法和 bench preflight gates，`--check` 会从仓库根目录执行这些 gates，并把重型 bench preflight 日志写入 `/tmp`。
 - `linux_source_ingestion_smoke.sh`：启动短生命周期 CPU worker，临时把 runtime config 限定到这些 PID，用 `linux-skeleton`（或显式 `linux-command-dry-run`）运行 Linux/procfs daemon，并要求 `processed_events > 0` 以及至少一个 `run_queue_delay`、`cpu_migration` 或 `major_page_fault` 观测；退出码 `77` 表示 host/procfs 无法产生可验证 delta，区别于失败。
 - `helper_portability_smoke.sh`：在已准备好的 Linux host 上运行 helper portability evidence slice；它会记录 helper compatibility inventory，先把 `helper unavailable` / `tracepoint incompatible` 作为非零退出的最终 bucket，再分别用受控 off-CPU 与 block I/O workload 跑 raw helper stream，跑 rootless daemon 单信号切片，输出 raw/normalized event counts 和最终 bucket。
+- `helper_portability_smoke.sh` 还会写出 `helper_signal_availability.json` 和 `helper_signal_availability.csv`，明确 Phase 5 是否把 `offcpu_time` / `io_latency` helper-backed 信号纳入或排除。
 - `toolchain_preflight.sh`：盘点 pre-Ollama 阶段需要的开发、eBPF 和 demo 工具；不执行安装，只记录缺失项和建议安装命令。必需工具缺失会使脚本失败；可选工具缺失只作为 inventory 记录。
 - `inference_tail_guard_preflight.sh`：检查 Linux VM/demo 是否具备 `Inference Tail Guard` 下一步需要的基础面。必需项是 procfs/cgroup 可见性和 mock/noop runtime daemon smoke test；`ollama`、`llama.cpp`、`stress-ng`、`taskset` 只做可选工具盘点。该阶段不安装 Ollama、不拉取模型、不启动压力负载。
 - `inference_tail_guard_ollama_smoke.sh`：运行正式 `ollama` A/B harness。默认安全三档是 `baseline`、`noop_observation`、`dry_run`；每档固定同一模型、prompt、并发和 CPU 干扰强度，输出 TTFT、P95/P99、jitter、trigger count、rollback count、`cpu_migration` 与 `major_page_fault` 观测统计，并把原始样本和汇总追加到 `docs/verification_log.md`。
 - 该 harness 同时会写出 2R-0 验收基线：`acceptance_baseline.env`、`cpu_topology.txt`、`permission_state.txt` 和 `mode_contract.csv`，用于锁定模型/prompt/并发/干扰/样本数/CPU 拓扑/权限状态，并把 `noop_observation`、`dry_run`、`live_guarded` nice-only 分档验收。
 - `inference_tail_guard_phase2r2_actuator_quality.sh`：阶段 2R-2 actuator 质量收敛入口。它先跑至少 3 轮 `live_guarded` nice-only，要求无 action audit error、记录 lease、记录 rollback、cpuset 禁用；通过后才跑一轮 affinity。
 - `inference_tail_guard_phase4_report.sh`：阶段 4 多轮收益报告入口。它会循环跑 CPU 干扰和可选 CPU+I/O 扰动矩阵，汇总每轮 `summary.csv`，输出 `docs/mvp_benefit_report.md` 和 `.cache/aegisai/inference_tail_guard_phase4/<run_id>/` 下的对照 CSV。设置 `AEGISAI_PHASE4_REUSE_ARTIFACTS=1` 可复用已有 run 的 artifacts 重新生成报告，不重跑 Ollama 或压力负载。
+- `inference_tail_guard_tail_attribution.py`：读取 Phase 4 `phase4_runs.csv` 和 daemon logs，生成 tail attribution CSV/JSON/Markdown，量化 `model/runtime`、`run_queue_delay`、helper-backed `offcpu_time` / `io_latency`、CPU migration、major page fault、trigger/apply/rollback audit 以及 `scheduler_attributable_tail_pct`，不启动任何 live workload。
+- `inference_tail_guard_background_demotion_planner.py`：只读进程 inventory 或 `/proc`，为 `BACKGROUND_JOB` 进程生成 bounded dry-run demotion plan，显式拒绝 unknown 与 interactive/inference-sensitive 进程，并记录 rollback capture requirements；它不会执行 `renice`、`taskset` 或 cgroup 写入。
 - `tool_call_booster_real_executor_harness.sh`：阶段 2R-5 Tool Call Booster 入口。它重复启动真实本地 tool executor / retrieval / rerank / background 进程树，默认跑 `baseline,noop,dry_run` 对照，可显式加入 `live_guarded`，再用 runtime daemon `linux` + `procfs` source 验证 `tool_call_lifecycles`、`tool_call_booster` 触发、可回滚链路、stage effectiveness 和 latency delta benefit verdict。
 - `adaptive_policy_gate.py`：deferred online adaptive policy 的离线 evidence gate。它只跑 deterministic replay 和 shadow-mode suggestion，不连接 daemon、actuator 或 profile writer；输出 shadow replay JSON、static-vs-adaptive benchmark CSV 和 gate report，用于证明 drift/freeze、rollback plan、bounded retention、operator gate 和 no-mutation invariants。
 - `gpu_coordination_gate.py`：deferred GPU coordination 的离线 evidence gate。它只解析 recorded GPU inventory / benchmark observations，不调用 DCGM、NVML、CUDA、daemon、actuator 或 helper；输出 observe/plan-only JSON、benchmark CSV、safety rejection matrix 和 gate report，用于证明 NVIDIA first-slice scope、unsupported-host no-op、deny-by-default live GPU mutation 和 overhead boundary。
@@ -111,6 +114,18 @@ python3 bench/scripts/gpu_coordination_gate.py
 python3 bench/scripts/observability_dashboard_gate.py
 ```
 
+尾延迟归因报告：
+
+```bash
+python3 bench/scripts/inference_tail_guard_tail_attribution.py
+```
+
+后台降级 dry-run planner：
+
+```bash
+python3 bench/scripts/inference_tail_guard_background_demotion_planner.py
+```
+
 可用 `AEGISAI_VERIFY_LOG=/path/to/log.md` 覆盖日志路径。
 可用 `AEGISAI_OLLAMA_MODEL=qwen2.5:0.5b`、`AEGISAI_AB_SAMPLES=12`、`AEGISAI_AB_CONCURRENCY=2`、`AEGISAI_STRESS_CPU=2` 覆盖默认实验参数。
 可用 `AEGISAI_STRESS_IO=1`、`AEGISAI_STRESS_HDD=1`、`AEGISAI_STRESS_HDD_BYTES=128M` 给单次 harness 增加可选 I/O 扰动。
@@ -188,6 +203,10 @@ as `action_effectiveness`, `noisy_workload`, `insufficient_sample_size`, or
 - permission snapshot：`.cache/aegisai/inference_tail_guard/<run_id>/permission_state.txt`
 - Phase 4 report：`docs/mvp_benefit_report.md`
 - Phase 4 aggregate：`.cache/aegisai/inference_tail_guard_phase4/<run_id>/phase4_aggregate.csv`
+- Tail attribution report：`docs/tail_guard_attribution_report.md`
+- Tail attribution artifacts：`.cache/aegisai/inference_tail_guard_tail_attribution/<run_id>/tail_attribution.csv`
+- Background demotion dry-run report：`docs/tail_guard_background_demotion_plan.md`
+- Background demotion dry-run artifacts：`.cache/aegisai/inference_tail_guard_background_demotion/<run_id>/background_demotion_plan.json`
 - Adaptive policy shadow replay：`.cache/aegisai/adaptive_policy_gate/<run_id>/adaptive_policy_shadow_replay.json`
 - Adaptive policy benchmark：`.cache/aegisai/adaptive_policy_gate/<run_id>/adaptive_policy_benchmark.csv`
 - Adaptive policy gate report：`.cache/aegisai/adaptive_policy_gate/<run_id>/adaptive_policy_gate_report.md`

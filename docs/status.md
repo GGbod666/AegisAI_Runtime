@@ -85,6 +85,17 @@ Latest product-evidence status:
   model, prompt, stress shape, concurrency, and live affinity/nice pairing
   fixed, increased samples per mode from `4` to `8`, and produced stable
   live-guarded jitter benefit with effective host-level actions.
+- Inference Tail Guard Phase 5 readiness: attribution and dry-run planning are
+  now explicit. `docs/tail_guard_attribution_report.md` classifies the current
+  Phase 4 artifact set as `NOT_PROVEN_HELPER_GAP` for a `>=15%` P95/P99 target:
+  visible duration-backed scheduler tail peaks at `1.57%` of P95, with
+  helper-backed `offcpu_time` / `io_latency` excluded or zero. Current-host
+  helper portability remains `helper unavailable`, now with
+  `helper_signal_availability.json/csv` marking both helper-backed signals
+  `excluded` for Phase 5 planning. `docs/tail_guard_background_demotion_plan.md`
+  records a dry-run-only background demotion plan with `0/8` affected
+  candidates on the current host, explicit unknown/interactive rejections, and
+  no live mutation.
 - Tool Call Booster: `PASS`. The fixed-work live guarded run passed contracts,
   generated `tool_call_booster_stage_effectiveness.csv`, improved `3/3`
   comparable rounds above the configured `5.0%` latency-improvement threshold
