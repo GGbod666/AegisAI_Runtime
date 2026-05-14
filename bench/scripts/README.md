@@ -4,14 +4,14 @@
 
 ## 当前脚本
 
-- `verify_workspace.sh`：运行当前工作区验证，并把命令、退出码和关键输出追加到 `docs/verification_log.md`。
+- `verify_workspace.sh`：运行当前工作区验证，并把命令、退出码和关键输出追加到 `AEGISAI_VERIFY_LOG`；未设置时使用本地 ignored 的 `docs/verification_log.md`。
 - `project_preflight.sh`：本仓库的可见 preflight 清单入口；默认打印 Rust/Cargo、Python unittest、shell 语法和 bench preflight gates，`--check` 会从仓库根目录执行这些 gates，并把重型 bench preflight 日志写入 `/tmp`。
 - `linux_source_ingestion_smoke.sh`：启动短生命周期 CPU worker，临时把 runtime config 限定到这些 PID，用 `linux-skeleton`（或显式 `linux-command-dry-run`）运行 Linux/procfs daemon，并要求 `processed_events > 0` 以及至少一个 `run_queue_delay`、`cpu_migration` 或 `major_page_fault` 观测；退出码 `77` 表示 host/procfs 无法产生可验证 delta，区别于失败。
 - `helper_portability_smoke.sh`：在已准备好的 Linux host 上运行 helper portability evidence slice；它会记录 helper compatibility inventory，先把 `helper unavailable` / `tracepoint incompatible` 作为非零退出的最终 bucket，再分别用受控 off-CPU 与 block I/O workload 跑 raw helper stream，跑 rootless daemon 单信号切片，输出 raw/normalized event counts 和最终 bucket。
 - `helper_portability_smoke.sh` 还会写出 `helper_signal_availability.json` 和 `helper_signal_availability.csv`，明确 Phase 5 是否把 `offcpu_time` / `io_latency` helper-backed 信号纳入或排除。
 - `toolchain_preflight.sh`：盘点 pre-Ollama 阶段需要的开发、eBPF 和 demo 工具；不执行安装，只记录缺失项和建议安装命令。必需工具缺失会使脚本失败；可选工具缺失只作为 inventory 记录。
 - `inference_tail_guard_preflight.sh`：检查 Linux VM/demo 是否具备 `Inference Tail Guard` 下一步需要的基础面。必需项是 procfs/cgroup 可见性和 mock/noop runtime daemon smoke test；`ollama`、`llama.cpp`、`stress-ng`、`taskset` 只做可选工具盘点。该阶段不安装 Ollama、不拉取模型、不启动压力负载。
-- `inference_tail_guard_ollama_smoke.sh`：运行正式 `ollama` A/B harness。默认安全三档是 `baseline`、`noop_observation`、`dry_run`；每档固定同一模型、prompt、并发和 CPU 干扰强度，输出 TTFT、P95/P99、jitter、trigger count、rollback count、`cpu_migration` 与 `major_page_fault` 观测统计，并把原始样本和汇总追加到 `docs/verification_log.md`。
+- `inference_tail_guard_ollama_smoke.sh`：运行正式 `ollama` A/B harness。默认安全三档是 `baseline`、`noop_observation`、`dry_run`；每档固定同一模型、prompt、并发和 CPU 干扰强度，输出 TTFT、P95/P99、jitter、trigger count、rollback count、`cpu_migration` 与 `major_page_fault` 观测统计，并把原始样本和汇总追加到 `AEGISAI_VERIFY_LOG`。
 - 该 harness 同时会写出 2R-0 验收基线：`acceptance_baseline.env`、`cpu_topology.txt`、`permission_state.txt` 和 `mode_contract.csv`，用于锁定模型/prompt/并发/干扰/样本数/CPU 拓扑/权限状态，并把 `noop_observation`、`dry_run`、`live_guarded` nice-only 分档验收。
 - `inference_tail_guard_phase2r2_actuator_quality.sh`：阶段 2R-2 actuator 质量收敛入口。它先跑至少 3 轮 `live_guarded` nice-only，要求无 action audit error、记录 lease、记录 rollback、cpuset 禁用；通过后才跑一轮 affinity。
 - `inference_tail_guard_phase4_report.sh`：阶段 4 多轮收益报告入口。它会循环跑 CPU 干扰和可选 CPU+I/O 扰动矩阵，汇总每轮 `summary.csv`，输出 `docs/mvp_benefit_report.md` 和 `.cache/aegisai/inference_tail_guard_phase4/<run_id>/` 下的对照 CSV。设置 `AEGISAI_PHASE4_REUSE_ARTIFACTS=1` 可复用已有 run 的 artifacts 重新生成报告，不重跑 Ollama 或压力负载。
@@ -62,7 +62,7 @@ scheduler action。
 - 必需模型：目标模型已经在本机可用，至少能通过 `ollama show <model>` 成功返回
 - `live_guarded` 档必须显式加入 `AEGISAI_AB_MODES`，并设置 `AEGISAI_CONFIRM_LIVE_ACTUATOR=1` 和 `AEGISAI_LIVE_PID_ALLOWLIST=<pid,...>`；默认只执行/回滚 `renice`，`taskset` 需要 `AEGISAI_ENABLE_LIVE_AFFINITY=1`
 
-`inference_tail_guard_preflight.sh` 是强烈推荐的前置步骤，但不是 `inference_tail_guard_ollama_smoke.sh` 的内建 hard gate。harness 会直接尝试请求本地 Ollama 服务；如果服务未启动、模型未准备好，脚本会把失败写进 `docs/verification_log.md` 并退出非零。
+`inference_tail_guard_preflight.sh` 是强烈推荐的前置步骤，但不是 `inference_tail_guard_ollama_smoke.sh` 的内建 hard gate。harness 会直接尝试请求本地 Ollama 服务；如果服务未启动、模型未准备好，脚本会把失败写进 `AEGISAI_VERIFY_LOG` 并退出非零。
 
 ## 使用方式
 

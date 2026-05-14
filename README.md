@@ -1,42 +1,63 @@
 # AegisAI Runtime
 
-AegisAI Runtime is an experimental Rust control loop for AI-aware Linux workload
-management. It observes scheduler and I/O interference signals, classifies AI
-processes and tool-call stages, evaluates bounded scenario policies, applies
-short-lived reversible actions, and records whether the intervention actually
-helped.
+AegisAI Runtime is a Rust research prototype for AI-aware Linux runtime
+control. It observes process-level scheduler and I/O pressure, classifies AI
+workloads and tool-call stages, evaluates bounded policies, applies short-lived
+reversible actions, and records whether the action helped.
 
-The project is built around a narrow claim: AI runtimes should be visible to the
-operating system as workloads with different latency, isolation, and lifecycle
-needs. AegisAI Runtime explores that idea without replacing the Linux scheduler
-or putting opaque AI decisions in hot kernel paths.
+The project is intentionally narrow: make AI inference and tool-call workloads
+visible enough for the host runtime to protect latency-sensitive paths. It is
+not a scheduler replacement, not a production daemon, and not a general
+observability platform.
 
-> Status: usable research prototype. The mock path, procfs path, helper-backed
-> probe path, policy engine, guarded actuator, metrics, and benchmark reports are
-> implemented. Production hardening, cross-kernel validation, and broader
-> workload evidence are still active work.
+## Current Status
 
-## Highlights
+| Area | Status | What is actually implemented |
+| --- | --- | --- |
+| Mock control loop | Working | `collector -> classifier -> policy_engine -> actuator -> metrics` runs end-to-end with `noop` actions. |
+| Linux source path | Partial | procfs-derived `run_queue_delay`, `cpu_migration`, and `major_page_fault`; helper-backed `offcpu_time` and `io_latency` where host support exists. |
+| Actuator | Guarded prototype | `noop`, `linux-skeleton`, `linux-command-dry-run`, and gated `linux-command` with leases and rollback records. |
+| Inference Tail Guard | Local controlled proof only | A CPU-interference Ollama run showed a modest live-guarded jitter improvement with effective host actions. |
+| Tool Call Booster | Local controlled proof only | A fixed-work tool-call benchmark showed live-guarded latency improvement; an older less-controlled shape failed. |
+| Packaging | Prototype | Debian/systemd files exist, but this is not a production release. |
+| GPU, dashboard, adaptive policy | Not product features | Current work is observe/plan/read-only or shadow-only, disconnected from the live runtime path. |
 
-- **AI workload awareness**: classifies inference servers, tool executors,
-  retrieval/rerank workers, background jobs, and latency-sensitive interactive
-  paths from process metadata and rules.
-- **Inference Tail Guard**: detects tail-latency risk from signals such as run
-  queue delay, off-CPU time, CPU migration, major faults, and optional I/O
-  latency.
-- **Tool Call Booster**: tracks executor, retrieval, and rerank stages so
-  scheduler actions can be attributed to a specific tool-call lifecycle.
-- **Bounded actuator model**: supports noop, Linux planning, Linux command
-  dry-run, and guarded live command backends with leases and rollback records.
-- **Narrow privileged boundary**: keeps the main daemon rootless and isolates
-  eBPF/bpftrace access behind `aegisai-ebpf-helper`.
-- **Evidence-first workflow**: separates observation, dry-run validation, live
-  host action, and measured benefit in benchmark reports.
+## Measured Evidence
+
+These are local benchmark artifacts, not broad production claims. Positive
+numbers in the Inference Tail Guard table mean improvement. Negative numbers in
+the Tool Call Booster row mean latency went down.
+
+| Scenario | Run shape | Rounds / samples | Live action evidence | Result |
+| --- | --- | ---: | --- | --- |
+| Inference Tail Guard | `live_guarded_phase4_sample_sizing_20260511T000000Z`; Ollama `qwen2.5:0.5b`, CPU interference, live nice+affinity guarded by PID allowlist | 3 rounds, 24 samples per mode | 3 effective host-level actions | TTFT P95 `-0.51%`, latency P95 `+2.90%`, jitter `+6.42%`; jitter improved in 2/3 comparable rounds. |
+| Tool Call Booster | `codex_fixed_work_guarded_final_20260511T141942Z`; fixed-work executor/retrieval/rerank chain, controlled CPU affinity, live guarded scheduler action | 3 comparable rounds | stage attribution for executor, retrieval, and rerank | end-to-end latency average delta `-26.832%`, median delta `-26.367%`; all three stages reported effectiveness `PASS`. |
+| Tool Call Booster historical control | `live_guarded_tcb_stable_executor_20260511T000000Z`; older stable executor-control run | 3 comparable rounds | contract passed | benefit `FAIL`; live guarded improved 0/3 rounds by the 5% threshold. |
+
+Important limits on the evidence:
+
+- The Inference Tail Guard improvement is small and workload-specific. It does
+  not prove a general P95/P99 tail-latency fix.
+- Tail attribution currently classifies a `>=15%` P95/P99 scheduler-causality
+  claim as `NOT_PROVEN_HELPER_GAP`; duration-backed scheduler signals peaked at
+  `1.57%` of latency P95 in the available artifact.
+- `noop` and `dry_run` modes validate recognition, policy evaluation, audit, and
+  rollback shape only. They are not host-level performance proof.
+- Helper-backed `offcpu_time` and `io_latency` depend on kernel, bpftrace, and
+  privilege support. A current-host helper portability smoke has failed when the
+  bpftrace eBPF backend was unavailable.
+- All live results are from controlled local experiments with explicit PID
+  allowlists. They should be reproduced on your own host before being trusted.
+
+See [`docs/mvp_benefit_report.md`](docs/mvp_benefit_report.md),
+[`docs/tail_guard_attribution_report.md`](docs/tail_guard_attribution_report.md),
+and [`bench/tool_call_booster/README.md`](bench/tool_call_booster/README.md) for
+the detailed evidence rules and benchmark context.
 
 ## Architecture
 
 ```text
-Linux signals / mock events
+Linux/procfs/helper events or mock events
         |
         v
 collector -> classifier -> policy_engine -> actuator
@@ -44,39 +65,41 @@ collector -> classifier -> policy_engine -> actuator
         |          |              |             v
         |          |              |        leases + rollback
         |          |              v
-        |          |        scenario decisions
+        |          |        bounded action plans
         |          v
         |    workload profile
         v
 metrics + traces + reports
 ```
 
-Core layers:
+Core crates:
 
-- `agent/runtime_daemon`: CLI entrypoint, source selection, metadata enrichment,
-  and runtime loop.
-- `agent/runtime_orchestrator`: connects collection, classification, policy,
-  actuation, and metrics.
-- `agent/collector`: aggregates low-level events into feature windows.
-- `agent/classifier`: maps Linux processes to AI runtime semantics.
-- `agent/policy_engine`: evaluates scenario policies and resolves conflicts.
-- `agent/actuator`: manages bounded action application and rollback.
-- `agent/metrics` and `agent/explain_tune`: record traces and produce reports.
-- `agent/ebpf_helper` and `ebpf/ebpf_probe`: define and run the narrow probe
-  boundary.
+- `agent/runtime_daemon`: CLI, event sources, metadata enrichment, runtime loop
+- `agent/runtime_orchestrator`: connects collector, classifier, policy,
+  actuator, and metrics
+- `agent/collector`: aggregates low-level events into feature windows
+- `agent/classifier`: maps processes to AI workload labels and stages
+- `agent/policy_engine`: evaluates scenario policies and resolves action
+  conflicts
+- `agent/actuator`: applies bounded actions and records rollback leases
+- `agent/metrics` and `agent/explain_tune`: records traces and produces reports
+- `agent/ebpf_helper` and `ebpf/ebpf_probe`: narrow helper/probe boundary
 
 ## Repository Layout
 
 ```text
 agent/                 Rust control-loop crates
-ebpf/                  Probe contracts and eBPF-oriented helpers
+ebpf/                  Probe contracts and helper-facing probe definitions
 scenarios/             Scenario policies for awareness, tail guard, tool calls
 configs/               Example runtime, classifier, scenario, and safety config
 bench/                 Benchmark harnesses, report scripts, and smoke checks
-docs/                  Architecture notes, validation logs, and evidence reports
+docs/                  Durable architecture notes and selected evidence reports
 packaging/             Debian/systemd packaging prototype
 plugins/               Placeholder for future extension points
 ```
+
+Local agent state, task tracking, and generated session logs are intentionally
+ignored and are not part of the public source tree.
 
 ## Quick Start
 
@@ -88,7 +111,7 @@ Prerequisites:
 - Optional Linux tools for deeper validation: `bpftrace`, `bpftool`, `clang`,
   `llc`, `taskset`, and `stress-ng`
 
-Clone and run the safe mock path:
+Run the safe mock path:
 
 ```bash
 git clone https://github.com/GGbod666/AegisAI_Runtime.git
@@ -104,13 +127,13 @@ cargo run -p aegisai-runtime-daemon -- \
   --max-events 3
 ```
 
-Print the project validation checklist:
+Print the validation checklist:
 
 ```bash
 bash bench/scripts/project_preflight.sh
 ```
 
-Run the main workspace verification pass without appending to the tracked log:
+Run the main workspace verification pass without writing a repository-local log:
 
 ```bash
 AEGISAI_VERIFY_LOG=/tmp/aegisai_verify_workspace.md \
@@ -119,7 +142,7 @@ AEGISAI_VERIFY_LOG=/tmp/aegisai_verify_workspace.md \
 
 ## Linux Modes
 
-Linux source with procfs metadata and planning-only actuator:
+Planning-only Linux source path:
 
 ```bash
 cargo run -p aegisai-runtime-daemon -- \
@@ -141,7 +164,7 @@ cargo run -p aegisai-runtime-daemon -- \
   --allow-partial-probes
 ```
 
-Live host actions are intentionally gated:
+Live host actions are gated and should only be used in a controlled experiment:
 
 ```bash
 cargo run -p aegisai-runtime-daemon -- \
@@ -153,26 +176,8 @@ cargo run -p aegisai-runtime-daemon -- \
   --live-pid-allowlist <pid,...>
 ```
 
-The live backend is designed for controlled experiments. By default it only
-allows nice-related actions; `--enable-live-affinity` is required before it may
-apply `taskset` affinity changes. Always use a tight PID allowlist.
-
-## Evidence
-
-Current local evidence includes:
-
-- Inference Tail Guard live guarded run: `PASS` in
-  [`docs/mvp_benefit_report.md`](docs/mvp_benefit_report.md).
-- Tool Call Booster fixed-work guarded run: `PASS` in the latest project status
-  and benchmark artifacts referenced from [`docs/status.md`](docs/status.md).
-- Workspace gates for Rust, Python report tests, shell syntax, daemon smoke
-  tests, and Linux preflight are listed in
-  [`bench/scripts/project_preflight.sh`](bench/scripts/project_preflight.sh).
-
-Interpretation is deliberately conservative. Noop and dry-run modes prove
-recognition, policy evaluation, audit, and rollback paths; they do not prove
-host-level performance benefit. Live guarded reports are controlled local
-experiments, not a general production guarantee.
+By default the live backend is nice-only. `--enable-live-affinity` is required
+before `taskset` affinity changes are allowed. Keep the PID allowlist tight.
 
 ## Configuration
 
@@ -192,8 +197,9 @@ Named production profiles are selected with `--config-profile <name>` or
 configs/profiles/<name>/
 ```
 
-Production profile names are identifier-only, and profile loading performs
-stricter schema and cross-file safety validation than the local demo path.
+Named profiles use stricter schema and cross-file safety validation than the
+local demo path. There is no dynamic reload, remote config distribution, or
+full TOML parser yet.
 
 ## Development
 
@@ -213,41 +219,30 @@ Full project preflight:
 bash bench/scripts/project_preflight.sh --check
 ```
 
-Some preflight paths exercise host capabilities and may skip or fail on systems
-without the expected Linux tooling. For lightweight contribution checks, start
-with `cargo test --workspace` and the Python unit tests.
+Some preflight paths require Linux host capabilities and may fail on systems
+without the expected tools or privileges. For lightweight contribution checks,
+start with the Rust and Python unit tests.
+
+## Known Gaps
+
+- Not production-ready; no stability or safety guarantee for arbitrary hosts.
+- Live cgroup/cpuset mutation is not enabled as a production path.
+- eBPF helper portability is not solved across kernels and privilege models.
+- Benefit evidence covers a small number of controlled local workload shapes.
+- No GPU scheduler, live dashboard control plane, or online adaptive policy
+  loop is shipped.
+- Root `LICENSE` is still missing even though several crate manifests declare
+  `MIT`; add a repository-level license before relying on redistribution terms.
 
 ## Contributing
 
-High-value contribution areas:
+Useful contribution areas:
 
-- Cross-kernel validation for procfs, bpftrace, and helper-backed probes
-- More reproducible benchmark workloads and public artifact hygiene
-- Safer live isolation backends for cgroup/cpuset experiments
+- Cross-kernel helper/probe validation
+- Reproducible benchmark workloads and public artifact hygiene
+- Safer isolation backends with narrow live-action gates
 - Production profile examples and packaging hardening
-- Scenario policies with narrow evidence gates
-- Documentation that helps operators reproduce experiments without overstating
-  results
+- Scenario policies with strict evidence gates
+- Documentation that helps reproduce results without overstating them
 
-Public issues and pull requests are welcome. Please keep changes small, include
-the smallest relevant verification command, and avoid mixing benchmark evidence,
-status updates, and unrelated refactors in the same pull request.
-
-## Boundaries
-
-AegisAI Runtime is not:
-
-- a generic observability dashboard
-- a Linux scheduler replacement
-- a production-ready daemon for arbitrary hosts
-- a GPU scheduler
-- an online adaptive policy system with live profile mutation
-
-Those directions are intentionally kept behind evidence gates until the safety
-and measurement story is strong enough.
-
-## License
-
-Several crate manifests currently declare `MIT`, but this repository does not
-yet include a root `LICENSE` file. Add a repository-level license before relying
-on redistribution terms.
+Keep pull requests small and include the smallest relevant verification command.

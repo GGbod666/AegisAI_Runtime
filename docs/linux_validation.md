@@ -2,7 +2,7 @@
 
 This file owns Linux host setup, preflight, helper validation, and live guarded
 experiment checklists. Product strategy lives in `docs/strategy.md`; current
-artifact status lives in `docs/status.md`.
+public evidence is summarized in `README.md`.
 
 ## Host Split
 
@@ -291,7 +291,8 @@ bash bench/scripts/toolchain_preflight.sh
 bash bench/scripts/inference_tail_guard_preflight.sh
 ```
 
-The preflight script appends a validation-style entry to
-`docs/verification_log.md` unless `AEGISAI_VERIFY_LOG` is redirected. It checks
-safe host readiness before a separate Ollama/model installation stage or before
-running real `ollama`/`llama.cpp` plus `stress-ng` experiments.
+The preflight script appends a validation-style entry to `AEGISAI_VERIFY_LOG`;
+when the variable is unset it writes the local ignored
+`docs/verification_log.md`. It checks safe host readiness before a separate
+Ollama/model installation stage or before running real `ollama`/`llama.cpp`
+plus `stress-ng` experiments.

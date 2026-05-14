@@ -33,6 +33,18 @@ __pycache__/
 .pytest_cache/
 node_modules/
 
+# Local agent, editor, MCP, and task-tracker state
+.beads/
+.claude/
+.codex/
+.kiro/
+.skill-staging/
+.cursorrules
+.windsurfrules
+.mcp.json
+AGENTS.md
+CLAUDE.md
+
 # Editor and OS files
 .DS_Store
 Thumbs.db
@@ -49,17 +61,19 @@ Thumbs.db
 .rustc_info.json
 **/*.rs.bk
 
+# Local generated status and conversation/session artifacts
+docs/README.md
+docs/status.md
+docs/verification_log.md
+docs/latest_tasks.md
+docs/acceptance_ledger.md
+docs/resume_pitch.md
+project.md
+specification.md
+
 # Local analysis cache
 .code-review-graph/
 .omx/
-.codex/*
-!.codex/agents/
-!.codex/agents/**
-!.codex/skills/
-!.codex/skills/**
-.codex/skills/.system/**
-!.codex/prompts/
-!.codex/prompts/**
 
 # Beads / Dolt files (added by bd init)
 .dolt/

@@ -22,7 +22,7 @@
 
 ## Process Decisions
 
-- Full process decision inventory is in `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_background_demotion/codex_tail_background_demotion_20260514T000000Z/background_demotion_candidates.csv`.
+- Full process decision inventory is in `.cache/aegisai/inference_tail_guard_background_demotion/codex_tail_background_demotion_20260514T000000Z/background_demotion_candidates.csv`.
 - Markdown preview rows: `20/248`.
 
 | pid | name | class | decision | reject | nice | proposed nice | cpu.weight |
@@ -57,5 +57,5 @@
 
 ## Artifacts
 
-- Plan JSON: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_background_demotion/codex_tail_background_demotion_20260514T000000Z/background_demotion_plan.json`
-- Candidate CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_background_demotion/codex_tail_background_demotion_20260514T000000Z/background_demotion_candidates.csv`
+- Plan JSON: `.cache/aegisai/inference_tail_guard_background_demotion/codex_tail_background_demotion_20260514T000000Z/background_demotion_plan.json`
+- Candidate CSV: `.cache/aegisai/inference_tail_guard_background_demotion/codex_tail_background_demotion_20260514T000000Z/background_demotion_candidates.csv`

@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "AegisAI_Runtime",
-  "project_id": "fdd9941b-d846-447b-abfe-19292a153ce1"
-}

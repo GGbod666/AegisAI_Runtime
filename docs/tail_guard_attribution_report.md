@@ -1,7 +1,7 @@
 # Tail Guard Attribution Report
 
 - Generated: `2026-05-14T06:55:14Z`
-- Source Phase 4 detail CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_sample_sizing_20260511T000000Z/phase4_runs.csv`
+- Source Phase 4 detail CSV: `.cache/aegisai/inference_tail_guard_phase4/live_guarded_phase4_sample_sizing_20260511T000000Z/phase4_runs.csv`
 - Run ID: `live_guarded_phase4_sample_sizing_20260511T000000Z`
 - Baseline rounds: `3`
 - Baseline latency P95 mean: `34309.526 ms`
@@ -66,5 +66,5 @@
 
 ## Artifacts
 
-- Attribution CSV: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_tail_attribution/live_guarded_phase4_sample_sizing_20260511T000000Z/tail_attribution.csv`
-- Summary JSON: `/home/gg/AegisAI_Runtime/.cache/aegisai/inference_tail_guard_tail_attribution/live_guarded_phase4_sample_sizing_20260511T000000Z/tail_attribution_summary.json`
+- Attribution CSV: `.cache/aegisai/inference_tail_guard_tail_attribution/live_guarded_phase4_sample_sizing_20260511T000000Z/tail_attribution.csv`
+- Summary JSON: `.cache/aegisai/inference_tail_guard_tail_attribution/live_guarded_phase4_sample_sizing_20260511T000000Z/tail_attribution_summary.json`

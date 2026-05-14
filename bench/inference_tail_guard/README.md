@@ -10,7 +10,7 @@
 bash bench/scripts/inference_tail_guard_preflight.sh
 ```
 
-该脚本会把 validation-style 结果追加到 `docs/verification_log.md`。这个阶段只确认安装 Ollama/模型之前的 VM readiness，不会安装 Ollama、不会拉取模型。
+该脚本会把 validation-style 结果追加到 `AEGISAI_VERIFY_LOG`；未设置时使用本地 ignored 的 `docs/verification_log.md`。这个阶段只确认安装 Ollama/模型之前的 VM readiness，不会安装 Ollama、不会拉取模型。
 
 必需检查：
 
@@ -98,7 +98,7 @@ AEGISAI_LIVE_PID_ALLOWLIST=1234 \
 
 默认结果会写到：
 
-- append-only 验证日志：`docs/verification_log.md`
+- append-only 验证日志：`AEGISAI_VERIFY_LOG`，未设置时为本地 ignored 的 `docs/verification_log.md`
 - 原始样本和汇总：`.cache/aegisai/inference_tail_guard/<run_id>/`
 - 2R-0 验收基线：`.cache/aegisai/inference_tail_guard/<run_id>/acceptance_baseline.env`
 - CPU 拓扑快照：`.cache/aegisai/inference_tail_guard/<run_id>/cpu_topology.txt`
@@ -255,7 +255,7 @@ AEGISAI_PHASE4_TUNED_VARIABLE_DETAIL="Changed CPU workers from 1 to 2; model, sa
 
 The report writes the changed variable into `phase4_runs.csv`,
 `phase4_aggregate.csv`, `docs/mvp_benefit_report.md`, and
-`docs/verification_log.md`. A failed report classifies the primary cause as
+`AEGISAI_VERIFY_LOG`. A failed report classifies the primary cause as
 `action_effectiveness`, `noisy_workload`, `insufficient_sample_size`, or
 `no_measurable_benefit` so CPU selection, stress shape, sample sizing,
 model/runtime behavior, and affinity/nice interaction can be evaluated

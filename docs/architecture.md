@@ -1,7 +1,8 @@
 # Architecture And Engineering Boundaries
 
-This file owns durable architecture and process boundaries. Current status lives
-in `docs/status.md`; product strategy and roadmap live in `docs/strategy.md`.
+This file owns durable architecture and process boundaries. Current public
+evidence is summarized in `README.md`; product strategy and roadmap live in
+`docs/strategy.md`.
 
 ## Architecture Shape
 
