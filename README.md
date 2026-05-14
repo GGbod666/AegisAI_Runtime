@@ -850,17 +850,21 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 
 `bd` 是任务源，最新精细任务清单见 `docs/latest_tasks.md`。当前 open issue：
 
-- `AegisAI_Runtime-ufp`：实现 daemon/helper packaging 和 service 安装路径。
 - `AegisAI_Runtime-0ry.2` / `AegisAI_Runtime-0ry.3` /
   `AegisAI_Runtime-0ry.4`：dashboard、GPU coordination 和 online adaptive
-  policy 已拆成 production-packaging-blocked evidence-gated future work。
+  policy 已拆成 evidence-gated future work；production packaging gate 已完成，
+  但各自仍需独立 safety/benchmark/verification gate。
 
 最近关闭的父级 gap：
 
+- `AegisAI_Runtime-ufp`：Debian/Ubuntu systemd packaging 已实现到
+  `packaging/debian-systemd/`，包含 rootless daemon service、单独 helper
+  install path、production profile staging、preflight、remove/purge 和 dry-run
+  smoke。
 - `AegisAI_Runtime-0ry`：deferred extension parent 已关闭；dashboard、GPU
   coordination 和 online adaptive policy 保持为
   `AegisAI_Runtime-0ry.2` / `AegisAI_Runtime-0ry.3` /
-  `AegisAI_Runtime-0ry.4`，并继续被 production packaging gate 阻塞。
+  `AegisAI_Runtime-0ry.4` 的独立 evidence-gated future work。
 - `AegisAI_Runtime-dxh`：`aegisai-runtime-daemon --help` 现在打印当前 usage
   并以 `0` 退出；无效或不完整参数仍保持 nonzero。
 - `AegisAI_Runtime-cqv`：production config profile selector、strict schema

@@ -53,12 +53,12 @@ Implemented and accepted capabilities:
   priority caps, triggers must be backed by `focus_signals`, live affinity must
   use a non-empty PID allowlist profile scope, and live cpuset writes remain
   disabled by profile validation. Cross-file errors name both involved files.
-- The Debian/Ubuntu systemd packaging contract is defined in
-  `docs/packaging_contract.md`. The first package target keeps
+- The Debian/Ubuntu systemd packaging path is implemented under
+  `packaging/debian-systemd/`. The first package target keeps
   `aegisai-runtime-daemon` rootless under `_aegisai`, installs
   `aegisai-ebpf-helper` as a separate helper boundary, uses
   `/etc/aegisai/configs/profiles/production/` for the selected production
-  profile, and leaves installer implementation to `AegisAI_Runtime-ufp`.
+  profile, and provides dry-run staging plus remove/purge behavior.
 
 Latest product-evidence status:
 
@@ -371,30 +371,37 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after deferred extension parent closure: `78` total issues,
-`4` open, `0` in progress, `3` blocked, `74` closed.
+Current `bd` state after daemon/helper packaging implementation: `78` total
+issues, `3` open, `0` in progress, `0` blocked, `75` closed.
 `docs/latest_tasks.md` now contains only the active prioritized todo queue;
 historical evidence remains in this file, `docs/acceptance_ledger.md`, and
 `docs/verification_log.md`.
 
-- `AegisAI_Runtime-ufp` — implement the daemon/helper packaging path from
-  `docs/packaging_contract.md`. `AegisAI_Runtime-ufp.1` is complete: the first
-  target is Debian/Ubuntu systemd, with rootless daemon user/group, binary
-  paths, production profile path, log path, helper privilege boundary,
-  prerequisite behavior, rollback, and uninstall rules defined. The remaining
-  open work is installer/service implementation plus dry-run or VM smoke
-  verification.
-- `AegisAI_Runtime-0ry.2` — deferred observability dashboard, blocked behind
-  production packaging. The issue records prerequisites, non-goals, read-only
-  safety evidence, benchmark evidence, and a verification gate.
-- `AegisAI_Runtime-0ry.3` — deferred GPU coordination, blocked behind
-  production packaging. The issue records prerequisites, non-goals, device and
-  privilege safety evidence, benchmark evidence, and a verification gate.
-- `AegisAI_Runtime-0ry.4` — deferred online adaptive policy, blocked behind
-  production packaging. The issue records prerequisites, non-goals, shadow-mode
-  safety evidence, benchmark evidence, and a verification gate.
+- `AegisAI_Runtime-0ry.4` — deferred online adaptive policy. The issue records
+  prerequisites, non-goals, shadow-mode safety evidence, benchmark evidence,
+  and a verification gate.
+- `AegisAI_Runtime-0ry.3` — deferred GPU coordination. The issue records
+  prerequisites, non-goals, device and privilege safety evidence, benchmark
+  evidence, and a verification gate.
+- `AegisAI_Runtime-0ry.2` — deferred observability dashboard. The issue records
+  prerequisites, non-goals, read-only safety evidence, benchmark evidence, and
+  a verification gate.
 
 Recently closed:
+
+- `AegisAI_Runtime-ufp` — implemented the first Debian/Ubuntu systemd
+  packaging path under `packaging/debian-systemd/`. The package artifacts
+  include the rootless `aegisai-runtime.service`, `_aegisai` sysusers entry,
+  tmpfiles entry, installer with `preflight`/`install`/`dry-run`/`remove`/
+  `purge`, and a temporary-destination smoke path. Verification:
+  `bash -n packaging/debian-systemd/install.sh`,
+  `bash -n packaging/debian-systemd/smoke.sh`,
+  `bash packaging/debian-systemd/smoke.sh`,
+  `cargo build -p aegisai-runtime-daemon -p aegisai-ebpf-helper`,
+  real-binary packaging smoke with `AEGISAI_PACKAGING_DAEMON_BIN` and
+  `AEGISAI_PACKAGING_HELPER_BIN`, missing-profile failure reproduction,
+  `systemd-analyze verify` against a temporary unit copy with `/bin/true`
+  substituted for the host-missing binary, `bd lint`, and `git diff --check`.
 
 - `AegisAI_Runtime-0ry` — closed the deferred extension parent after
   `AegisAI_Runtime-0ry.1` split planning completed. Dashboard, GPU

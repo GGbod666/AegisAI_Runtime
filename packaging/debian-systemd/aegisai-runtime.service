@@ -1,0 +1,33 @@
+[Unit]
+Description=AegisAI Runtime daemon
+Documentation=file:/usr/share/doc/aegisai-runtime/packaging_contract.md
+After=local-fs.target systemd-journald.socket
+Wants=systemd-journald.socket
+
+[Service]
+Type=simple
+User=_aegisai
+Group=_aegisai
+RuntimeDirectory=aegisai
+StateDirectory=aegisai
+LogsDirectory=aegisai
+ConfigurationDirectory=aegisai
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/aegisai /var/log/aegisai /run/aegisai
+Environment=AEGISAI_EBPF_HELPER=/usr/lib/aegisai/aegisai-ebpf-helper
+ExecStart=/usr/bin/aegisai-runtime-daemon \
+  --repo-root /etc/aegisai \
+  --config-profile production \
+  --source linux \
+  --metadata procfs \
+  --actuator-backend linux-skeleton \
+  --allow-partial-probes \
+  --verification-log /var/log/aegisai/runtime-daemon.md
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

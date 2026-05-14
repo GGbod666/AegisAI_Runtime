@@ -1,0 +1,3 @@
+d /var/lib/aegisai 0750 _aegisai _aegisai -
+d /var/log/aegisai 0750 _aegisai _aegisai -
+d /run/aegisai 0750 _aegisai _aegisai -

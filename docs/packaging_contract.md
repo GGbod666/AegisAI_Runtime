@@ -6,6 +6,30 @@ This document is the design contract for `AegisAI_Runtime-ufp.1`. It defines
 the first production packaging target and install/service boundaries. It does
 not add installer code, maintainer scripts, unit files, or package metadata.
 
+## Implemented Artifacts
+
+`AegisAI_Runtime-ufp` implements this first target under
+`packaging/debian-systemd/`:
+
+- `aegisai-runtime.service` is the default rootless systemd unit.
+- `aegisai-runtime.sysusers` declares the locked `_aegisai` user/group.
+- `aegisai-runtime.tmpfiles` declares package state, log, and runtime
+  directories for hosts that apply tmpfiles separately from the service
+  directory settings.
+- `install.sh` supports `preflight`, `install`, `dry-run`, `remove`, and
+  `purge`.
+- `smoke.sh` validates the dry-run staging path in a temporary destination
+  root and can run with either smoke stubs or real built binaries.
+
+The installer stages `/usr/bin/aegisai-runtime-daemon`,
+`/usr/lib/aegisai/aegisai-ebpf-helper`, the systemd/sysusers/tmpfiles files,
+the selected production profile under
+`/etc/aegisai/configs/profiles/production/`, package documentation, and package
+state/log/runtime directories. Host installation requires root, systemd, Linux
+kernel `5.15+`, cgroup v2, executable daemon/helper binaries, and a valid
+production profile source. The maintained smoke path verifies this layout
+without touching host system directories.
+
 ## First Target
 
 The first target is a Debian/Ubuntu system package managed by the system
