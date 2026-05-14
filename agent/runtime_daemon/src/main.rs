@@ -15,8 +15,17 @@ use aegisai_runtime_daemon::{
 use runtime_orchestrator::{RuntimeConfigProfile, RuntimeOrchestrator, RuntimeOrchestratorConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli =
-        CliConfig::parse_with_env(env::args().skip(1), env::var("AEGISAI_CONFIG_PROFILE").ok())?;
+    let cli = match CliConfig::parse_with_env(
+        env::args().skip(1),
+        env::var("AEGISAI_CONFIG_PROFILE").ok(),
+    ) {
+        Ok(cli) => cli,
+        Err(error) if error == CliConfig::usage() => {
+            println!("{error}");
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
+    };
 
     let config = RuntimeOrchestratorConfig::load_from_repo_root_with_profile(
         &cli.repo_root,
@@ -800,6 +809,23 @@ mod tests {
             .expect("cli should parse");
 
         assert_eq!(cli.max_events, Some(512));
+    }
+
+    #[test]
+    fn cli_help_returns_usage_text() {
+        let error = CliConfig::parse(["--help"].into_iter().map(str::to_string))
+            .expect_err("help should return the usage sentinel");
+
+        assert_eq!(error, CliConfig::usage());
+    }
+
+    #[test]
+    fn cli_incomplete_argument_is_not_help() {
+        let error = CliConfig::parse(["--repo-root"].into_iter().map(str::to_string))
+            .expect_err("missing value should fail");
+
+        assert_eq!(error, "--repo-root expects a path");
+        assert_ne!(error, CliConfig::usage());
     }
 
     #[test]

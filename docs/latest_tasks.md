@@ -8,21 +8,7 @@ queue. Historical evidence belongs in `docs/status.md`,
 
 ## Queue
 
-### 1. Normalize Runtime Daemon Help Exit Behavior
-
-- Issue: `AegisAI_Runtime-dxh`
-- Priority: `P3`
-- Why now: `aegisai-runtime-daemon --help` prints usage but exits `1`.
-- Scope:
-  - make explicit `--help` print the current usage text and exit `0`
-  - keep invalid or incomplete CLI arguments exiting nonzero
-  - avoid unrelated CLI text churn
-- Verify:
-  - targeted runtime daemon CLI tests
-  - `cargo test -p aegisai-runtime-daemon`
-  - `git diff --check`
-
-### 2. Implement Daemon/Helper Packaging
+### 1. Implement Daemon/Helper Packaging
 
 - Issue: `AegisAI_Runtime-ufp`
 - Priority: `P4`
@@ -43,7 +29,7 @@ queue. Historical evidence belongs in `docs/status.md`,
   - `bd lint`
   - `git diff --check`
 
-### 3. Close Deferred Extension Parent
+### 2. Close Deferred Extension Parent
 
 - Issue: `AegisAI_Runtime-0ry`
 - Priority: `P4`

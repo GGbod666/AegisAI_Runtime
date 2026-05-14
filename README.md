@@ -857,6 +857,8 @@ guarded nice+affinity，用于证明 scheduler 隔离收益；stable executor-co
 
 最近关闭的父级 gap：
 
+- `AegisAI_Runtime-dxh`：`aegisai-runtime-daemon --help` 现在打印当前 usage
+  并以 `0` 退出；无效或不完整参数仍保持 nonzero。
 - `AegisAI_Runtime-cqv`：production config profile selector、strict schema
   validation 和 cross-file safety validation 已完成。
 - `AegisAI_Runtime-51c`：helper compatibility taxonomy、two-kernel helper

@@ -82,8 +82,9 @@ remains a historical non-controlled workload `FAIL`, the `WarmupExecutor`
 boundary has been implemented, the live cpuset/background safety boundary has
 been documented, policy safety cap normalization has been completed, the
 cpuset/background dry-run planner has been completed, helper portability and
-production config profile parents have been closed, and Beads Dolt sync has
-been configured. The remaining blockers are:
+production config profile parents have been closed, Beads Dolt sync has been
+configured, and the runtime daemon explicit help path now exits successfully
+without weakening invalid-argument failures. The remaining blockers are:
 
 - production packaging/service implementation: `AegisAI_Runtime-ufp`
 - production-packaging-blocked deferred runtime extensions:

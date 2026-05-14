@@ -371,14 +371,12 @@ buckets at the result layer before event-count classification.
 
 ## Open Gap Index
 
-Current `bd` state after deferred extension split planning: `78` total issues,
-`6` open, `0` in progress, `3` blocked, `72` closed.
+Current `bd` state after runtime daemon help exit fix: `78` total issues,
+`5` open, `0` in progress, `3` blocked, `73` closed.
 `docs/latest_tasks.md` now contains only the active prioritized todo queue;
 historical evidence remains in this file, `docs/acceptance_ledger.md`, and
 `docs/verification_log.md`.
 
-- `AegisAI_Runtime-dxh` — normalize explicit `--help` behavior for
-  `aegisai-runtime-daemon`; usage currently prints correctly but exits `1`.
 - `AegisAI_Runtime-ufp` — implement the daemon/helper packaging path from
   `docs/packaging_contract.md`. `AegisAI_Runtime-ufp.1` is complete: the first
   target is Debian/Ubuntu systemd, with rootless daemon user/group, binary
@@ -400,6 +398,14 @@ historical evidence remains in this file, `docs/acceptance_ledger.md`, and
   safety evidence, benchmark evidence, and a verification gate.
 
 Recently closed:
+
+- `AegisAI_Runtime-dxh` — normalized explicit
+  `aegisai-runtime-daemon --help` behavior so usage prints to stdout and exits
+  `0`, while invalid/incomplete arguments still exit nonzero. Verification:
+  `cargo test -p aegisai-runtime-daemon --test cli_help`,
+  `cargo test -p aegisai-runtime-daemon`, direct `cargo run -p
+  aegisai-runtime-daemon -- --help`, direct `cargo run -p
+  aegisai-runtime-daemon -- --repo-root`, and `git diff --check`.
 
 - `AegisAI_Runtime-76k` — recorded coverage/decomposition decisions for
   `CliConfig::parse_with_env`, `build_linux_rollback_report`,
